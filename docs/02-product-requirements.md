@@ -78,7 +78,7 @@ The single most important area. This is what makes Openote *Openote* and not ano
 | ORG-6 | **Subpage nesting** with at least two indent levels, collapsible. | Should | M |
 | ORG-7 | **Recycle bin / trash** with recovery for deleted pages and sections (configurable retention). | Should | P2 |
 | ORG-8 | **Section/page auto-sort options** (manual, alphabetical, by date) — an oft-requested OneNote gap. | Could | P2 |
-| ORG-9 | **Page templates:** built-in templates and user-saved custom templates, applicable on **all platforms** (fixing OneNote's parity gap). | Should | P2 |
+| ORG-9 | **Reusable page layouts** — a new page can come up already laid out, on **all platforms** (fixing OneNote's parity gap). Satisfied by **Duplicate page** plus a new page inheriting its neighbour's shape, NOT by page templates: those shipped, and were withdrawn in v1.0.2 for asking the reader to pick a layout from a list of words, from a menu they only reach once the page exists. | Should | P2 |
 | ORG-10 | **Favorites / pinned pages** and a **recent pages** list for fast return. | Could | P2 |
 
 ---

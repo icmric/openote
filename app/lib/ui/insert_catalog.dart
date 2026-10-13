@@ -57,7 +57,6 @@ import 'insert_portal_dialog.dart';
 import 'link_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
-import 'sidebar.dart';
 
 /// Put one thing on the page. [at] is the top-left the block should take.
 typedef InsertRun = Future<void> Function(
@@ -127,11 +126,10 @@ class InsertItem {
 
   /// **Is this on the right-click menu as well as the ribbon?**
   ///
-  /// Three are not, and each has the same reason: the gesture that opens the
+  /// Two are not, and each has the same reason: the gesture that opens the
   /// menu already does the thing. A right click on the page is a click on the
-  /// page, which makes a text box; a flashcard is made from the line you are
-  /// on, which a right click on empty canvas is not; and applying a template
-  /// lays out a whole PAGE, which is not "put this here".
+  /// page, which makes a text box; and a flashcard is made from the line you
+  /// are on, which a right click on empty canvas is not.
   ///
   /// A field rather than a second list, so the difference is one word beside
   /// the item that has it, and the test can read it.
@@ -244,7 +242,6 @@ const List<String> kRibbonOrder = [
   'flashcard',
   'pagelink',
   'portal',
-  'template',
 ];
 
 /// The ribbon's items, in [kRibbonOrder]. Anything the order forgets goes on
@@ -460,18 +457,6 @@ final List<InsertGroup> kInsertGroups = [
       opensPicker: true,
       size: const Size(380, 260),
       run: (context, app, at) => showInsertPortalDialog(context, app, at),
-    ),
-    InsertItem(
-      id: 'template',
-      icon: Icons.dashboard_customize_outlined,
-      label: (l) => l.insertTemplate,
-      opensPicker: true,
-      // Not on the right-click menu: this lays out a whole PAGE, which is not
-      // "put this thing here". It is on the page's own menu as well, beside
-      // Save as template, which is where it belongs by meaning.
-      onMenu: false,
-      size: Size.zero,
-      run: (context, app, at) => promptApplyTemplate(context, app),
     ),
   ]),
 ];

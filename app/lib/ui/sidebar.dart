@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/focus_claim.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
@@ -609,6 +610,12 @@ class _GroupHeader extends StatefulWidget {
 
 class _GroupHeaderState extends State<_GroupHeader> {
   bool _renaming = false;
+
+  /// Turn this row into a field. The menu's Rename and the double-click are
+  /// the same gesture as far as the row is concerned.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -664,9 +671,11 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 },
           onTapDown: (d) => _downPos = d.globalPosition,
           onSecondaryTapUp: (d) => showNodeMenu(context, app, group,
-              canIndent: false, position: d.globalPosition),
+              canIndent: false,
+              position: d.globalPosition,
+              onRename: _startRename),
           onLongPress: () => showNodeMenu(context, app, group,
-              canIndent: false, position: _downPos),
+              canIndent: false, position: _downPos, onRename: _startRename),
           child: Container(
             decoration: target
                 ? BoxDecoration(
@@ -1304,6 +1313,12 @@ class _SectionHeader extends StatefulWidget {
 
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
+
+  /// Turn this row into a field. The menu's Rename and the double-click are
+  /// the same gesture as far as the row is concerned.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1382,9 +1397,11 @@ class _SectionHeaderState extends State<_SectionHeader> {
             },
       onTapDown: (d) => _downPos = d.globalPosition,
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
-          canIndent: false, position: d.globalPosition),
+          canIndent: false,
+          position: d.globalPosition,
+          onRename: _startRename),
       onLongPress: () => showNodeMenu(context, app, section,
-          canIndent: false, position: _downPos),
+          canIndent: false, position: _downPos, onRename: _startRename),
       child: Container(
         decoration: pageTarget
             ? BoxDecoration(
@@ -1648,7 +1665,10 @@ class _InlineRenameState extends State<_InlineRename> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _focus.requestFocus();
+      // Same hazard as the page title: this field is opened by a click and
+      // can only ask once it exists, so it asks through `claimKeyboard` to
+      // stop a standing claim on the canvas taking the keyboard back.
+      claimKeyboard(_focus);
       _c.selection =
           TextSelection(baseOffset: 0, extentOffset: _c.text.length);
     });
@@ -1750,6 +1770,12 @@ class _PageTile extends StatefulWidget {
 
 class _PageTileState extends State<_PageTile> {
   bool _renaming = false;
+
+  /// Turn this row into a field. The menu's Rename and the double-click are
+  /// the same gesture as far as the row is concerned.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1874,9 +1900,11 @@ class _PageTileState extends State<_PageTile> {
               },
         onTapDown: (d) => _downPos = d.globalPosition,
         onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
-            canIndent: true, position: d.globalPosition),
+            canIndent: true,
+            position: d.globalPosition,
+            onRename: _startRename),
         onLongPress: () => showNodeMenu(context, app, page,
-            canIndent: true, position: _downPos),
+            canIndent: true, position: _downPos, onRename: _startRename),
         child: Container(
           decoration: subpageTarget
               ? BoxDecoration(
@@ -1979,7 +2007,18 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
     child: Row(children: [
       Icon(icon, size: 16, color: color),
       const SizedBox(width: 10),
-      Text(label, style: TextStyle(fontSize: 13, color: color)),
+      // **Expanded, like the canvas menu this claims to mirror.** A bare
+      // `Text` here sizes to its content, and a popup menu is narrower than
+      // the longest label in this menu ("Sort pages by last edited", and the
+      // exam row carries a date) — so the row overflowed by up to 98px, which
+      // is a layout error Flutter paints a striped banner over. It went
+      // unnoticed because nothing opened this menu in a test until
+      // `node_menu_rename_test.dart` did.
+      Expanded(
+        child: Text(label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: color)),
+      ),
     ]),
   );
 }
@@ -2209,10 +2248,23 @@ void _keyboardEnteredRow(AppState app) {
 }
 
 /// Pop-out node menu (§7a.1): a compact menu anchored at the pointer, focused
-/// on actions that can *only* be done here. Rename lives inline (double-click
-/// the title) so it's not in this list; reorder + structural moves are.
+/// on actions that can *only* be done here — reorder and structural moves.
+///
+/// **Rename is here too, despite also being inline.** It used to be left out
+/// on the grounds that double-clicking the title already does it, which is
+/// true and was not enough: a right-click menu is where people look for "what
+/// can I do to this thing", and an action missing from it reads as an action
+/// that does not exist. It is first in the list because it is the one most
+/// often wanted.
+///
+/// [onRename] turns the row itself into a field rather than opening a dialog,
+/// which is the same thing the double-click does — the row owns that state, so
+/// the menu asks it rather than reaching for it. Required, so a new kind of
+/// row cannot quietly ship without it.
 Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
-    {required bool canIndent, required Offset position}) async {
+    {required bool canIndent,
+    required Offset position,
+    required VoidCallback onRename}) async {
   final l = L.of(context);
   final isPage = node.kind == NodeKind.page;
   final isSection = node.kind == NodeKind.section;
@@ -2227,6 +2279,14 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       position.dy,
     ),
     items: [
+      _nodeItem('rename', Icons.edit_outlined, l.navMenuRename),
+      // Beside Rename rather than down with print and PDF: these two are the
+      // things you do to the page ITSELF, and everything below is about where
+      // it sits or what comes out of it. Pages only — duplicating a section
+      // would mean copying every page in it, which is a different question.
+      if (isPage)
+        _nodeItem('duplicate', Icons.copy_all_outlined, l.navMenuDuplicate),
+      const PopupMenuDivider(),
       _nodeItem('up', Icons.keyboard_arrow_up, l.navMenuMoveUp),
       _nodeItem('down', Icons.keyboard_arrow_down, l.navMenuMoveDown),
       if (isSection) ...[
@@ -2282,12 +2342,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('print', Icons.print_outlined, l.navMenuPrint),
         _nodeItem('copylink', Icons.link, l.navMenuCopyLink),
         _nodeItem('history', Icons.history, l.navMenuRecentChanges),
-        _nodeItem('template', Icons.bookmark_add_outlined, l.navMenuSaveTemplate),
-        // Laying out a whole page is not INSERTING something into it, which
-        // is why this left the Insert ribbon. It belongs beside saving one —
-        // and beside where "No templates yet" already sends people.
-        _nodeItem('applytemplate', Icons.dashboard_customize_outlined,
-            l.navMenuApplyTemplate),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
@@ -2303,6 +2357,12 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
   );
   if (!context.mounted) return;
   switch (action) {
+    case 'duplicate':
+      // No snackbar: the copy opens, with its title selected, which says
+      // what happened better than a message about it would.
+      await app.duplicatePage(node.id);
+    case 'rename':
+      onRename();
     case 'protect':
       final set = await askNewPasscode(context, node.title);
       if (set == null) return;
@@ -2399,15 +2459,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       await _onPage(app, node.id, () async {
         if (context.mounted) await showVersionHistory(context, app);
       });
-    case 'template':
-      await _onPage(app, node.id, () async {
-        if (context.mounted) await _promptSaveTemplate(context, app);
-      });
-    case 'applytemplate':
-      // NOT brought home: applying a template CHANGES this page, and leaving
-      // somebody somewhere else after changing it is worse than moving them.
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      if (context.mounted) await promptApplyTemplate(context, app);
     case 'delete':
       final messenger = ScaffoldMessenger.of(context);
       final l = L.of(context);
@@ -2417,26 +2468,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (app.node(node.id) == null) {
         showDeletedSnackBar(messenger, l, app, node);
       }
-  }
-}
-
-Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
-  final l = L.of(context);
-  // Through [promptForText], which owns the field's controller in the dialog's
-  // own State. This used to build the field here and `controller.dispose()`
-  // straight after the await — the route is popped by then but its 150 ms exit
-  // transition has not finished, so the field was still mounted and still
-  // rebuilding against a dead controller. Same defect as the new-notebook
-  // prompt, which is what crashed the app.
-  final name = await promptForText(context,
-      title: l.navSaveTemplateTitle,
-      okLabel: l.navSave,
-      hintText: l.navTemplateNameHint);
-  if (name == null) return;
-  app.saveCurrentAsTemplate(name);
-  if (context.mounted) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l.navTemplateSaved(name))));
   }
 }
 
@@ -2521,33 +2552,6 @@ String _examMenuLabel(
       ? formatExamDate(exam, now)
       : '${formatExamDate(exam, now)}, ${examTimeLabel(context, minute)}';
   return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
-}
-
-/// Lay a saved template over this page.
-///
-/// Offered here AND on the Insert ribbon. This menu is where the app already
-/// talks about templates, and where its own "no templates yet" message sends
-/// people; the ribbon is where a student who has used the app for a term
-/// looks. One command, two entrances, which is why this is public.
-Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
-  final names = app.templateNames();
-  if (names.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(L.of(context).navNoTemplates)));
-    return;
-  }
-  final choice = await showOnoteDialog<String>(
-    context: context,
-    builder: (ctx) => SimpleDialog(
-      title: Text(L.of(ctx).navApplyTemplate),
-      children: [
-        for (final n in names)
-          SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, n), child: Text(n)),
-      ],
-    ),
-  );
-  if (choice != null) app.applyTemplate(choice);
 }
 
 /// Do something that needs [pageId] open, then go back to where you were.

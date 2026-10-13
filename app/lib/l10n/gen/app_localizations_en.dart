@@ -602,9 +602,6 @@ class LEn extends L {
   String get insertTableFromFileTip => 'CSV or Excel';
 
   @override
-  String get insertTemplate => 'Template';
-
-  @override
   String get insertTextBox => 'Text box';
 
   @override
@@ -622,9 +619,6 @@ class LEn extends L {
   String navAllCount(int total) {
     return 'All $total';
   }
-
-  @override
-  String get navApplyTemplate => 'Apply template';
 
   @override
   String get navBinEmpty => 'Nothing deleted.';
@@ -745,9 +739,6 @@ class LEn extends L {
   String get navMenuAddFavourite => 'Add to favourites';
 
   @override
-  String get navMenuApplyTemplate => 'Apply a template…';
-
-  @override
   String get navMenuCopyLink => 'Copy link to page';
 
   @override
@@ -787,6 +778,12 @@ class LEn extends L {
   String get navMenuRecentChanges => 'Recent changes…';
 
   @override
+  String get navMenuDuplicate => 'Duplicate';
+
+  @override
+  String get navMenuRename => 'Rename';
+
+  @override
   String get navMenuRemoveExam => 'Remove exam date';
 
   @override
@@ -794,9 +791,6 @@ class LEn extends L {
 
   @override
   String get navMenuRemovePasscode => 'Remove passcode…';
-
-  @override
-  String get navMenuSaveTemplate => 'Save as template…';
 
   @override
   String get navMenuSetExam => 'Set exam date…';
@@ -839,10 +833,6 @@ class LEn extends L {
   String get navNoSections => 'No sections yet.\nCreate one to get started.';
 
   @override
-  String get navNoTemplates =>
-      'No templates yet — \"Save as template…\" first.';
-
-  @override
   String get navNotebooksTip => 'Notebooks — switch, rename, duplicate, import';
 
   @override
@@ -863,9 +853,6 @@ class LEn extends L {
   String get navSave => 'Save';
 
   @override
-  String get navSaveTemplateTitle => 'Save as template';
-
-  @override
   String navSavedTo(String path) {
     return 'Saved to $path';
   }
@@ -875,14 +862,6 @@ class LEn extends L {
 
   @override
   String get navSection => 'Section';
-
-  @override
-  String get navTemplateNameHint => 'Template name';
-
-  @override
-  String navTemplateSaved(String name) {
-    return 'Template \"$name\" saved';
-  }
 
   @override
   String get navUntitled => 'Untitled';

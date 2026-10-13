@@ -65,11 +65,13 @@ void main() {
   }
 
   group('the catalog itself', () {
-    testWidgets('is twelve things, grouped for the menu', (tester) async {
+    testWidgets('is eleven things, grouped for the menu', (tester) async {
       final l = await _translations(tester);
       expect(kInsertGroups.map((g) => g.title(l)).toList(),
           ['Write', 'Bring in', 'Link up']);
-      expect(kInsertItems.length, 12);
+      // Twelve until page templates were removed in favour of duplicating a
+      // page: a layout is not a thing you INSERT at a point anyway.
+      expect(kInsertItems.length, 11);
     });
 
     test('the ribbon is one row, in the order it has always been', () {
@@ -78,7 +80,7 @@ void main() {
       // think we go back to what we had before."
       expect(kInsertRibbon.map((i) => i.id).toList(), [
         'equation', 'code', 'table', 'board', 'image', 'pdf',
-        'file', 'video', 'flashcard', 'pagelink', 'portal', 'template',
+        'file', 'video', 'flashcard', 'pagelink', 'portal',
       ]);
     });
 
@@ -98,14 +100,13 @@ void main() {
       }
     });
 
-    test('two of them are on the ribbon only, and say why', () {
-      // Each is a command the right-click GESTURE already performs, or one
-      // that is not about a point on the page at all.
+    test('one of them is on the ribbon only, and says why', () {
+      // A flashcard is made from the line you are on, which a right click on
+      // empty canvas is not. (Apply template was the other, until page
+      // templates were removed in favour of duplicating a page.)
       final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
-      for (final id in ['flashcard', 'template']) {
-        expect(kInsertItems.map((i) => i.id), contains(id), reason: id);
-        expect(menu.contains(id), isFalse, reason: id);
-      }
+      expect(kInsertItems.map((i) => i.id), contains('flashcard'));
+      expect(menu.contains('flashcard'), isFalse);
       expect(menu.length, 10);
     });
 
@@ -316,9 +317,8 @@ void main() {
               reason: i.id);
         }
       }
-      // And the two the ribbon has that the right-click menu does not.
+      // And the one the ribbon has that the right-click menu does not.
       expect(find.text('Flashcard'), findsOneWidget);
-      expect(find.text('Template'), findsOneWidget);
       // "Text box" is gone from both: a click on the page makes one, and so
       // does clicking out of one, which is two ways already.
       expect(find.text('Text box'), findsNothing);

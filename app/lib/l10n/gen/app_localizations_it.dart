@@ -602,9 +602,6 @@ class LIt extends L {
   String get insertTableFromFileTip => 'CSV o Excel';
 
   @override
-  String get insertTemplate => 'Modello';
-
-  @override
   String get insertTextBox => 'Casella';
 
   @override
@@ -623,9 +620,6 @@ class LIt extends L {
   String navAllCount(int total) {
     return 'Tutte e $total';
   }
-
-  @override
-  String get navApplyTemplate => 'Applica un modello';
 
   @override
   String get navBinEmpty => 'Niente di eliminato.';
@@ -747,9 +741,6 @@ class LIt extends L {
   String get navMenuAddFavourite => 'Aggiungi ai preferiti';
 
   @override
-  String get navMenuApplyTemplate => 'Applica un modello…';
-
-  @override
   String get navMenuCopyLink => 'Copia il collegamento alla pagina';
 
   @override
@@ -789,6 +780,12 @@ class LIt extends L {
   String get navMenuRecentChanges => 'Modifiche recenti…';
 
   @override
+  String get navMenuDuplicate => 'Duplica';
+
+  @override
+  String get navMenuRename => 'Rinomina';
+
+  @override
   String get navMenuRemoveExam => 'Togli la data dell\'esame';
 
   @override
@@ -796,9 +793,6 @@ class LIt extends L {
 
   @override
   String get navMenuRemovePasscode => 'Togli il codice…';
-
-  @override
-  String get navMenuSaveTemplate => 'Salva come modello…';
 
   @override
   String get navMenuSetExam => 'Imposta la data dell\'esame…';
@@ -842,10 +836,6 @@ class LIt extends L {
       'Ancora nessuna sezione.\nCreane una per iniziare.';
 
   @override
-  String get navNoTemplates =>
-      'Ancora nessun modello — usa prima «Salva come modello…».';
-
-  @override
   String get navNotebooksTip => 'Quaderni — cambia, rinomina, duplica, importa';
 
   @override
@@ -866,9 +856,6 @@ class LIt extends L {
   String get navSave => 'Salva';
 
   @override
-  String get navSaveTemplateTitle => 'Salva come modello';
-
-  @override
   String navSavedTo(String path) {
     return 'Salvato in $path';
   }
@@ -878,14 +865,6 @@ class LIt extends L {
 
   @override
   String get navSection => 'Sezione';
-
-  @override
-  String get navTemplateNameHint => 'Nome del modello';
-
-  @override
-  String navTemplateSaved(String name) {
-    return 'Modello «$name» salvato';
-  }
 
   @override
   String get navUntitled => 'Senza titolo';

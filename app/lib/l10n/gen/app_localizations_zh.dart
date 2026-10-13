@@ -580,9 +580,6 @@ class LZh extends L {
   String get insertTableFromFileTip => 'CSV 或 Excel';
 
   @override
-  String get insertTemplate => '模板';
-
-  @override
   String get insertTextBox => '文本框';
 
   @override
@@ -600,9 +597,6 @@ class LZh extends L {
   String navAllCount(int total) {
     return '全部 $total 项';
   }
-
-  @override
-  String get navApplyTemplate => '应用模板';
 
   @override
   String get navBinEmpty => '没有已删除的内容。';
@@ -721,9 +715,6 @@ class LZh extends L {
   String get navMenuAddFavourite => '加入收藏';
 
   @override
-  String get navMenuApplyTemplate => '应用模板…';
-
-  @override
   String get navMenuCopyLink => '复制页面链接';
 
   @override
@@ -763,6 +754,12 @@ class LZh extends L {
   String get navMenuRecentChanges => '最近的修改…';
 
   @override
+  String get navMenuDuplicate => '复制';
+
+  @override
+  String get navMenuRename => '重命名';
+
+  @override
   String get navMenuRemoveExam => '移除考试日期';
 
   @override
@@ -770,9 +767,6 @@ class LZh extends L {
 
   @override
   String get navMenuRemovePasscode => '移除密码…';
-
-  @override
-  String get navMenuSaveTemplate => '保存为模板…';
 
   @override
   String get navMenuSetExam => '设置考试日期…';
@@ -815,9 +809,6 @@ class LZh extends L {
   String get navNoSections => '还没有分区。\n新建一个即可开始。';
 
   @override
-  String get navNoTemplates => '还没有模板 — 请先用「保存为模板…」。';
-
-  @override
   String get navNotebooksTip => '笔记本 — 切换、重命名、复制、导入';
 
   @override
@@ -838,9 +829,6 @@ class LZh extends L {
   String get navSave => '保存';
 
   @override
-  String get navSaveTemplateTitle => '保存为模板';
-
-  @override
   String navSavedTo(String path) {
     return '已保存到 $path';
   }
@@ -850,14 +838,6 @@ class LZh extends L {
 
   @override
   String get navSection => '分区';
-
-  @override
-  String get navTemplateNameHint => '模板名称';
-
-  @override
-  String navTemplateSaved(String name) {
-    return '模板“$name”已保存';
-  }
 
   @override
   String get navUntitled => '无标题';

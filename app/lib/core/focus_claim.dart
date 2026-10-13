@@ -34,7 +34,60 @@
 /// directly.
 library;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+
+/// The field that asked for the keyboard this frame, and the frame it asked in.
+///
+/// See [claimKeyboard]. Two values rather than one because a marker left over
+/// from an earlier frame must not go on answering for this one.
+FocusNode? _asked;
+Duration? _askedDuring;
+
+/// The frame being built, or null between frames.
+///
+/// `currentFrameTimeStamp` asserts when read outside a frame, hence the phase
+/// check; every non-idle phase has a timestamp.
+Duration? _thisFrame() {
+  final b = SchedulerBinding.instance;
+  return b.schedulerPhase == SchedulerPhase.idle
+      ? null
+      : b.currentFrameTimeStamp;
+}
+
+/// **Take the keyboard for [node], and leave word that you did.**
+///
+/// Use this instead of a bare `requestFocus` for a field that has just been
+/// opened by something the user did and asks from a post-frame callback,
+/// because it has to wait for the field to exist. Such a request is NOT
+/// visible to [keyboardIsGoingSpare] yet: `FocusManager` applies a request in
+/// a microtask, so `primaryFocus` still names the previous holder for the
+/// rest of the frame — and a standing claim running later in that same frame
+/// reads "going spare" and takes the keyboard off a field that was promised
+/// it. Last request before the microtask wins, and the standing claim is the
+/// one that rebuilds constantly, so it is always last.
+///
+/// Measured on the page title, which is how this was found (v1.0.2 item 6,
+/// second half). Clicking a title with the MOUSE while a paragraph was open:
+///
+/// ```text
+/// DOWN  -> scope(...)      the click unfocused the paragraph — Flutter's own
+///                          desktop "tap outside a field ends the edit", which
+///                          is why a touch tap never showed this
+/// UP    -> titleEditing=true   the title opened and asked, post-frame
+/// frame -> paragraph       and the paragraph's standing claim took it back,
+///                          because a scope held focus and so the keyboard
+///                          looked spare
+/// ```
+///
+/// The title field was left open and unfocused, so it took a second click to
+/// start typing — reported as *"seems to take 2 clicks to actually start
+/// editing the title"*.
+void claimKeyboard(FocusNode node) {
+  _asked = node;
+  _askedDuring = _thisFrame();
+  node.requestFocus();
+}
 
 /// Whether [claimant] may take the keyboard without interrupting anybody.
 ///
@@ -54,6 +107,13 @@ import 'package:flutter/widgets.dart';
 /// it — a field in some other block, being typed into — and taking it off
 /// them is the bug this exists to stop.
 bool keyboardIsGoingSpare(FocusNode claimant) {
+  // Somebody else asked for it in this same frame (see [claimKeyboard]).
+  // Their request is in flight and `primaryFocus` cannot say so yet.
+  if (_asked != null && _asked != claimant) {
+    if (_askedDuring != null && _askedDuring == _thisFrame()) return false;
+    _asked = null; // a frame has passed: the answer below is the true one
+    _askedDuring = null;
+  }
   final holder = FocusManager.instance.primaryFocus;
   if (holder == null || holder is FocusScopeNode) return true;
   return claimant.ancestors.contains(holder);

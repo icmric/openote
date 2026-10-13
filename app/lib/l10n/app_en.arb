@@ -784,10 +784,6 @@
   "@insertTableFromFileTip": {
     "description": "Tooltip naming the file kinds accepted. Both are product/format names."
   },
-  "insertTemplate": "Template",
-  "@insertTemplate": {
-    "description": "Insert item: a saved page layout to lay over this page."
-  },
   "insertTextBox": "Text box",
   "@insertTextBox": {
     "description": "Insert item: a box to type in. One noun, the one a fifteen-year-old would use."
@@ -819,10 +815,6 @@
         "type": "int"
       }
     }
-  },
-  "navApplyTemplate": "Apply template",
-  "@navApplyTemplate": {
-    "description": "Title of the dialog that lays a saved template over this page."
   },
   "navBinEmpty": "Nothing deleted.",
   "@navBinEmpty": {
@@ -1002,10 +994,6 @@
   "@navMenuAddFavourite": {
     "description": "Context-menu item."
   },
-  "navMenuApplyTemplate": "Apply a template…",
-  "@navMenuApplyTemplate": {
-    "description": "Context-menu item."
-  },
   "navMenuCopyLink": "Copy link to page",
   "@navMenuCopyLink": {
     "description": "Context-menu item."
@@ -1058,6 +1046,14 @@
   "@navMenuRecentChanges": {
     "description": "Context-menu item: the page's own history."
   },
+  "navMenuDuplicate": "Duplicate",
+  "@navMenuDuplicate": {
+    "description": "Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named \"<title> copy\"."
+  },
+  "navMenuRename": "Rename",
+  "@navMenuRename": {
+    "description": "Context-menu item. Renames a page, section or section group; the row turns into a field in place."
+  },
   "navMenuRemoveExam": "Remove exam date",
   "@navMenuRemoveExam": {
     "description": "Context-menu item."
@@ -1068,10 +1064,6 @@
   },
   "navMenuRemovePasscode": "Remove passcode…",
   "@navMenuRemovePasscode": {
-    "description": "Context-menu item."
-  },
-  "navMenuSaveTemplate": "Save as template…",
-  "@navMenuSaveTemplate": {
     "description": "Context-menu item."
   },
   "navMenuSetExam": "Set exam date…",
@@ -1134,10 +1126,6 @@
   "@navNoSections": {
     "description": "Shown when a notebook has no sections. A section is a divider in a notebook, holding pages. Keep the line break."
   },
-  "navNoTemplates": "No templates yet — \"Save as template…\" first.",
-  "@navNoTemplates": {
-    "description": "Shown when there is nothing to apply. The quoted phrase must match navSaveTemplateTitle."
-  },
   "navNotebooksTip": "Notebooks — switch, rename, duplicate, import",
   "@navNotebooksTip": {
     "description": "Tooltip on the notebook button."
@@ -1167,10 +1155,6 @@
   "@navSave": {
     "description": "Confirm button in that dialog."
   },
-  "navSaveTemplateTitle": "Save as template",
-  "@navSaveTemplateTitle": {
-    "description": "Title of the dialog that saves this page's layout for reuse."
-  },
   "navSavedTo": "Saved to {path}",
   "@navSavedTo": {
     "description": "Confirmation naming where an exported file landed.",
@@ -1188,19 +1172,6 @@
   "navSection": "Section",
   "@navSection": {
     "description": "Column heading over the list of sections."
-  },
-  "navTemplateNameHint": "Template name",
-  "@navTemplateNameHint": {
-    "description": "Placeholder in that dialog's text box."
-  },
-  "navTemplateSaved": "Template \"{name}\" saved",
-  "@navTemplateSaved": {
-    "description": "Confirmation after saving a template.",
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
   },
   "navUntitled": "Untitled",
   "@navUntitled": {

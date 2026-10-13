@@ -1025,12 +1025,6 @@ abstract class L {
   /// **'CSV or Excel'**
   String get insertTableFromFileTip;
 
-  /// Insert item: a saved page layout to lay over this page.
-  ///
-  /// In en, this message translates to:
-  /// **'Template'**
-  String get insertTemplate;
-
   /// Insert item: a box to type in. One noun, the one a fifteen-year-old would use.
   ///
   /// In en, this message translates to:
@@ -1060,12 +1054,6 @@ abstract class L {
   /// In en, this message translates to:
   /// **'All {total}'**
   String navAllCount(int total);
-
-  /// Title of the dialog that lays a saved template over this page.
-  ///
-  /// In en, this message translates to:
-  /// **'Apply template'**
-  String get navApplyTemplate;
 
   /// Shown when the recycle bin holds nothing.
   ///
@@ -1256,12 +1244,6 @@ abstract class L {
   /// Context-menu item.
   ///
   /// In en, this message translates to:
-  /// **'Apply a template…'**
-  String get navMenuApplyTemplate;
-
-  /// Context-menu item.
-  ///
-  /// In en, this message translates to:
   /// **'Copy link to page'**
   String get navMenuCopyLink;
 
@@ -1337,6 +1319,18 @@ abstract class L {
   /// **'Recent changes…'**
   String get navMenuRecentChanges;
 
+  /// Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named "<title> copy".
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate'**
+  String get navMenuDuplicate;
+
+  /// Context-menu item. Renames a page, section or section group; the row turns into a field in place.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get navMenuRename;
+
   /// Context-menu item.
   ///
   /// In en, this message translates to:
@@ -1354,12 +1348,6 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Remove passcode…'**
   String get navMenuRemovePasscode;
-
-  /// Context-menu item.
-  ///
-  /// In en, this message translates to:
-  /// **'Save as template…'**
-  String get navMenuSaveTemplate;
 
   /// Context-menu item.
   ///
@@ -1433,12 +1421,6 @@ abstract class L {
   /// **'No sections yet.\nCreate one to get started.'**
   String get navNoSections;
 
-  /// Shown when there is nothing to apply. The quoted phrase must match navSaveTemplateTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'No templates yet — \"Save as template…\" first.'**
-  String get navNoTemplates;
-
   /// Tooltip on the notebook button.
   ///
   /// In en, this message translates to:
@@ -1475,12 +1457,6 @@ abstract class L {
   /// **'Save'**
   String get navSave;
 
-  /// Title of the dialog that saves this page's layout for reuse.
-  ///
-  /// In en, this message translates to:
-  /// **'Save as template'**
-  String get navSaveTemplateTitle;
-
   /// Confirmation naming where an exported file landed.
   ///
   /// In en, this message translates to:
@@ -1498,18 +1474,6 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Section'**
   String get navSection;
-
-  /// Placeholder in that dialog's text box.
-  ///
-  /// In en, this message translates to:
-  /// **'Template name'**
-  String get navTemplateNameHint;
-
-  /// Confirmation after saving a template.
-  ///
-  /// In en, this message translates to:
-  /// **'Template \"{name}\" saved'**
-  String navTemplateSaved(String name);
 
   /// Stands in for the name of a page that has none yet.
   ///

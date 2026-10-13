@@ -63,7 +63,6 @@ import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
-import 'builtin_templates.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/device_identity.dart';
@@ -4094,8 +4093,8 @@ class AppState extends ChangeNotifier
   /// Each of these has been the whole of a video's existence at some moment:
   /// the undo stack is how an accidental delete is taken back, the clipboard
   /// survives switching notebook, [blocks] is the only copy during the save
-  /// debounce, and a template lives in the workspace rather than in any
-  /// notebook at all — so a template saved from THIS notebook's page is a
+  /// debounce, and a template saved by a build that still had page templates
+  /// lives in the workspace rather than in any notebook at all — so it is a
   /// reference the container knows nothing about.
   Iterable<String> _volatileMediaText(String nb) sync* {
     if (notebookId == nb) {
@@ -4105,8 +4104,14 @@ class AppState extends ChangeNotifier
     }
     final clip = _blockClipboard;
     if (clip != null) yield clip;
-    // Not scoped to this notebook: a template is appliable into any of them,
-    // and the name it carries only resolves in the one it was saved from.
+    // **Page templates are gone, and this root is not.** Nothing writes the
+    // setting any more (see the commit that removed them), but what is
+    // already in the workspace was NOT deleted with the feature — a template
+    // saved from a page with a video on it still names that video's file, and
+    // collecting it would quietly hollow out the one copy of somebody's
+    // recording. Reading it costs a map lookup on a path that already reads
+    // several. Not scoped to one notebook: a template could be applied into
+    // any of them.
     final t = _repo.getSetting('templates');
     if (t is Map) yield jsonEncode(t);
     // **The ten notable deletions are a garbage-collection root** (v0.17 plan,
@@ -8209,125 +8214,7 @@ class AppState extends ChangeNotifier
     return depth;
   }
 
-  // ── Page templates (ORG-9) ─────────────────────────────────────────────
-
-  /// Built-ins first, then the user's own. A user template that shares a
-  /// built-in's name shadows it (their content wins in [applyTemplate]), so
-  /// customising a built-in is just "save under the same name".
-  List<String> templateNames() {
-    final t = _repo.getSetting('templates');
-    final user = t is Map ? t.keys.cast<String>().toList() : <String>[];
-    return [
-      ...builtinTemplates.keys,
-      ...user.where((n) => !builtinTemplates.containsKey(n)),
-    ];
-  }
-
-  void saveCurrentAsTemplate(String name) {
-    final t =
-        (_repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
-    t[name] = jsonEncode({
-      'page': pageProps.toJson(),
-      'blocks': [for (final b in blocks) b.toJson()],
-    });
-    _repo.setSetting('templates', t);
-    notifyListeners();
-  }
-
-  /// Drop a template onto the page, BELOW whatever is already there.
-  ///
-  /// It used to land on top: page properties replaced outright, and every
-  /// block placed at the coordinates it was saved with — which for a template
-  /// authored on an empty page means over the title band and over the first
-  /// paragraph of whatever you had written. "They dont respect the current
-  /// layout of the page (with the title and stuff), they just go over it all."
-  ///
-  /// So the template's own shape is preserved — every block keeps its position
-  /// RELATIVE to the others — and the whole arrangement is translated to sit
-  /// under the existing content, or at the top of the writing area when the
-  /// page is empty. Page properties are only taken on an empty page: applying
-  /// a template to a page you have been working on must not silently change
-  /// its background or grid.
-  void applyTemplate(String name) {
-    final t = _repo.getSetting('templates');
-    // User template first so a same-named save shadows the built-in.
-    final raw =
-        (t is Map ? t[name] as String? : null) ?? builtinTemplates[name];
-    if (raw == null) return;
-    pushUndo();
-    final j = jsonDecode(raw) as Map<String, dynamic>;
-    final onEmptyPage = blocks.isEmpty;
-    if (onEmptyPage) {
-      pageProps =
-          PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
-    }
-
-    // Where the template's top edge should end up, and how far that is from
-    // where it was authored.
-    final incoming = <Block>[];
-    for (final bj in (j['blocks'] as List)) {
-      // `Block.fromJson` reads `j['id'] as String` — a NON-NULLABLE cast — and
-      // the built-in templates carry no ids, because their blocks were written
-      // by hand as literal JSON. So every built-in threw `type 'Null' is not a
-      // subtype of type 'String'` on its very first block, from the day they
-      // were added, and the throw landed in a discarded Future: no dialog, no
-      // red screen, nothing. That is the whole of "clicking any of these does
-      // nothing". A template is a PROTOTYPE, and an id is the one field a
-      // prototype has no business carrying — so one is supplied here rather
-      // than written into the data. A real id in the JSON still wins.
-      final src =
-          Block.fromJson({'id': newId(), ...(bj as Map).cast<String, dynamic>()});
-      final fresh = Block(
-        id: newId(),
-        type: src.type,
-        // `rawType` and `unknownFields` are the two carriers the frozen-format
-        // promise rests on: without them a block written by a NEWER build is
-        // reduced to `"type":"unknown"` and its meaning is gone for good. A
-        // user template saved from a page containing one would have destroyed
-        // it on every apply. `rotation` has the same hazard.
-        rawType: src.rawType,
-        unknownFields: src.unknownFields,
-        rotation: src.rotation,
-        x: src.x,
-        y: src.y,
-        w: src.w,
-        h: src.h,
-        placement: src.placement,
-        content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
-      );
-      if (fresh.type == BlockType.ink) {
-        for (final sj in (fresh.content['strokes'] as List)) {
-          (sj as Map)['id'] = newId();
-        }
-      }
-      incoming.add(fresh);
-    }
-    if (incoming.isEmpty) return;
-
-    // Translate as one piece, so the template still looks like itself.
-    final templateTop = incoming.map((b) => b.y).reduce(math.min);
-    final landAt = onEmptyPage ? contentTop : contentExtent().bottom + 24;
-    final dy = landAt - templateTop;
-    // Ink is page-absolute (Ink Spec §3): its stroke points do not move with
-    // the block, so a translated ink block would leave its drawing behind.
-    final movesInk = dy != 0;
-    for (final b in incoming) {
-      b.y += dy;
-      if (movesInk && b.type == BlockType.ink) _translateInk(b, dy);
-    }
-
-    // Through addBlock so each lands on top of the stack rather than at z 0,
-    // which is what put a freshly applied template UNDERNEATH existing blocks.
-    for (final b in incoming) {
-      blocks.add(b
-        ..z = (blocks.isEmpty
-            ? 0
-            : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1));
-    }
-    docRevision++;
-    markDirty();
-    notifyListeners();
-  }
+  // ── Moving blocks about ────────────────────────────────────────────────
 
   /// Shift an ink block's strokes with its box. Stroke coordinates are
   /// page-absolute (Ink Spec §3), so moving the block alone leaves the drawing
@@ -8666,6 +8553,53 @@ class AppState extends ChangeNotifier
   /// So the position is not guessed. The section's pages are put in the order
   /// they should be in and renumbered — the same thing `sortSection` does, and
   /// bounded the same way, by the number of pages in one section.
+  /// **The shape of the page a new page is filed next to.**
+  ///
+  /// A page's shape is its [PageProps] — ruling or grid, grid size, width,
+  /// and whether it is a boundless canvas or a sheet of paper. A new page
+  /// takes it from [filedAfter], the page it is being inserted beneath, or
+  /// from the last page already in the section when it is going at the end.
+  ///
+  /// **Why from the neighbour rather than from the page on screen.** Only the
+  /// paper size and orientation were ever carried over, and they were taken
+  /// from whatever page you happened to be looking at — so setting a section
+  /// to grid paper did nothing for the next page in it, while adding a page
+  /// to Maths straight after reading an essay in English dragged the essay's
+  /// shape across. Pages live in sections, so the neighbour is the honest
+  /// source: set your Maths pages to grid once and new Maths pages are grid,
+  /// with nothing to configure and no setting to find.
+  ///
+  /// This is what replaced page templates for the LAYOUT half of the job
+  /// ([duplicatePage] is the other half): the shape applies itself instead of
+  /// being asked for, which is the only version of it that costs no clicks.
+  ///
+  /// Null when the section has no pages yet — then the defaults are right.
+  Future<PageProps?> _shapeToInherit(
+      String sectionId, TreeNode? filedAfter) async {
+    final nb = notebookId;
+    if (nb == null) return null;
+    final existing = pagesOf(sectionId);
+    final src = filedAfter ?? (existing.isEmpty ? null : existing.last);
+    if (src == null) return null;
+    // The open page's props are the ones on the SCREEN, which can be newer
+    // than the ones on disk — the shape may have been changed a moment ago.
+    final from =
+        src.id == pageId ? pageProps : (await engine.loadPage(nb, src.id)).props;
+    // A copy: `PageProps` is mutable, and the new page must not share the
+    // object the page it was modelled on is still using.
+    return PageProps.fromJson(from.toJson());
+  }
+
+  /// Give the page just created in [sectionId] the shape of its neighbour.
+  ///
+  /// Written BEFORE the page is opened, so [selectPage] loads it the way it
+  /// loads any other page's and nothing has to be marked dirty.
+  Future<void> _inheritShape(String sectionId, TreeNode? filedAfter,
+      String newPageId) async {
+    final shape = await _shapeToInherit(sectionId, filedAfter);
+    if (shape != null) importPage(notebookId!, newPageId, const <Block>[], shape);
+  }
+
   Future<void> addPage({String? sectionId}) async {
     sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -8704,17 +8638,18 @@ class AppState extends ChangeNotifier
       }
     }
 
-    // Inherit the shape of the page you were on BEFORE it is replaced by the
-    // new one's props. A notebook you are writing an essay in should not drop
-    // back to open canvas every time you start the next page.
-    final inherit = pageProps.isPaged
-        ? (paper: pageProps.paperSize, landscape: pageProps.landscape)
-        : null;
+    // The shape of the page it is filed next to — see [_shapeToInherit]. A
+    // notebook you are writing an essay in should not drop back to open
+    // canvas every time you start the next page, and a section you set to
+    // grid paper should stay grid paper.
+    await _inheritShape(sectionId, current, n.id);
     reloadNodes();
     await selectPage(n.id);
-    if (inherit != null) {
+    if (pageProps.isPaged) {
+      // A sheet needs its body box, and its blocks pulled inside the paper.
+      // That is [setPageLayout]'s work, not a property assignment's.
       setPageLayout('paged',
-          paper: inherit.paper, landscape: inherit.landscape);
+          paper: pageProps.paperSize, landscape: pageProps.landscape);
     }
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
     notifyListeners();
@@ -8750,10 +8685,103 @@ class AppState extends ChangeNotifier
       p.position = 'a${(seq++).toString().padLeft(15, '0')}';
       _putNode(notebookId!, p);
     }
+    // From the page it is filed under, for the same reason as [addPage].
+    await _inheritShape(sectionId, current, n.id);
     reloadNodes();
     await selectPage(n.id);
+    if (pageProps.isPaged) {
+      setPageLayout('paged',
+          paper: pageProps.paperSize, landscape: pageProps.landscape);
+    }
     pendingTitleEdit = n.id;
     notifyListeners();
+  }
+
+  /// **Copy a page — everything on it — to a new page just below it.**
+  ///
+  /// The honest version of what page templates were reaching for. A layout
+  /// you want again is a page you keep, and copying one needs no new noun, no
+  /// picker and no preview, because you are looking at the thing you are
+  /// about to copy. The owner on templates: *"at the moment they really arent
+  /// that helpful at all, i havent personally used them beyond basic testing,
+  /// and i think in their current format they arent actually useful to really
+  /// anyone."*
+  ///
+  /// Sub-pages are NOT copied: this is one page, filed after the source's
+  /// whole subtree so it can never land between a page and its children.
+  /// Returns the copy's id, or null when there was nothing to copy.
+  Future<String?> duplicatePage(String pageId) async {
+    final nb = notebookId;
+    final src = node(pageId);
+    final sectionId = src?.parentId;
+    if (nb == null ||
+        src == null ||
+        src.kind != NodeKind.page ||
+        sectionId == null) {
+      return null;
+    }
+    // The source is usually the page being looked at, and its last keystroke
+    // may still be sat on the save debounce. Copy what is on the SCREEN, not
+    // what was last written to disk.
+    await flushSave();
+    final data = await engine.loadPage(nb, pageId);
+
+    final siblings = pagesOf(sectionId);
+    final at = siblings.indexWhere((p) => p.id == pageId);
+    if (at < 0) return null;
+    final copy = TreeNode(
+      kind: NodeKind.page,
+      // The same words [Repository.duplicateNotebook] uses, so the two things
+      // in this app that duplicate are named the same way.
+      title: '${src.title} copy',
+      parentId: sectionId,
+      level: src.level,
+      position: _nextPosition(),
+    );
+    // Past everything indented beneath the source, the rule [addPage] follows.
+    var after = at;
+    while (after + 1 < siblings.length &&
+        siblings[after + 1].level > src.level) {
+      after++;
+    }
+    final ordered = [...siblings]..insert(after + 1, copy);
+    var seq = nowMs();
+    for (final p in ordered) {
+      p.position = 'a${(seq++).toString().padLeft(15, '0')}';
+      _putNode(nb, p);
+    }
+
+    // **A new id for every block.** A block id is the handle that a reminder,
+    // a flashcard's review history and a link hold a block by, so a copy that
+    // reused them would answer for the original — two pages laying claim to
+    // one review schedule. Blob references are copied AS THEY ARE: the bytes
+    // are content-addressed, so a picture is shared rather than stored twice.
+    final copied = [
+      for (final b in data.blocks)
+        Block.fromJson({...b.toJson(), 'id': newId()})
+    ];
+    importPage(nb, copy.id, copied, data.props);
+
+    // **A locked page must not launder into an unlocked copy.** A passcode on
+    // the section above is inherited for free, because a lock is resolved by
+    // walking UP from the page — but one on the page itself has to come
+    // along. The copy is exactly as unlocked as the source is at this moment,
+    // which is the honest answer: reading the source is what you just did.
+    final own = protectionFor(pageId);
+    if (own != null) {
+      _repo.setSetting(_protectKey(copy.id), own.toJson());
+      _protectedIds.add(copy.id);
+      if (_unlocked.containsKey(pageId)) {
+        _unlocked[copy.id] = _unlocked[pageId];
+      }
+      _gateRevision++;
+    }
+
+    reloadNodes();
+    await selectPage(copy.id);
+    pendingTitleEdit = copy.id; // the first thing anybody does is name it
+    notifyListeners();
+    return copy.id;
   }
 
   void renameNode(String id, String title) {
