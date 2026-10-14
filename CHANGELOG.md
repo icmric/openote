@@ -4,6 +4,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — text styles work together
+
+- **Any style can be combined with any other, in either order.** Bold and a
+  colour, italic inside bold, a highlighted link, a coloured superscript —
+  before, only the outer style showed and the inner one's symbols were left
+  on the page as text. Notes you wrote before this show what you meant
+  straight away; nothing needs re-doing.
+- **Italicising the last word of a bold phrase** no longer leaves a stray
+  asterisk. Nor does doing the same at its start, or with strike-through.
+- **Taking a style off works whatever else is on the word.** Removing the
+  colour from a bold red word used to add a second colour instead, and a
+  selection made by dragging could miss the style it was meant to change.
+- **Backspace at the end of a styled word deletes the last letter**, even
+  when several styles end there together — it used to break one of them.
+- **Recolouring part of a coloured phrase** keeps the rest of it coloured.
+- Pressing Ctrl+_ three times now gives bold italic, the way Ctrl+* does.
+
 ### Fixed — board cards, flashcards, and where each notebook was
 
 - **Board cards can be edited and deleted.** Clicking a card opened it and
