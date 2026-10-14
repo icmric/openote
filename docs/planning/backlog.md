@@ -27,15 +27,31 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
 | 4 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
 | 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.8 |
-| 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
-| 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
-| 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it. |
-| 8 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
-| 9 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
-| 10 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
-| 11 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
-| 12 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 13 | The structured `nodes` text model | XL | Gates per-run styling, paragraph collapse and real co-editing. §2.2 |
+| 6 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
+| 7 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
+| 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
+| 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
+| 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
+| 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
+| 12 | The structured `nodes` text model | XL | Gates per-run styling, paragraph collapse and real co-editing. §2.2 |
+
+---
+
+## Raised on GitHub, not yet placed
+
+Read 14 October. Each is waiting for a decision on which release, if any; the
+sizes are first guesses. When one is placed it moves to that release's document.
+
+| Issue | Item | Size | Notes |
+|---|---|---|---|
+| [#20](https://github.com/icmric/openote/issues/20) | **Pan, select and move over PDFs and images** | M–L | Not yet diagnosed, and the first to look at: reported as making imported PDFs "almost impossible to work with". Middle-drag pans empty canvas but selects over a PDF or picture; box-select cannot start on top of one, and takes a whole object at the slightest overlap; strokes merge into one object that cannot be split; a locked PDF in a mixed selection stops everything moving; the selection box sometimes moves without its content, and things jump after a delete. Also asked: configurable pan and zoom chords for tablet users (Alt-drag, Shift+Alt-drag) |
+| [#12](https://github.com/icmric/openote/issues/12) | **A theme catalogue** | M | True Black for OLED, high-contrast light and dark, a few calm alternatives. The issue's own recommendation is ten; True Black and the two high-contrast themes are most of the value. Needs a registry in place of today's one light and one dark `ThemeData` |
+| [#15](https://github.com/icmric/openote/issues/15) | **An interface scale** | M | One multiplier for the app's chrome, leaving note text alone. Do it beside v1.0.2's text-scaling bug, which is the same widths measured without a scale |
+| [#14](https://github.com/icmric/openote/issues/14) | **An all-notebooks navigator** | L | Every notebook as a top-level row, expandable. Navigation only — the issue rules out several editors. The smaller cousin of v1.0.3's [several notebooks open at once](v1.0.3.md#several-notebooks-open-at-once) |
+| [#18](https://github.com/icmric/openote/issues/18) | **Navigator suggestions** | S each | Put "add section", "add group" and "add page" below the last item, where people look; show the recycle bin as a summary ("3 pages · 1 goes in 5 days") rather than a button that looks like delete; the section name repeated above its pages, where right-click does nothing; "Move to group" offering a new group; "exam date" as a general countdown; shorter menu labels; choosing a section's or page's icon |
+| [#7](https://github.com/icmric/openote/issues/7) | **Custom colours** | S–M | Saved palettes and an eyedropper for ink and text |
+| [#7](https://github.com/icmric/openote/issues/7) | **Self-hosted sync, explained** | S | Plain instructions for keeping a notebook on your own server (Nextcloud, WebDAV) with the folder sync that exists |
+| [#7](https://github.com/icmric/openote/issues/7) | **German handwriting recognition and spelling** | XL | Recognition is the surface ink-to-math is waiting for (decided against, below); spelling may be smaller on its own |
 
 ---
 
@@ -254,6 +270,7 @@ Each would be welcome; each has a reason it is not next, and a trigger.
 | **3D graphs** | Needs a second grammar (two variables), a second painter and a projection. Measured cheap to *draw* — 0.60 ms/frame at 60×60 — and expensive to *fit in*. 2D is shaped so 3D lands as an added file. | The owner asking for it directly |
 | **Android / tablet** | Not the same app on a smaller screen: sync is a folder, and scoped storage makes that a new storage backend | Desktop settled, and demand |
 | **Ink-to-math** | High appeal, XL cost, no recognition surface to build on | Usage evidence from the study loop |
+| **Plugins** | A plugin runs with the app's access to every note, and the owner's answer on [#10](https://github.com/icmric/openote/issues/10) is security: "no plans as of yet … due to the potential security implications" | A design that sandboxes one |
 | **Real-time co-editing** | A transport swap over the op log *later*; per-character merge needs §2.2 first. Shared-folder and git group notebooks already cover group study | §2.2 landing |
 | **A first-party sync service** | Contradicts "point it at a folder you already have", which is what makes self-hosting trivial | Users asking |
 | **PPTX rendering** | Needs a converter on import, or export-to-PDF first. A `.pptx` lands as an attachment | Someone needing it |
