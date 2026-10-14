@@ -25,6 +25,7 @@ import '../core/open_target.dart'
 import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
+import '../model/block_metrics.dart';
 import '../model/history.dart';
 import '../model/inline_atom.dart';
 import '../math/active_math.dart';
@@ -8260,24 +8261,12 @@ class AppState extends ChangeNotifier
   /// content clips, and anything that appends "below the last box" lands on
   /// top of the user's writing.
   ///
-  /// Estimating from the text is coarse — it ignores wrapping, so it can still
-  /// undershoot a long unwrapped paragraph — but it is far closer than a
-  /// constant, and it errs low only where a constant erred catastrophically.
-  double estimatedHeight(Block b) {
-    if (b.type != BlockType.text) return 60;
-    final text = b.content['text'] as String? ?? '';
-    if (text.isEmpty) return 60;
-    final size = (b.content['fontSize'] as num?)?.toDouble() ?? 15;
-    final lh = (b.content['lineHeight'] as num?)?.toDouble() ?? 1.5;
-    // Very rough wrap estimate: characters that fit across the box, at ~0.5em
-    // per character for a proportional face.
-    final perLine = ((b.w - 20) / (size * 0.5)).clamp(8, 400);
-    var lines = 0;
-    for (final l in text.split('\n')) {
-      lines += l.isEmpty ? 1 : (l.length / perLine).ceil();
-    }
-    return (lines * size * lh + 16).clamp(36, 20000);
-  }
+  /// The estimate lives in `model/block_metrics.dart`, per type: code from its
+  /// line count, a table from its rows, and a paragraph's inline tables from
+  /// their own size rather than as the one line of text their reference is.
+  /// It errs high where it must guess — a gap is a nit, an overlap hides
+  /// somebody's writing.
+  double estimatedHeight(Block b) => estimateBlockHeight(b);
 
   /// Content-based page size (used off-view, e.g. export). The on-screen page
   /// additionally grows to fill the viewport — computed in the canvas widget.
@@ -9206,6 +9195,20 @@ class AppState extends ChangeNotifier
     // never find — which is precisely the bug this exists to close.
     pushNodeUndo(id);
     notifyListeners();
+  }
+
+  /// [deleteNode] for ANY notebook — the external API's delete (spec 14).
+  ///
+  /// The open notebook goes through [deleteNode] itself, so the navigator,
+  /// the page switch and Ctrl+Z all behave exactly as for a click. Any other
+  /// notebook gets the same soft delete and the same op, minus the UI: it is
+  /// in that notebook's recycle bin, recoverable for the usual thirty days.
+  Future<void> deleteNodeIn(String nb, String id) async {
+    if (nb == notebookId) return deleteNode(id);
+    if (notebookIsReadOnly(nb)) return;
+    final at = nowMs();
+    _repo.softDeleteNode(nb, id, at: at);
+    _recorderFor(nb)?.nodeDeleted(id, at: at);
   }
 
   /// Where to go once [id] is deleted: its neighbour in the SAME section.
