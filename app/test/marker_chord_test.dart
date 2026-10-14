@@ -299,7 +299,11 @@ void main() {
       expect(typed(), '==word==');
     });
 
-    test('underscores climb italic then bold and stop at two', () {
+    test('underscores climb italic, bold, then both — and stop at three', () {
+      // Two, until `___both___` became bold italic (GitHub #17: it is what
+      // `__` round `_italic_` comes out as, and what CommonMark says it
+      // means). The ladder is measured from the grammar, so it now climbs
+      // exactly as the asterisk one does.
       if (!haveSqlite) return;
       edit('a wo|rd');
       app.cycleMarker('_');
@@ -307,7 +311,10 @@ void main() {
       app.cycleMarker('_');
       expect(typed(), '__word__');
       app.cycleMarker('_');
-      expect(typed(), '__word__');
+      expect(typed(), '___word___');
+      expect(scanKinds(typed()), contains(MdInline.boldItalic));
+      app.cycleMarker('_');
+      expect(typed(), '___word___');
     });
 
     test('a character the grammar does not use is not ours at all', () {

@@ -4,7 +4,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
+import '../markdown/md_render.dart'
+    show indentPx, inlineLinkStyle, inlineRunStyle, kBulletGutter;
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
 import '../model/inline_atom.dart';
@@ -361,6 +362,38 @@ class LiveMarkdownController extends TextEditingController {
         ]
       ];
 
+  /// **[s, e) without the invisible markers at either end** — the
+  /// characters somebody actually selected.
+  ///
+  /// Markers have no width, so a drag across a word can start or end on
+  /// either side of them: over `{{#e53935 **w**}}` the same visible selection
+  /// can arrive as 0–17, 10–15 or 12–13. The toolbar's toggles look for the
+  /// run AROUND a selection, and only the last of those is inside anything —
+  /// so un-bolding a red bold word, picked out by dragging, bolded it a second
+  /// time instead. Asking here first makes all three the same selection.
+  ///
+  /// Style markers only. An equation or a table is drawn as one object
+  /// standing on its first character with the rest hidden, and shrinking into
+  /// that hidden tail would cut its source in half.
+  TextRange visibleSelection(int s, int e) {
+    final marks = [
+      for (final r in _runs())
+        if (r.kind == MdRunKind.marker) ...[
+          if (r.openLen > 0) TextRange(start: r.start, end: r.start + r.openLen),
+          if (r.closeLen > 0) TextRange(start: r.end - r.closeLen, end: r.end),
+        ]
+    ];
+    bool hidden(int i) => marks.any((m) => i >= m.start && i < m.end);
+    var a = s, b = e;
+    while (a < b && hidden(a)) {
+      a++;
+    }
+    while (b > a && hidden(b - 1)) {
+      b--;
+    }
+    return TextRange(start: a, end: b);
+  }
+
   static void _lineRuns(String line, int lineStart, List<_MdRun> out) {
     if (line.isEmpty) return;
     // Whole-line constructs are drawn as one object with the rest of the
@@ -376,8 +409,14 @@ class LiveMarkdownController extends TextEditingController {
       final p = _prefixRe.firstMatch(line);
       if (p != null) from = p.end;
     }
-    final sub = line.substring(from);
-    final regionStart = lineStart + from;
+    _inlineRuns(line.substring(from), lineStart + from, out, 0);
+  }
+
+  /// One level of [_lineRuns]: the same levels [_inline] draws, asked through
+  /// the same [_opens], so the caret is told about every hidden marker the
+  /// renderer hides — including those of a run inside another run.
+  static void _inlineRuns(
+      String sub, int regionStart, List<_MdRun> out, int depth) {
     for (final m in _inlineRe.allMatches(sub)) {
       final c = classifyInline(m);
       // An inline equation is drawn as ONE object, so everything after the
@@ -434,6 +473,10 @@ class LiveMarkdownController extends TextEditingController {
           closeLen: mk.closeLen,
           kind: MdRunKind.marker,
         ));
+        if (_opens(c.kind, mk.openLen, mk.closeLen, depth)) {
+          _inlineRuns(c.label!, regionStart + m.start + mk.openLen, out,
+              depth + 1);
+        }
         continue;
       }
       // A bare URL is its own label: there is nothing to hide, and hiding
@@ -447,8 +490,21 @@ class LiveMarkdownController extends TextEditingController {
         closeLen: c.closeLen,
         kind: MdRunKind.marker,
       ));
+      if (_opens(c.kind, c.openLen, c.closeLen, depth)) {
+        _inlineRuns(c.inner, regionStart + m.start + c.openLen, out, depth + 1);
+      }
     }
   }
+
+  /// Does a run of [kind] get its inner text walked again, at [depth]?
+  ///
+  /// Asked by the renderer and by the caret table alike, so they cannot
+  /// disagree. A link only opens when its address is actually hidden
+  /// (both markers known): drawn as source, its words are source too.
+  static bool _opens(MdInline kind, int openLen, int closeLen, int depth) =>
+      depth < kInlineNestDepth &&
+      inlineKindNests(kind) &&
+      (kind != MdInline.extLink || (openLen > 0 && closeLen > 0));
 
   @override
   set value(TextEditingValue newValue) {
@@ -687,6 +743,14 @@ class LiveMarkdownController extends TextEditingController {
   ///   takes the markers with it.
   ///
   /// Delete (forward) is the mirror of all three.
+  ///
+  /// **And runs nest** (GitHub #17), so markers sit side by side: the end of
+  /// `**{{#e53935 word}}**` is `}}` then `**`, both invisible. Asking one run
+  /// at a time, the bold run's "last character before my closer" was the
+  /// colour's `}`, and Backspace broke the colour. So the caret first steps
+  /// over EVERY hidden marker beside it, the visible character beyond them is
+  /// the one deleted, and if that empties runs — one, or several nested — the
+  /// outermost emptied run goes whole.
   TextEditingValue? markerAwareDelete(TextEditingValue v,
       {required bool forward}) {
     final sel = v.selection;
@@ -704,38 +768,59 @@ class LiveMarkdownController extends TextEditingController {
       if (!forward && at == r.end) return _spliced(v, from, r.end);
       if (forward && at == from) return _spliced(v, from, r.end);
     }
-    for (final r in _runs(t)) {
-      final innerStart = r.start + r.openLen;
-      final innerEnd = r.end - r.closeLen;
-      if (innerEnd <= innerStart) continue;
-      // A one-character inner run cannot survive the deletion, so the markers
-      // go with it rather than being left as literal asterisks.
-      final lastOne = _prevBoundary(t, innerEnd) <= innerStart;
-      if (!forward) {
-        if (at == r.end) {
-          return lastOne
-              ? _spliced(v, r.start, r.end)
-              : _spliced(v, _prevBoundary(t, innerEnd), innerEnd);
-        }
-        if (at == innerEnd && lastOne) return _spliced(v, r.start, r.end);
-        if (at == innerStart) {
-          if (r.start == 0) return null;
-          return _spliced(v, _prevBoundary(t, r.start), r.start);
-        }
-      } else {
-        if (at == r.start) {
-          return lastOne
-              ? _spliced(v, r.start, r.end)
-              : _spliced(v, innerStart, _nextBoundary(t, innerStart), keep: at);
-        }
-        if (at == innerStart && lastOne) return _spliced(v, r.start, r.end);
-        if (at == innerEnd) {
-          if (r.end >= t.length) return null;
-          return _spliced(v, r.end, _nextBoundary(t, r.end), keep: at);
+    final runs = [
+      for (final r in _runs(t))
+        if (r.kind == MdRunKind.marker) r
+    ];
+    if (runs.isEmpty) return null;
+    final marks = [
+      for (final r in runs) ...[
+        if (r.openLen > 0) (start: r.start, end: r.start + r.openLen),
+        if (r.closeLen > 0) (start: r.end - r.closeLen, end: r.end),
+      ]
+    ];
+
+    // Step over every hidden marker between the caret and the next visible
+    // character, in the direction of the delete.
+    var p = at;
+    var skipped = false;
+    for (var moved = true; moved;) {
+      moved = false;
+      for (final m in marks) {
+        if (forward ? (m.start == p && m.end > p) : (m.end == p && m.start < p)) {
+          p = forward ? m.end : m.start;
+          skipped = moved = true;
+          break;
         }
       }
     }
-    return null;
+    if (forward ? p >= t.length : p <= 0) return null; // nothing to delete
+
+    // The visible character itself.
+    final d0 = forward ? p : _prevBoundary(t, p);
+    final d1 = forward ? _nextBoundary(t, p) : p;
+
+    // The outermost run that deleting it would leave with nothing to show —
+    // its markers go with it, and so does every run nested inside.
+    ({int start, int end})? emptied;
+    for (final r in runs) {
+      final innerStart = r.start + r.openLen;
+      final innerEnd = r.end - r.closeLen;
+      if (d0 < innerStart || d1 > innerEnd) continue;
+      var shown = innerEnd - innerStart;
+      for (final m in marks) {
+        if (m.start >= innerStart && m.end <= innerEnd) shown -= m.end - m.start;
+      }
+      if (shown - (d1 - d0) > 0) continue;
+      if (emptied == null || r.end - r.start > emptied.end - emptied.start) {
+        emptied = (start: r.start, end: r.end);
+      }
+    }
+    if (emptied != null) return _spliced(v, emptied.start, emptied.end);
+    // Nothing hidden in the way and nothing emptied: the platform's own
+    // delete is already right.
+    if (!skipped) return null;
+    return forward ? _spliced(v, d0, d1, keep: at) : _spliced(v, d0, d1);
   }
 
   /// Surrogate-pair-safe neighbours: `**bold🙂**` must not lose half an emoji.
@@ -1534,8 +1619,15 @@ class LiveMarkdownController extends TextEditingController {
     _inline(line, lineStart, base, out);
   }
 
-  void _inline(
-      String sub, int regionStart, TextStyle cBase, List<InlineSpan> out) {
+  /// One level of a line's inline runs. [depth] counts the runs [sub] is
+  /// inside: a run that can hold others ([inlineKindNests]) hands its inner
+  /// text back to this with its own style added — GitHub #17, where
+  /// `**{{#e53935 word}}**` drew a bold `{{#e53935 word}}`. The caret table
+  /// ([_lineRuns]) walks the same levels, so every marker drawn hidden here is
+  /// one the caret knows to step over.
+  void _inline(String sub, int regionStart, TextStyle cBase,
+      List<InlineSpan> out,
+      [int depth = 0, Set<MdInline> within = const {}]) {
     var last = 0;
     for (final m in _inlineRe.allMatches(sub)) {
       if (m.start > last) {
@@ -1689,47 +1781,25 @@ class LiveMarkdownController extends TextEditingController {
           // total.
           openLen = closeLen = 0;
           inner = cBase;
+        // **One rule for what a run looks like, shared with the reading view**
+        // (`inlineRunStyle`). Each renderer used to hold its own copy, which is
+        // how bold came to be w700 here and w600 there. Here [cBase] is
+        // absolute, so it is both the style to build on and the resolved one.
+        // A sub- or superscript still shifts its ink with a shadow rather than
+        // a placeholder, so the character count — and every caret offset — is
+        // untouched.
         case MdInline.boldItalic:
-          inner = cBase.copyWith(
-              fontWeight: FontWeight.w600, fontStyle: FontStyle.italic);
         case MdInline.bold:
-          // w600 — the read renderer's weight. It used to be w700 here, so
-          // bold text physically changed shape on entering edit mode.
-          inner = cBase.copyWith(fontWeight: FontWeight.w600);
         case MdInline.italic:
-          inner = cBase.copyWith(fontStyle: FontStyle.italic);
         case MdInline.code:
-          inner = cBase.copyWith(
-              fontFamily: 'JetBrains Mono',
-              fontFamilyFallback: onoteFontFallback,
-              fontSize: (cBase.fontSize ?? 14) * 0.9,
-              color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
-              backgroundColor:
-                  dark ? OnoteColors.night100 : OnoteColors.paper100);
         case MdInline.strike:
-          inner = cBase.copyWith(decoration: TextDecoration.lineThrough);
         case MdInline.subscript:
-          // Same helper the read renderer uses, so `H~2~O` does not change
-          // shape when the caret leaves the block. It shifts the ink with a
-          // shadow rather than a placeholder precisely so the character count
-          // — and therefore every caret offset — is untouched.
-          inner = subSupStyle(cBase, sup: false, dark: dark);
         case MdInline.superscript:
-          inner = subSupStyle(cBase, sup: true, dark: dark);
         case MdInline.highlight:
-          inner = cBase.copyWith(
-              backgroundColor: dark
-                  ? OnoteColors.brass700.withValues(alpha: .45)
-                  : const Color(0xFFF7E27A));
         case MdInline.underline:
-          inner = cBase.copyWith(decoration: TextDecoration.underline);
         case MdInline.colour:
-          final hex = c.target!;
-          final v = int.parse(hex, radix: 16);
-          inner = cBase.copyWith(
-              color: hex.length == 8
-                  ? Color(((v & 0xFF) << 24) | (v >> 8))
-                  : Color(0xFF000000 | v));
+          inner = inlineRunStyle(c, cBase,
+              resolved: cBase, dark: dark, within: within);
         case MdInline.wikiLink:
         case MdInline.extLink:
           // **A link is its words, not its address** — the same change of
@@ -1752,11 +1822,12 @@ class LiveMarkdownController extends TextEditingController {
           openLen = linkMk?.openLen ?? 0;
           closeLen = linkMk?.closeLen ?? 0;
           final linkInk = dark ? OnoteColors.ink300 : OnoteColors.ink600;
-          inner = cBase.copyWith(
-              color: linkInk,
-              decoration:
-                  linkMk == null ? null : TextDecoration.underline,
-              decorationColor: linkInk);
+          // Underlined ON TOP of any line already there — a link inside
+          // struck-through text keeps the strike — and only when its address
+          // is actually hidden.
+          inner = linkMk == null
+              ? cBase.copyWith(color: linkInk)
+              : inlineLinkStyle(cBase, linkInk, cBase, within: within);
         case MdInline.bareUrl:
         case MdInline.math: // handled above; listed to keep the switch total
           // A bare URL is already its own label — there is nothing to hide,
@@ -1775,10 +1846,16 @@ class LiveMarkdownController extends TextEditingController {
       // Backspace).
       final markStyle = _hidden(cBase);
       final full = sub.substring(m.start, m.end);
-      // open marker + inner + close marker — substrings guarantee coverage.
+      final body = full.substring(openLen, full.length - closeLen);
+      // open marker + inner + close marker — substrings guarantee coverage,
+      // and so does the walk inside: it emits nothing but pieces of [body].
       out.add(TextSpan(text: full.substring(0, openLen), style: markStyle));
-      out.add(TextSpan(
-          text: full.substring(openLen, full.length - closeLen), style: inner));
+      if (_opens(c.kind, openLen, closeLen, depth)) {
+        _inline(body, regionStart + m.start + openLen, inner, out, depth + 1,
+            {...within, c.kind});
+      } else {
+        out.add(TextSpan(text: body, style: inner));
+      }
       out.add(TextSpan(
           text: full.substring(full.length - closeLen), style: markStyle));
       last = m.end;

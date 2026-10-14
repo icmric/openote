@@ -444,7 +444,10 @@ class _MarkdownViewState extends State<MarkdownView> {
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost),
+                  // The task's OWN style as the base, not the paragraph's: the editor
+                  // builds a done task's runs on its strike and grey, and an
+                  // underlined word in one must look the same in both.
+                  children: inlineSpans(cb.group(3)!, checked ? baseStyle.copyWith(decoration: TextDecoration.lineThrough, color: OnoteColors.graphite400) : baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost),
                   style: checked
                       ? baseStyle.copyWith(
                           decoration: TextDecoration.lineThrough,
@@ -703,16 +706,156 @@ TextStyle subSupStyle(TextStyle base, {required bool sup, required bool dark}) {
 /// Inline span parsing: **bold**, *italic*, `code`, ~~strike~~, ==highlight==,
 /// ++underline++, inline math $…$ (TEXT-1a), [[Page|id]] wiki-links (EMBED-1)
 /// and external `[label](https://…)` links (TEXT-1).
+/// The colour a `{{#rrggbb …}}` or `{{#rrggbbaa …}}` run names.
+Color inlineHexColour(String hex) {
+  final v = int.parse(hex, radix: 16);
+  return hex.length == 8
+      ? Color(((v & 0xFF) << 24) | (v >> 8))
+      : Color(0xFF000000 | v);
+}
+
+const Color _clear = Color(0x00000000);
+
+/// Is [s] drawn through its shadow — a sub- or superscript, whose glyph is
+/// clear and whose ink is the shadow [subSupStyle] gives it?
+bool _throughShadow(TextStyle s) =>
+    s.color == _clear && (s.shadows?.isNotEmpty ?? false);
+
+/// [s] in the colour [c] — the shadow's colour, for text drawn through one.
+/// Tinting the glyph instead would draw a sub- or superscript twice, once
+/// where it sits and once where it is meant to sit.
+TextStyle _inked(TextStyle s, Color c) => _throughShadow(s)
+    ? s.copyWith(shadows: [
+        for (final x in s.shadows!)
+          Shadow(color: c, offset: x.offset, blurRadius: x.blurRadius)
+      ])
+    : s.copyWith(color: c);
+
+/// [s] with [d] ADDED to whatever line it already has.
+///
+/// `copyWith(decoration:)` replaces, so strike inside underline used to lose
+/// the underline. [around] is consulted when [s] carries no line of its own:
+/// the reading view builds its runs as styles RELATIVE to the paragraph, and a
+/// ticked task's strike-through lives on the paragraph, not in the run.
+TextStyle _decorated(TextStyle s, TextDecoration d, TextStyle around) {
+  final have = s.decoration ?? around.decoration;
+  final line = have == null || have == TextDecoration.none
+      ? d
+      : TextDecoration.combine([have, d]);
+  return s.copyWith(
+      decoration: line,
+      // A clear glyph would draw a clear line; use the ink it is drawn in.
+      decorationColor: _throughShadow(s) ? s.shadows!.first.color : null);
+}
+
+/// **What one inline run adds to the text inside it**, on top of [acc].
+///
+/// The ONE place a run's look is decided, for both renderers — they used to
+/// hold a copy each, which is how bold came to be w700 in one and w600 in
+/// the other. [acc] is whatever the runs around this one have built: an
+/// absolute style in the live editor, and a style relative to the paragraph
+/// in the reading view, which has to inherit the paragraph's own size (a bold
+/// word in a heading is heading-sized). [resolved] is the absolute style the
+/// text will finally be drawn in, for the kinds that must know it — code is
+/// sized from the type around it, a sub- or superscript paints in its ink.
+///
+/// Runs nest — see [inlineKindNests] — so this is applied once per level:
+/// `**{{#e53935 word}}**` is bold, then that bold in red.
+///
+/// [within] is the kinds of run this one sits inside. Code has a colour and a
+/// background of its own, and a run the writer coloured or highlighted on
+/// purpose keeps what they chose: what somebody picked beats a default.
+TextStyle inlineRunStyle(MdMatch c, TextStyle acc,
+    {required TextStyle resolved,
+    required bool dark,
+    Set<MdInline> within = const {}}) {
+  switch (c.kind) {
+    case MdInline.bold:
+      return acc.copyWith(fontWeight: FontWeight.w600);
+    case MdInline.italic:
+      return acc.copyWith(fontStyle: FontStyle.italic);
+    case MdInline.boldItalic:
+      return acc.copyWith(
+          fontWeight: FontWeight.w600, fontStyle: FontStyle.italic);
+    case MdInline.underline:
+      return _decorated(acc, TextDecoration.underline, resolved);
+    case MdInline.strike:
+      return _decorated(acc, TextDecoration.lineThrough, resolved);
+    case MdInline.highlight:
+      return acc.copyWith(
+          backgroundColor: dark
+              ? OnoteColors.brass700.withValues(alpha: .45)
+              : const Color(0xFFF7E27A));
+    case MdInline.colour:
+      return _inked(acc, inlineHexColour(c.target!));
+    case MdInline.subscript:
+      return subSupStyle(resolved, sup: false, dark: dark);
+    case MdInline.superscript:
+      return subSupStyle(resolved, sup: true, dark: dark);
+    case MdInline.code:
+      final mono = acc.copyWith(
+          fontFamily: 'JetBrains Mono',
+          fontFamilyFallback: onoteFontFallback,
+          fontSize: (resolved.fontSize ?? 14) * 0.9,
+          backgroundColor: within.contains(MdInline.highlight)
+              ? null
+              : (dark ? OnoteColors.night100 : OnoteColors.paper100));
+      return within.contains(MdInline.colour)
+          ? mono
+          : _inked(mono, dark ? OnoteColors.ink300 : OnoteColors.ink700);
+    default:
+      return acc;
+  }
+}
+
+/// A link's words: its ink, underlined on top of any line already there.
+///
+/// Inside a run the writer coloured, the link takes THAT colour — the
+/// underline still says it is a link. [within] as for [inlineRunStyle].
+TextStyle inlineLinkStyle(TextStyle acc, Color ink, TextStyle around,
+    {Set<MdInline> within = const {}}) {
+  final keep = within.contains(MdInline.colour);
+  final c = keep ? (acc.color ?? around.color ?? ink) : ink;
+  return _decorated(keep ? acc : acc.copyWith(color: ink),
+          TextDecoration.underline, around)
+      .copyWith(decorationColor: c);
+}
+
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink,
     Color? Function(String latex)? mathLinkTint,
     InlineAtomHost? atomHost]) {
   final spans = <InlineSpan>[];
-  final pattern = mdInlineRe;
+  _inlineInto(text, base, const TextStyle(), 0, const {}, dark, onWikiLink,
+      mathLinkTint, atomHost, spans);
+  return spans;
+}
+
+/// One level of [inlineSpans]. [acc] is the style the runs around this text
+/// have built, RELATIVE to the paragraph — see [inlineRunStyle] for why —
+/// [depth] counts the runs it is inside, capped by [kInlineNestDepth], and
+/// [within] says which kinds they are.
+void _inlineInto(
+    String text,
+    TextStyle base,
+    TextStyle acc,
+    int depth,
+    Set<MdInline> within,
+    bool dark,
+    void Function(String label, String? id)? onWikiLink,
+    Color? Function(String latex)? mathLinkTint,
+    InlineAtomHost? atomHost,
+    List<InlineSpan> spans) {
+  // The absolute style this level is drawn in, for everything that is not a
+  // TextSpan and so cannot inherit one: equations, links, atoms.
+  final resolved = base.merge(acc);
+  // Plain text at the top level carries no style of its own, exactly as it
+  // always has; inside a run it carries the run's.
+  TextSpan plain(String t) => TextSpan(text: t, style: depth == 0 ? null : acc);
   var last = 0;
-  for (final m in pattern.allMatches(text)) {
+  for (final m in mdInlineRe.allMatches(text)) {
     if (m.start > last) {
-      spans.add(TextSpan(text: text.substring(last, m.start)));
+      spans.add(plain(text.substring(last, m.start)));
     }
     // One classifier, shared with the live editor (markdown/md_syntax.dart),
     // so reading and writing can never disagree about what a run of text is.
@@ -738,7 +881,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
               host: atomHost,
               id: c.target!,
               alt: c.inner,
-              style: base,
+              style: resolved,
               dark: dark,
               maxWidth: cons.maxWidth.isFinite ? cons.maxWidth : null,
             ),
@@ -760,16 +903,27 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
             color: dark ? OnoteColors.ink300 : OnoteColors.ink600,
           ),
         ));
+      // **Every run that can hold others** — GitHub #17. Its inner text is
+      // scanned again with this run's style added, so `**{{#e53935 x}}**`
+      // and `{{#e53935 **x**}}` are both bold red, rather than bold with
+      // `{{#e53935 x}}` written in it. See [inlineKindNests].
       case MdInline.colour:
-        final hx = c.target!;
-        final v = int.parse(hx, radix: 16);
-        spans.add(TextSpan(
-          text: c.inner,
-          style: TextStyle(
-              color: hx.length == 8
-                  ? Color(((v & 0xFF) << 24) | (v >> 8))
-                  : Color(0xFF000000 | v)),
-        ));
+      case MdInline.boldItalic:
+      case MdInline.bold:
+      case MdInline.italic:
+      case MdInline.underline:
+      case MdInline.strike:
+      case MdInline.highlight:
+      case MdInline.subscript:
+      case MdInline.superscript:
+        final inner = inlineRunStyle(c, acc,
+            resolved: resolved, dark: dark, within: within);
+        if (depth < kInlineNestDepth) {
+          _inlineInto(c.inner, base, inner, depth + 1, {...within, c.kind},
+              dark, onWikiLink, mathLinkTint, atomHost, spans);
+        } else {
+          spans.add(TextSpan(text: c.inner, style: inner));
+        }
       case MdInline.math:
       case MdInline.mathDisplay:
       case MdInline.mathPadded:
@@ -804,18 +958,39 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           // of its own (the whole-line branch above).
           child: InlineMathAtom(
             latex: c.inner,
-            style: mathStyleIn(base),
+            // `resolved`, so an equation inside a coloured run takes the
+            // colour — and inside a ticked task, the task's grey.
+            style: mathStyleIn(resolved),
             linkTint: mathLinkTint?.call(c.inner),
           ),
         ));
       case MdInline.extLink:
+        final ink = dark ? OnoteColors.ink300 : OnoteColors.ink600;
+        // The words go through the same walk, one level down, so a word
+        // bolded inside a link is bold — the editor draws it that way.
+        // Only when there is styling in them — a plain label stays one span
+        // of text, exactly as it always was.
+        final words = <InlineSpan>[];
+        if (depth < kInlineNestDepth && mdInlineRe.hasMatch(c.label!)) {
+          // Walked against the LINK's style, as the editor walks them, so a
+          // strike inside a link adds to its underline instead of replacing it.
+          _inlineInto(
+              c.label!,
+              inlineLinkStyle(resolved, ink, resolved, within: within),
+              const TextStyle(),
+              depth + 1,
+              {...within, c.kind}, dark, onWikiLink, mathLinkTint, atomHost,
+              words);
+        }
         spans.add(WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: _ExternalLink(
               label: c.label!,
+              words: words.isEmpty ? null : words,
               url: c.target!,
-              base: base,
-              color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
+              base: resolved,
+              color: ink,
+              within: within),
         ));
       case MdInline.bareUrl:
         // Trailing sentence punctuation belongs to the writer, not to the
@@ -827,67 +1002,24 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           child: _ExternalLink(
               label: _shortUrl(url),
               url: url,
-              base: base,
+              base: resolved,
               color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
         ));
         if (url.length < raw.length) {
-          spans.add(TextSpan(text: raw.substring(url.length)));
+          spans.add(plain(raw.substring(url.length)));
         }
-      case MdInline.underline:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(decoration: TextDecoration.underline)));
-      case MdInline.boldItalic:
-        // `***both***`. Without this branch the `**` alternative claimed it
-        // as `***both**`, which rendered bold with a stray asterisk — the
-        // reported import bug, and reachable by pressing Ctrl+B then Ctrl+I.
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(
-                fontWeight: FontWeight.w600, fontStyle: FontStyle.italic)));
-      case MdInline.bold:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(fontWeight: FontWeight.w600)));
-      case MdInline.italic:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(fontStyle: FontStyle.italic)));
       case MdInline.code:
-        spans.add(TextSpan(
-          text: c.inner,
-          style: TextStyle(
-            fontFamily: 'JetBrains Mono',
-            fontFamilyFallback: onoteFontFallback,
-            fontSize: (base.fontSize ?? 14) * 0.9,
-            color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
-            backgroundColor: dark ? OnoteColors.night100 : OnoteColors.paper100,
-          ),
-        ));
-      case MdInline.strike:
+        // Literal: a code run's text is never scanned again.
         spans.add(TextSpan(
             text: c.inner,
-            style: const TextStyle(decoration: TextDecoration.lineThrough)));
-      case MdInline.subscript:
-        spans.add(TextSpan(
-            text: c.inner, style: subSupStyle(base, sup: false, dark: dark)));
-      case MdInline.superscript:
-        spans.add(TextSpan(
-            text: c.inner, style: subSupStyle(base, sup: true, dark: dark)));
-      case MdInline.highlight:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: TextStyle(
-                backgroundColor: dark
-                    ? OnoteColors.brass700.withValues(alpha: .45)
-                    : const Color(0xFFF7E27A))));
+            style: inlineRunStyle(c, acc,
+                resolved: resolved, dark: dark, within: within)));
     }
     last = m.end;
   }
   if (last < text.length) {
-    spans.add(TextSpan(text: text.substring(last)));
+    spans.add(plain(text.substring(last)));
   }
-  return spans;
 }
 
 /// A clickable page link chip rendered inline (EMBED-1).
@@ -907,10 +1039,19 @@ String _shortUrl(String url) {
 class _ExternalLink extends StatelessWidget {
   const _ExternalLink(
       {required this.label,
+      this.words,
       required this.url,
       required this.color,
-      required this.base});
+      required this.base,
+      this.within = const {}});
+
+  /// The runs this link sits inside — see [inlineLinkStyle].
+  final Set<MdInline> within;
   final String label;
+
+  /// [label] already walked for runs inside it — a bolded word in a link.
+  /// Null for a bare URL, whose label is the address.
+  final List<InlineSpan>? words;
   final String url;
   final Color color;
 
@@ -936,11 +1077,9 @@ class _ExternalLink extends StatelessWidget {
           },
           child: Text.rich(TextSpan(children: [
             TextSpan(
-                text: label,
-                style: base.copyWith(
-                    color: color,
-                    decoration: TextDecoration.underline,
-                    decorationColor: color)),
+                text: words == null ? label : null,
+                children: words,
+                style: inlineLinkStyle(base, color, base, within: within)),
             TextSpan(
                 text: ' ↗',
                 style: base.copyWith(

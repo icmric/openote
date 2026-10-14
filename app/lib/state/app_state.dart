@@ -23,6 +23,7 @@ import '../core/onote_ffi.dart';
 import '../core/secret_store.dart';
 import '../core/open_target.dart'
     show isOpenoteWorkingCopy, notebookFolderNamedBy;
+import '../editor/live_markdown_controller.dart' show LiveMarkdownController;
 import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
@@ -5880,8 +5881,58 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  static final _colorOpenRe =
-      RegExp(r'\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) $');
+  /// The selection without invisible markers at its ends — see
+  /// [LiveMarkdownController.visibleSelection]. Any other controller (a code
+  /// block) has no hidden markers, and its selection is already what it is.
+  static (int, int) _visible(TextEditingController c, int s, int e) {
+    if (c is! LiveMarkdownController || s == e) return (s, e);
+    final r = c.visibleSelection(s, e);
+    return (r.start, r.end);
+  }
+
+  /// **The colour run whose visible text is exactly [s, e)**, at any depth —
+  /// or null when the selection is not, by itself, a coloured run.
+  ///
+  /// Descends the way [_runAround] does for the other marks: a colour run is
+  /// found whatever is nested inside it or around it. "Exactly" is judged on
+  /// what can be seen: the colour's inner text, less any invisible markers at
+  /// its own ends, must be the selection — so `{{#c **word**}}` with `word`
+  /// selected is that colour run, and `{{#c big word}}` with `word` selected
+  /// is not, and gets a colour of its own inside it.
+  static ({int open, int innerStart, int innerEnd, int end})? _colourRunFor(
+      TextEditingController c, String t, int s, int e) {
+    final lineStart = lineStartOf(t, s);
+    final lineEnd = math.max(lineStart, lineEndOf(t, e));
+    ({int open, int innerStart, int innerEnd, int end})? found;
+    void walk(String scan, int base, int depth) {
+      for (final m in mdInlineRe.allMatches(scan)) {
+        final k = classifyInline(m);
+        if (!inlineKindNests(k.kind) || k.kind == MdInline.extLink) continue;
+        final innerStart = base + m.start + k.openLen;
+        final innerEnd = base + m.end - k.closeLen;
+        if (s < innerStart || e > innerEnd) continue;
+        if (k.kind == MdInline.colour) {
+          final (vs, ve) = _visible(c, innerStart, innerEnd);
+          if (vs == s && ve == e) {
+            // Keep the innermost: it is the colour on the screen.
+            found = (
+              open: base + m.start,
+              innerStart: innerStart,
+              innerEnd: innerEnd,
+              end: base + m.end
+            );
+          }
+        }
+        if (depth < kInlineNestDepth) {
+          walk(k.inner, innerStart, depth + 1);
+        }
+      }
+    }
+
+    walk(t.substring(lineStart, lineEnd), lineStart, 0);
+    return found;
+  }
+
   // Matches a whole wrapper as the entire selection: {{#hex inner}}.
   static final _colorWholeRe = RegExp(
       r'^\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\}\}$',
@@ -5898,25 +5949,30 @@ class AppState extends ChangeNotifier
       return;
     }
     final t = c.text;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
+    final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
+        math.max(sel.baseOffset, sel.extentOffset));
+    if (s == e) {
+      notifyListeners();
+      return;
+    }
 
-    // Re-colour, don't nest (user report): if the selection is already the
-    // inner content of an existing {{#hex …}} wrapper, or the selection spans
-    // a whole wrapper, replace the existing colour in place.
-
-    // Case A: selection is the INNER content of an existing wrapper —
-    //   …{{#oldhex |selected|}}…  → swap oldhex for the new hex.
-    final openBefore = _colorOpenRe.firstMatch(t.substring(0, s));
-    if (openBefore != null &&
-        e + 2 <= t.length &&
-        t.substring(e, e + 2) == '}}') {
+    // Re-colour, don't nest (user report): a selection that already IS a
+    // coloured run gets its colour replaced, never a second run inside it.
+    //
+    // **Found by descending**, through whatever other runs sit between the
+    // selection and the colour. `{{#c **word**}}` has bold markers in the
+    // way, and the old check — the colour's opener immediately before the
+    // selection — did not see that colour at all, so recolouring a bold red
+    // word wrapped a second colour inside the first. Found by descending through whatever other runs
+    // sit between the selection and the colour — `{{#c **word**}}` has bold
+    // markers in the way, and the old check, which looked only immediately
+    // before the selection, did not see the colour at all.
+    final run = _colourRunFor(c, t, s, e);
+    if (run != null) {
       pushUndo();
-      final openLen = openBefore.group(0)!.length;
-      const newOpenPrefix = '{{#';
-      final newOpen = '$newOpenPrefix$hex ';
-      c.text = t.replaceRange(s - openLen, s, newOpen);
-      final shift = newOpen.length - openLen;
+      final newOpen = '{{#$hex ';
+      c.text = t.replaceRange(run.open, run.innerStart, newOpen);
+      final shift = newOpen.length - (run.innerStart - run.open);
       c.selection =
           TextSelection(baseOffset: s + shift, extentOffset: e + shift);
       _commitActiveEditor();
@@ -5958,14 +6014,18 @@ class AppState extends ChangeNotifier
     final c = ae.controller;
     final sel = c.selection;
     if (!sel.isValid || sel.isCollapsed) return;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
     final t = c.text;
-    final m = _colorOpenRe.firstMatch(t.substring(0, s));
-    if (m != null && e + 2 <= t.length && t.substring(e, e + 2) == '}}') {
+    final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
+        math.max(sel.baseOffset, sel.extentOffset));
+    // Through other runs' markers, as in [applyTextColor] — so a red bold
+    // word loses its red, instead of gaining a second red inside the first.
+    final run = _colourRunFor(c, t, s, e);
+    if (run != null) {
       pushUndo();
-      final openLen = m.group(0)!.length;
-      c.text = t.replaceRange(e, e + 2, '').replaceRange(s - openLen, s, '');
+      final openLen = run.innerStart - run.open;
+      c.text = t
+          .replaceRange(run.innerEnd, run.end, '')
+          .replaceRange(run.open, run.innerStart, '');
       c.selection =
           TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
       _commitActiveEditor();
@@ -6182,6 +6242,7 @@ class AppState extends ChangeNotifier
     final t = c.text;
     var s = math.min(sel.baseOffset, sel.extentOffset);
     var e = math.max(sel.baseOffset, sel.extentOffset);
+    (s, e) = _visible(c, s, e);
 
     if (s == e) {
       // Ask about the CARET first, before expanding to a word. `_` is a word

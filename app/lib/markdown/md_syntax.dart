@@ -92,10 +92,49 @@ class MdMatch {
 // (an underscore marker may not sit against a word character, which is
 // CommonMark's own rule and why `**` is the safe emphasis marker mid-word).
 const String _bi = r'(\*\*\*(?![\s*])(.+?)(?<![\s*])\*\*\*)';
+// `___both___`, the underscore spelling of the same thing — what bold wrapped
+// round italic comes out as when both are written with underscores. Without it
+// `__` claimed the outer pair and left `_both_` on the page. Same flanking
+// rule as the other underscore forms, so `snake___case` is left alone.
+const String _biU =
+    r'((?<![\w\\])___(?![\s_])(.+?)(?<![\s_])___(?![\w]))';
 const String _b = r'(\*\*(?![\s*])(.+?)(?<![\s*])\*\*)';
 const String _i = r'(\*(?![\s*])(.+?)(?<![\s*])\*)';
 const String _bU = r'((?<![\w\\])__(?![\s_])(.+?)(?<![\s_])__(?![\w]))';
 const String _iU = r'((?<![\w\\])_(?![\s_])(.+?)(?<![\s_])_(?![\w]))';
+// **A run at the edge of a run made of the same character.** Italicising
+// the last word of a bold phrase writes `**big *word***`, and the closing
+// `**` then sits against the italic's `*` — which the flanking rule above
+// forbids, so plain bold stopped one star early and left `big *word*` with a
+// stray asterisk on the page. Measured: 25 of 176 "a run inside part of
+// another" cases broke, every one of them a same-character edge. These name
+// the shape outright: the outer run's text, then a whole inner run flush
+// against its closer (or opener). Tried BEFORE the plain forms of the same
+// kind, so they win where they apply and nothing else changes where they do
+// not. Each keeps the plain form's two groups — the whole match, then the
+// text inside — so no group number elsewhere moves.
+const String _bItEnd =
+    r'(\*\*(?![\s*])((?:(?!\*\*)[^\n])*?\*(?![\s*])[^*\n]+?(?<![\s*])\*)\*\*)';
+const String _bItStart =
+    r'(\*\*(\*(?![\s*])[^*\n]+?(?<![\s*])\*(?:(?!\*\*)[^\n])*?(?<![\s*]))\*\*)';
+const String _iBEnd =
+    r'(\*(?![\s*])((?:(?!\*)[^\n])*?\*\*(?![\s*])[^*\n]+?(?<![\s*])\*\*)\*(?!\*))';
+const String _iBStart =
+    r'(\*(\*\*(?![\s*])[^*\n]+?(?<![\s*])\*\*(?:(?!\*)[^\n])*?(?<![\s*]))\*(?!\*))';
+// The underscore spellings, with the same word-boundary rule as `__u__`.
+const String _bUItEnd =
+    r'((?<![\w\\])__(?![\s_])((?:(?!__)[^\n])*?(?<![\w\\])_(?![\s_])[^_\n]+?(?<![\s_])_)__(?![\w]))';
+const String _bUItStart =
+    r'((?<![\w\\])__(_(?![\s_])[^_\n]+?(?<![\s_])_(?![\w])(?:(?!__)[^\n])*?(?<![\s_]))__(?![\w]))';
+const String _iUBEnd =
+    r'((?<![\w\\])_(?![\s_])((?:(?!_)[^\n])*?(?<![\w\\])__(?![\s_])[^_\n]+?(?<![\s_])__)_(?![\w]))';
+const String _iUBStart =
+    r'((?<![\w\\])_(__(?![\s_])[^_\n]+?(?<![\s_])__(?![\w])(?:(?!_)[^\n])*?(?<![\s_]))_(?![\w]))';
+// A subscript at the edge of a strike-through: `~~big ~word~~~`.
+// Both need real text beside the subscript: a bare `~~~x~~~` stays refused,
+// because `~~~` is how a code fence starts and the Ctrl+~ ladder stops at two.
+const String _sSubEnd = r'(~~((?!~)(?:(?!~~)[^\n])+?~(?!~)[^\s~]+~)~~)';
+const String _sSubStart = r'(~~(~(?!~)[^\s~]+~(?:(?!~~)[^\n])+?(?<!~))~~)';
 const String _code = r'(`(.+?)`)';
 const String _strike = r'(~~(.+?)~~)';
 const String _high = r'(==(.+?)==)';
@@ -126,8 +165,14 @@ const String _under = r'(\+\+(.+?)\+\+)';
 //    the space kills that, and with it "~5 to ~10", "a ~ b" and `~/Documents
 //    ~/Downloads`. A lone `~` or `^` with no partner on its own side of a
 //    space is simply a tilde or a caret, which is what students type.
-const String _sub = r'(~(?!~)([^\s~]+)~(?!~))';
-const String _sup = r'(\^([^\s^]+)\^)';
+// A sub- or superscript is one token — no spaces — EXCEPT that it may hold a
+// coloured run, whose syntax has a space in it: colouring a superscript 2
+// gives `^{{#e53935 2}}^`, and without this the `^` were left as text.
+// Non-capturing throughout, so no group number moves.
+const String _colourToken =
+    r'\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? [^\s{}]+\}\}';
+const String _sub = r'(~(?!~)((?:' + _colourToken + r'|[^\s~])+)~(?!~))';
+const String _sup = r'(\^((?:' + _colourToken + r'|[^\s^])+)\^)';
 // Maths, with Pandoc's flanking rule — the opening `$` must be followed by a
 // non-space, the closing one preceded by a non-space and NOT followed by a
 // digit. Without those three guards the pattern eats money: measured against
@@ -161,8 +206,16 @@ const String _mathDisplay =
 // One space of padding, backslash-guarded — see [MdInline.mathPadded].
 const String _mathPadded =
     r'(\$ ([^\$\n]*\\[a-zA-Z]+[^\$\n]*) \$)';
+// **A colour run may hold one coloured run.** Recolouring part of a coloured
+// phrase writes `{{#c1 big {{#c2 word}}}}`, and with a plain lazy body the
+// FIRST `}}` closed the outer run, leaving `big {{#c2 word` and a stray `}}`.
+// The body is now a sequence of either a whole inner colour run, tried first,
+// or any character that does not start `}}`. One level, which is what the
+// toolbar can produce; the inner run's own text may not contain `}}`.
 const String _colour =
-    r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
+    r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) '
+    r'((?:\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? (?:(?!\}\})[^\n])+\}\}'
+    r'|(?!\}\})[^\n])+?)\}\})';
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
 
 /// **An inline atom: a thing that is not text, living in a sentence.**
@@ -224,14 +277,25 @@ const _order = <MapEntry<MdInline, int>>[
   MapEntry(MdInline.bareUrl, 2),
 ];
 
+/// Every way a kind can be written, tried in this order. Each alternative
+/// carries exactly the kind's group count (see [_order]), so a kind with
+/// several simply occupies that many times its groups in [mdInlineRe].
+List<String> _alternativesFor(MdInline k) => switch (k) {
+      MdInline.boldItalic => const [_bi, _biU],
+      MdInline.bold => const [_bItEnd, _bItStart, _bUItEnd, _bUItStart, _b, _bU],
+      MdInline.italic => const [_iBEnd, _iBStart, _iUBEnd, _iUBStart, _i, _iU],
+      MdInline.strike => const [_sSubEnd, _sSubStart, _strike],
+      _ => [_patternFor(k)],
+    };
+
 String _patternFor(MdInline k) => switch (k) {
       MdInline.atom => _atom,
       MdInline.wikiLink => _wiki,
       MdInline.extLink => _link,
       MdInline.colour => _colour,
       MdInline.boldItalic => _bi,
-      MdInline.bold => '$_b|$_bU',
-      MdInline.italic => '$_i|$_iU',
+      MdInline.bold => _b,
+      MdInline.italic => _i,
       MdInline.underline => _under,
       MdInline.strike => _strike,
       MdInline.highlight => _high,
@@ -261,10 +325,7 @@ int _openLen(MdInline k) => switch (k) {
 /// The one scanner. Built by joining the ordered branch patterns, so the
 /// group indices below are computed, never counted.
 final RegExp mdInlineRe = RegExp([
-  for (final e in _order)
-    e.key == MdInline.bold || e.key == MdInline.italic
-        ? _patternFor(e.key)
-        : _patternFor(e.key)
+  for (final e in _order) ..._alternativesFor(e.key)
 ].join('|'));
 
 /// Where each kind's outer group starts, in the same computed order.
@@ -273,10 +334,9 @@ final Map<MdInline, int> _groupBase = () {
   var g = 1;
   for (final e in _order) {
     m[e.key] = g;
-    // `bold` and `italic` each carry TWO alternatives (asterisk and
-    // underscore), so they occupy twice their group count.
-    final mult =
-        (e.key == MdInline.bold || e.key == MdInline.italic) ? 2 : 1;
+    // A kind with several alternatives (asterisk and underscore spellings,
+    // the edge shapes) occupies that many times its group count.
+    final mult = _alternativesFor(e.key).length;
     g += e.value * mult;
   }
   return m;
@@ -290,9 +350,9 @@ final Map<MdInline, int> _groupBase = () {
 MdMatch classifyInline(RegExpMatch m) {
   for (final e in _order) {
     final g = _groupBase[e.key]!;
-    final isPair = e.key == MdInline.bold || e.key == MdInline.italic;
-    // Asterisk form first, then the underscore alternative.
-    for (var alt = 0; alt < (isPair ? 2 : 1); alt++) {
+    // Each alternative in turn, in the order [_alternativesFor] lists them.
+    final alts = _alternativesFor(e.key).length;
+    for (var alt = 0; alt < alts; alt++) {
       final base = g + alt * e.value;
       if (m.group(base) == null) continue;
       switch (e.key) {
@@ -353,6 +413,50 @@ MdMatch classifyInline(RegExpMatch m) {
   return MdMatch(
       kind: MdInline.bold, openLen: 0, closeLen: 0, inner: m.group(0)!);
 }
+
+/// **Which runs can hold other runs** — and therefore which inner text is
+/// scanned again rather than drawn as it stands.
+///
+/// GitHub #17: *"I'm unable to use more than one text formatting at the same
+/// time. I'd like to make a word bold and change its color."* Neither renderer
+/// looked inside a run, so the outer style applied and the inner one's markers
+/// were left on the page as text — `**{{#e53935 word}}**` drew a bold
+/// `{{#e53935 word}}`. Measured across 117 outer/inner pairs before this
+/// existed: 12 drew correctly when read and 2 in the editor, so it was every
+/// combination rather than colour, italic-inside-bold included.
+///
+/// Asked by BOTH renderers and by the editor's caret table, which have to
+/// agree exactly: a run the renderer opens but the caret table does not would
+/// leave its markers invisible and walkable.
+///
+/// Not code (its text is literal, by CommonMark and by intent), not maths or
+/// atoms (drawn as one object), not bare URLs, and not wiki links, whose label
+/// is a page's title. An external link's words can carry styling, because
+/// bolding part of a link is something the toolbar will do.
+bool inlineKindNests(MdInline k) => switch (k) {
+      MdInline.bold ||
+      MdInline.italic ||
+      MdInline.boldItalic ||
+      MdInline.underline ||
+      MdInline.strike ||
+      MdInline.highlight ||
+      MdInline.colour ||
+      MdInline.subscript ||
+      MdInline.superscript ||
+      MdInline.extLink =>
+        true,
+      _ => false,
+    };
+
+/// How many runs deep the renderers and the caret table will look.
+///
+/// Every level is strictly shorter than the one around it, so the walk ends
+/// regardless; the cap is for a pathological line, not for prose, where two
+/// levels is already unusual. ONE constant for all three walkers, because a
+/// renderer that looked one level deeper than the caret table would hide
+/// markers the caret did not know were there. Past it, inner text is drawn as
+/// it stands — what every level did before.
+const int kInlineNestDepth = 4;
 
 // ── Line grammar ──────────────────────────────────────────────────────────
 //
