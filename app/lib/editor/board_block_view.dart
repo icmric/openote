@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/focus_claim.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -49,6 +50,10 @@ class _BoardBlockViewState extends State<BoardBlockView> {
   int? _editingTitle;
   int? _addingTo;
   final _editCtrl = TextEditingController();
+
+  /// The card under the mouse, which is the one that shows its delete
+  /// button. One at a time, and none while something is being dragged.
+  _CardRef? _hoverCard;
 
   // ── Keyboard (v0.16 phase 4) ────────────────────────────────────────────
   //
@@ -187,11 +192,35 @@ class _BoardBlockViewState extends State<BoardBlockView> {
     }
   }
 
+  /// **Open an inline editor, and give it the keyboard.**
+  ///
+  /// v1.0.2 #6: *"Board cards cannot be deleted or edited."* A click on a
+  /// card DID open its editor — and then every keystroke went nowhere,
+  /// because the editor asked for the keyboard with `autofocus`, and Flutter
+  /// applies autofocus only when nothing in the scope holds focus. The canvas
+  /// takes focus on every pointer-down while no block is being edited (so
+  /// arrow keys work after a click), which is precisely the state somebody is
+  /// in when they click a board on a page. Measured: `editor open,
+  /// holder=canvas-traversal`, and the card unchanged after typing.
+  ///
+  /// It worked from a paragraph that was open, because that click unfocused
+  /// the paragraph and left the scope empty — which is how it hid, along
+  /// with tests that typed with `enterText`, which focuses the field itself.
+  ///
+  /// So it asks explicitly, once the field exists, through [claimKeyboard]:
+  /// the same reason and the same mechanism as the page title.
+  void _startEditing(VoidCallback open) {
+    _commitEditor();
+    setState(open);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _editFocus.context != null) claimKeyboard(_editFocus);
+    });
+  }
+
   void _openEditorAtCursor(List<Map<String, dynamic>> cols) {
     final at = _clamped(cols);
     final cards = _cards(cols[at.col]);
-    _commitEditor();
-    setState(() {
+    _startEditing(() {
       _cursor = at;
       if (at.card >= cards.length) {
         _addingTo = at.col;
@@ -201,6 +230,61 @@ class _BoardBlockViewState extends State<BoardBlockView> {
         _editCtrl.text = cards[at.card];
       }
     });
+  }
+
+  /// Take one card off the board — undoably, through [_mutate] like every
+  /// other change here.
+  void _deleteCard(int col, int idx) {
+    _commitEditor();
+    _hoverCard = null;
+    _mutate((c) {
+      final list = _cards(c[col]);
+      if (idx < list.length) list.removeAt(idx);
+      c[col]['cards'] = list;
+    });
+  }
+
+  /// **A card's own right-click menu.**
+  ///
+  /// Before this a right-click on a card reached the BLOCK's menu, and the
+  /// Delete on that one deletes the whole board — the opposite of what
+  /// somebody right-clicking a card is after, one slip from losing the lot.
+  /// The card's recogniser sits deeper than the block's, so it wins.
+  Future<void> _cardMenu(Offset global, int col, int idx, String text) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    PopupMenuItem<String> item(String v, IconData icon, String label) =>
+        PopupMenuItem<String>(
+          value: v,
+          height: 36,
+          child: Row(children: [
+            Icon(icon, size: 16),
+            const SizedBox(width: 10),
+            Text(label, style: const TextStyle(fontSize: 13)),
+          ]),
+        );
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+          global.dx,
+          global.dy,
+          overlay == null ? global.dx : overlay.size.width - global.dx,
+          global.dy),
+      items: [
+        item('edit', Icons.edit_outlined, 'Edit card'),
+        item('delete', Icons.delete_outline, 'Delete card'),
+      ],
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'edit':
+        _startEditing(() {
+          _editingCard = (col: col, card: idx);
+          _editCtrl.text = text;
+        });
+      case 'delete':
+        _deleteCard(col, idx);
+    }
   }
 
   /// Delete undoes like everything else here, which is what makes a bare
@@ -368,13 +452,10 @@ class _BoardBlockViewState extends State<BoardBlockView> {
                   ? _inlineEditor()
                   : InkWell(
                       mouseCursor: WidgetStateMouseCursor.clickable,
-                      onTap: () {
-                        _commitEditor();
-                        setState(() {
-                          _editingTitle = i;
-                          _editCtrl.text = title;
-                        });
-                      },
+                      onTap: () => _startEditing(() {
+                        _editingTitle = i;
+                        _editCtrl.text = title;
+                      }),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 4, vertical: 2),
@@ -432,13 +513,10 @@ class _BoardBlockViewState extends State<BoardBlockView> {
                       child: InkWell(
                         mouseCursor: WidgetStateMouseCursor.clickable,
                       borderRadius: BorderRadius.circular(6),
-                      onTap: () {
-                        _commitEditor();
-                        setState(() {
-                          _addingTo = i;
-                          _editCtrl.clear();
-                        });
-                      },
+                      onTap: () => _startEditing(() {
+                        _addingTo = i;
+                        _editCtrl.clear();
+                      }),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(vertical: 4),
                         child: Row(children: [
@@ -496,32 +574,66 @@ class _BoardBlockViewState extends State<BoardBlockView> {
       child: InkWell(
         mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(6),
-        onTap: () {
-          _commitEditor();
-          setState(() {
-            _editingCard = (col: col, card: idx);
-            _editCtrl.text = text;
-          });
-        },
+        onTap: () => _startEditing(() {
+          _editingCard = (col: col, card: idx);
+          _editCtrl.text = text;
+        }),
+        onSecondaryTapUp: (d) => _cardMenu(d.globalPosition, col, idx, text),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          // Room on the right for the delete button, so a long card's text
+          // never runs underneath it.
+          padding: const EdgeInsets.fromLTRB(8, 7, 22, 7),
           child: Text(text, style: const TextStyle(fontSize: 12, height: 1.3)),
         ),
       ),
     );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Draggable<_CardRef>(
-        data: (col: col, card: idx),
-        feedback: Material(
-          color: Colors.transparent,
-          child: SizedBox(
-            width: 198,
-            child: Opacity(opacity: .9, child: card),
+    final hovered = _hoverCard == (col: col, card: idx);
+    // **One click to delete, where the card is.** Shown on hover only, so a
+    // board at rest stays a list of cards rather than a list of buttons;
+    // undo takes it back, which is what makes one click safe.
+    final withDelete = Stack(children: [
+      card,
+      if (hovered)
+        Positioned(
+          top: 3,
+          right: 3,
+          child: Tooltip(
+            message: 'Delete card',
+            child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
+              borderRadius: BorderRadius.circular(4),
+              onTap: () => _deleteCard(col, idx),
+              child: const Padding(
+                padding: EdgeInsets.all(2),
+                child: Icon(Icons.close,
+                    size: 13, color: OnoteColors.graphite400),
+              ),
+            ),
           ),
         ),
-        childWhenDragging: Opacity(opacity: .35, child: card),
-        child: card,
+    ]);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hoverCard = (col: col, card: idx)),
+        onExit: (_) {
+          if (_hoverCard == (col: col, card: idx)) {
+            setState(() => _hoverCard = null);
+          }
+        },
+        child: Draggable<_CardRef>(
+          data: (col: col, card: idx),
+          onDragStarted: () => setState(() => _hoverCard = null),
+          feedback: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: 198,
+              child: Opacity(opacity: .9, child: card),
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: .35, child: card),
+          child: withDelete,
+        ),
       ),
     );
   }
@@ -529,7 +641,8 @@ class _BoardBlockViewState extends State<BoardBlockView> {
   Widget _inlineEditor() => TextField(
         controller: _editCtrl,
         focusNode: _editFocus,
-        autofocus: true,
+        // No `autofocus`: it is ignored whenever the canvas already holds
+        // focus, which is the usual case. [_startEditing] asks instead.
         maxLines: null,
         style: const TextStyle(fontSize: 12),
         // Wrap-on-selection, same as every other content field.
