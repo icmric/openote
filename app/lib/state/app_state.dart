@@ -8,6 +8,7 @@ import '../store/fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart'; // ThemeMode + widgets
 import 'package:path/path.dart' as p;
 import 'package:super_clipboard/super_clipboard.dart'
@@ -415,6 +416,25 @@ class AppState extends ChangeNotifier
   String? mcpToken;
   int? mcpPort;
   String? mcpError;
+
+  /// Whether the server actually bound — not whether it was asked to. The
+  /// AI dialog says "Ready" off this, and only this.
+  bool get mcpListening => _mcpServer?.running ?? false;
+
+  /// When an AI helper last reached the server; see [McpServer.lastRequest].
+  /// Null until the server has been started at least once.
+  ValueListenable<DateTime?>? get mcpLastRequest => _mcpServer?.lastRequest;
+
+  /// Hand the app a server a test has already started, **without** going
+  /// through [setMcpEnabled] — which rewrites the `openote` entry in every
+  /// AI client config on the machine running the test.
+  @visibleForTesting
+  void debugUseMcpServer(McpServer server) {
+    _mcpServer = server;
+    mcpEnabled = true;
+    mcpPort = server.port;
+    notifyListeners();
+  }
 
   /// Turn the local MCP server on or off. Off is the default forever; on
   /// generates a bearer token once and binds 127.0.0.1 (spec 14 §4). The

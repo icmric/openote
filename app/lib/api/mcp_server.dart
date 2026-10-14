@@ -35,6 +35,22 @@ class McpServer {
   bool get running => _http != null;
   int? get port => _http?.port;
 
+  /// **When something last talked to this server**, or null if nothing has
+  /// since it started.
+  ///
+  /// v1.0.2 #13. The AI dialog said "connected" when all it knew was that a
+  /// config file had an `openote` entry in it — and it cannot know more than
+  /// that from the config: this transport is stateless JSON-RPC, so there is
+  /// no connection to observe. A request arriving is the one thing that is
+  /// actually evidence somebody is on the other end.
+  ///
+  /// Stamped only once the bearer token has been checked, so a port scan or
+  /// a browser page probing loopback is not reported as an AI helper using
+  /// your notes. A [ValueNotifier] rather than a call to the app's own
+  /// `notifyListeners`, which would rebuild the whole window for every one of
+  /// an agent's fifty calls; only the dialog listens to this.
+  final ValueNotifier<DateTime?> lastRequest = ValueNotifier(null);
+
   /// Bind and serve. [preferredPort] first, walking up a few neighbours if
   /// taken (the chosen port is persisted by the caller so client configs
   /// stay valid); port 0 asks the OS for any free port — tests use that.
@@ -95,6 +111,7 @@ class McpServer {
         await _respond(req, HttpStatus.unauthorized, {'error': 'bad token'});
         return;
       }
+      lastRequest.value = DateTime.now();
 
       final bytes = <int>[];
       await for (final chunk in req) {

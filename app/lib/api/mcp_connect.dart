@@ -16,9 +16,11 @@
 /// - **Never destroy someone else's config.** The file is read, decoded and
 ///   merged; if it does not parse, we refuse to touch it and say so. The
 ///   first write of a pre-existing file leaves a one-time backup beside it.
-/// - **Honest status.** "Connected" only when the tool shows signs of being
-///   installed; otherwise the config is written and the message says what
-///   to install.
+/// - **Honest status.** "Set up" when the entry is written and the tool
+///   shows signs of being installed; otherwise the message says what to
+///   install. Never "connected": writing a config file is not a connection,
+///   and this transport has none to observe. `ClaudeConnect.connected` keeps
+///   its name as the enum value; the words the user reads do not use it.
 library;
 
 import 'dart:convert';
@@ -240,7 +242,10 @@ ClaudeConnectResult connectChatGpt(
   return installed
       ? const ClaudeConnectResult(
           ClaudeConnect.connected,
-          'Connected. Restart the ChatGPT desktop app and Openote will be '
+          // "Set up", not "Connected" — writing a file is all this did
+          // (v1.0.2 #13). The dialog says when an AI helper last actually
+          // reached Openote, which is the only evidence there can be.
+          'Set up. Restart the ChatGPT desktop app and Openote will be '
           'there under its MCP servers. The website cannot use this — only '
           'an app on this computer can see Openote.')
       : const ClaudeConnectResult(
@@ -320,7 +325,10 @@ ClaudeConnectResult _connect(_JsonClient client,
   return installed
       ? ClaudeConnectResult(
           ClaudeConnect.connected,
-          'Connected. Open ${client.name} and ask it about your notes — '
+          // An AI helper looks for its servers once, when it starts, and
+          // never again — so one that was already open has not seen this.
+          'Set up. If ${client.name} is already open, restart it — it '
+          'looks for Openote when it starts. Then ask it about your notes: '
           'try "quiz me on what I wrote this week".')
       : ClaudeConnectResult(
           ClaudeConnect.wroteConfigOnly,
