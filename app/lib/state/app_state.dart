@@ -7089,6 +7089,12 @@ class AppState extends ChangeNotifier
         }
       });
     }
+    final lp = _repo.getSetting('lastPageByNotebook');
+    if (lp is Map) {
+      lp.forEach((k, v) {
+        if (k is String && v is String) _lastPageOf[k] = v;
+      });
+    }
     final lastNb = _repo.getSetting('lastNotebook') as String?;
     // A workspace with no notebooks at all shouldn't happen — Repository.open
     // seeds one — but `first` on an empty list throws, which would turn an
@@ -7192,11 +7198,8 @@ class AppState extends ChangeNotifier
     unawaited(warmRecorder(notebookId!));
     // Watch for other devices once the notebook is open.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startWatching());
-    final lastPage = _repo.getSetting('lastPage') as String?;
-    final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
-        ? lastPage
-        : nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id;
-    await selectPage(target);
+    await selectPage(_pageToOpenIn(notebookId!,
+        orElse: _repo.getSetting('lastPage') as String?));
   }
 
   // ── Per-page view memory (§7a.5) ───────────────────────────────────────
@@ -7225,6 +7228,40 @@ class AppState extends ChangeNotifier
     _repo.setSetting('viewMemory', _viewMemory);
     _repo.setSetting('lastNotebook', notebookId);
     _repo.setSetting('lastPage', pageId);
+    final nb = notebookId, pid = pageId;
+    if (nb != null && pid != null) _lastPageOf[nb] = pid;
+    // A notebook that has been removed has nowhere to be returned to.
+    _lastPageOf.removeWhere((id, _) => !notebooks.any((n) => n.id == id));
+    _repo.setSetting('lastPageByNotebook', Map.of(_lastPageOf));
+  }
+
+  /// **The page each notebook was left on**, by notebook id.
+  ///
+  /// v1.0.2 #14: *"The last open page is not remembered when switching
+  /// notebooks, though it survives closing the app."* Because there was ONE
+  /// place for it. `lastPage` is a single workspace setting: startup read it,
+  /// but a switch never did — [_loadNotebook] opened the first page — and
+  /// that first page was then saved over it. So leaving a notebook forgot
+  /// where you were in it, and only the notebook open at shutdown was
+  /// remembered, because it was the only one that ever got to write last.
+  ///
+  /// Collapsed pages and section groups never had this problem: they are
+  /// sets of node ids, ids are unique across notebooks, and nothing clears
+  /// them on a switch.
+  final Map<String, String> _lastPageOf = {};
+
+  /// Where to open [nb]: the page it was left on while that is still a live
+  /// page in it, then [orElse] on the same terms, then its first page.
+  ///
+  /// Asked of [nodes], so a page deleted or moved to another notebook since
+  /// is simply not found, and the notebook opens at its top.
+  String? _pageToOpenIn(String nb, {String? orElse}) {
+    bool live(String? id) =>
+        id != null && nodes.any((n) => n.id == id && n.kind == NodeKind.page);
+    final remembered = _lastPageOf[nb];
+    if (live(remembered)) return remembered;
+    if (live(orElse)) return orElse;
+    return nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id;
   }
 
   Future<void> _loadNotebook() async {
@@ -7265,8 +7302,8 @@ class AppState extends ChangeNotifier
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
-    final firstPage = nodes.where((n) => n.kind == NodeKind.page).firstOrNull;
-    await selectPage(firstPage?.id);
+    // Back where you left it — see [_lastPageOf].
+    await selectPage(_pageToOpenIn(notebookId!));
   }
 
   Future<void> selectNotebook(String id) async {
