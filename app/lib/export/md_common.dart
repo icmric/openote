@@ -46,7 +46,16 @@ final _colorWrap =
 ///  * `[[Title|id]]` wiki-links → `[Title](onote://page/id)`; `[[Title]]` →
 ///    `[Title]` (Data Model Spec §5.2 strict-Markdown mapping).
 String markdownInline(String text) {
-  var out = text.replaceAllMapped(_colorWrap, (m) => m.group(1) ?? '');
+  // Until nothing changes, not once: a colour can hold a colour —
+  // recolouring part of a coloured phrase writes `{{#a big {{#b word}}}}` —
+  // and one lazy pass takes the outer pair as far as the FIRST `}}`, leaving
+  // `big {{#b word}}` in the export. Each pass removes a level.
+  var out = text;
+  for (var i = 0; i < 8; i++) {
+    final next = out.replaceAllMapped(_colorWrap, (m) => m.group(1) ?? '');
+    if (next == out) break;
+    out = next;
+  }
   out = out.replaceAllMapped(_wikiLink, (m) {
     final label = m.group(1)!.trim();
     final id = m.group(2)?.trim();

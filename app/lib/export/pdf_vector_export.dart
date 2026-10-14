@@ -880,6 +880,21 @@ String _plainRuns(String line) => [
 /// Drop the inline markers, keeping the words.
 String _stripInline(String s) {
   var out = s;
+  // Until nothing changes: a colour can hold a colour (recolouring part of a
+  // coloured phrase), and one lazy pass stops the outer pair at the FIRST
+  // `}}`, printing `big {{#b word}}`. Each pass removes a level.
+  for (var pass = 0; pass < 8; pass++) {
+    final before = out;
+    out = _stripOnce(out);
+    if (out == before) break;
+  }
+  // An in-flow image reference has no textual meaning; the image itself is a
+  // separate block, so leaving the raw `![](sha256:…)` would just be noise.
+  return out.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
+}
+
+String _stripOnce(String s) {
+  var out = s;
   for (final re in [
     RegExp(r'\*\*(.+?)\*\*'),
     RegExp(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)'),
@@ -892,9 +907,6 @@ String _stripInline(String s) {
   ]) {
     out = out.replaceAllMapped(re, (m) => m.group(1) ?? '');
   }
-  // An in-flow image reference has no textual meaning; the image itself is a
-  // separate block, so leaving the raw `![](sha256:…)` would just be noise.
-  out = out.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
   return out;
 }
 
