@@ -4,6 +4,42 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — board cards, flashcards, and where each notebook was
+
+- **Board cards can be edited and deleted.** Clicking a card opened it and
+  then ignored everything you typed, unless you happened to come from another
+  box. Now it takes your typing, and so do column titles and "Add a card".
+  To delete a card, right-click it, or hover over it and press the small
+  cross — and Ctrl+Z puts it back. Right-clicking a card used to show the
+  menu for the whole board, where Delete removed every card at once.
+- **A flashcard grows and shrinks with its box.** Drag the edge of the box
+  and the card follows it. Before, the card stayed the same size whatever
+  you did to the box, and changed width slightly every time you clicked
+  into it.
+- **Each notebook opens on the page you left it on.** Switching to another
+  notebook and back used to take you to the first page every time — only
+  the notebook you had open when you closed the app was remembered.
+
+### Changed — the AI page says what it actually knows
+
+- **"Set up", not "connected".** The AI page said a helper was connected
+  when all Openote knew was that it had saved the helper's settings. Now it
+  says when an AI helper last actually used Openote — "Last used by an AI
+  helper 3 minutes ago" — which is the real answer to "is it working?".
+- **If nothing has used it yet, it says why that might be.** An AI helper
+  only looks for Openote when it starts, so one that was already open needs
+  restarting. The page now says so, instead of leaving you to guess.
+
+### Added — an AI helper can tidy a page, not only add to it
+
+- **It can change what is already there**: edit a box, move things around,
+  rename, move or delete a page. Deleted pages go to the recycle bin, the
+  same as yours do, and everything it does is a normal edit that Ctrl+Z
+  undoes.
+- **Tables and code arrive as tables and code.** An AI helper writing a
+  table or a piece of code used to leave symbols on the page; it now becomes
+  a real table you can edit, or a code box with its colours.
+
 ### Fixed — the page title takes one click
 
 - **Clicking a page's title lets you type in it.** It used to open the title

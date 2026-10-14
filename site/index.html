@@ -7,14 +7,33 @@
 <!-- Inline, because a browser requests /favicon.ico unprompted and a page with
      no icon answers it with a 404 in every visitor's console. A data URI keeps
      the "no third-party requests, and no requests at all beyond this file"
-     property that the rest of the page is built on. -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235B5BE6'/%3E%3Ctext x='32' y='45' font-family='system-ui,sans-serif' font-size='38' font-weight='700' fill='white' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E">
+     property that the rest of the page is built on.
+
+     The real icon, app/assets/icon/openote_icon.png, scaled down and
+     palette-encoded — it is flat colours and one gradient, so 64 colours are
+     indistinguishable from the original at 32px and a fraction of the size. It
+     used to be a purple square with the letter O, which was a placeholder that
+     outlived its welcome.
+
+     The touch icon and the social card below are the two exceptions to "one
+     file", and neither is fetched when the page loads: Safari asks for the
+     touch icon only when somebody adds the site to a home screen, and the card
+     is fetched by whatever is unfurling a link to the page, not by a visitor. -->
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAwFBMVEU7N7JCPcQuK4tAO7xGQcr8/P40MZkoJ3cvKq8AAADo6PWlo9diXsWNitFJRLd7d8tVVaqpp+LDweo6NsE9OLW8uuC6uN49N7KQhr09OLZqZsslJGxGQ9AkI2hHQs/ytDx1crvAvuoAAFVIQ9NhXrr9xlBcWLUkJGpPSeTzvFP205Hgp0b+zGRBPMBBO7edkLqbmd6tnLHJrpjev5fAv99VVf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB+0GgpAAAAQHRSTlP+/v/+/v///f8A////////A////2n//yn/nP+bKWlp////A5z///8q//////+bK////////wMAAAAAAAAAAAAABYQvQgAAAV9JREFUeNp9k+d2wjAMRuXYSuxsSlgtBcrs3n3/V6styzTQEJ3Dr3v5JEsApjbzjQolQkkpxcurhfBjFqqTW0M2pgazuL/AAUA0BubqMrc1gU0vlzPo5a5a3EtnHI5ciSEE/j+BeDFQ4OnwPMFxcYX4rolPP99OBdd6aDleuwSonpe7qfY4Bp4PCsQ0pw56untafnghdgK9TaWIuWsAEtTXw2MqPWdBQYU40CVPL8eIlSZuBfq+HvgBPNc5YhYRj8A3gDtE+8YweYk4IiFiQXQJxEMCt2Cut64F8WMCDRlOqDPEVUTcC3a40j/TB+ztTuKWQNuhRbntaL23csHcCXw+t+osL8utzcfvwBPg+9twZ3CNGUdJAuH69lOkHqdFxAEJC+F1sspG42wVH/NZ+Lu99qDFEzj5/fkDtnkCM9GNmd/ARPbx5ACmET381kBtmnCkLr4G+w+fzC70P5i1+QU4rRSWttsniAAAAABJRU5ErkJggg==">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="description" content="An open-source, cross-platform alternative to Microsoft OneNote. Freeform canvas, handwriting and maths, an open file format, and a native Linux build. Local-first, no account.">
 <meta name="color-scheme" content="light dark">
 
 <meta property="og:title" content="Openote">
 <meta property="og:description" content="An open-source, cross-platform alternative to Microsoft OneNote. Local-first, open format, no account.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://openote.org/">
+<!-- Absolute, because an unfurler resolves nothing relative to anything. -->
+<meta property="og:image" content="https://openote.org/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Openote icon: an open white ring with an amber dot, on indigo">
+<meta name="twitter:card" content="summary_large_image">
 
 <!--
   Deliberately one file, no build step, and NO third-party requests — no
@@ -72,11 +91,10 @@
   /* ── Hero ─────────────────────────────────────────────────────────── */
   header { padding:72px 0 8px; text-align:center; }
   .mark {
-    display:inline-flex; align-items:center; justify-content:center;
-    width:64px; height:64px; border-radius:16px; margin-bottom:20px;
-    background:var(--ink-500); color:#fff;
-    font-size:34px; font-weight:700; letter-spacing:-.04em;
-    box-shadow:0 6px 20px rgba(91,91,230,.28);
+    display:inline-block; width:64px; height:64px; margin-bottom:20px;
+    /* drop-shadow, not box-shadow: it follows the icon's own rounded corners,
+       which are transparent pixels, rather than drawing a square behind them. */
+    filter:drop-shadow(0 6px 14px rgba(59,56,180,.32));
   }
   h1 { font-size:46px; margin:0 0 8px; font-weight:700; }
   .tagline { font-size:20px; color:var(--text-2); margin:0 0 22px; }
@@ -157,7 +175,7 @@
 
 <header>
   <div class="wrap">
-    <div class="mark" aria-hidden="true">O</div>
+    <img class="mark" src="data:image/png;base64,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" width="64" height="64" alt="">
     <h1>Openote</h1>
     <p class="tagline">Your notes. Your format. Every platform.</p>
     <p class="lede">

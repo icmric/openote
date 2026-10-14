@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,6 +20,27 @@ Future<void> showMcpDialog(BuildContext context, AppState app) {
   );
 }
 
+/// **"When did an AI helper last reach Openote?"**, in words.
+///
+/// v1.0.2 #13. The dialog used to say "connected" when all it knew was that
+/// a config file mentioned Openote. A request arriving is the only real
+/// evidence that something is on the other end, so this is what is shown.
+/// Coarse on purpose: a reader wants "is it working", not a timestamp.
+String mcpLastUsedLabel(DateTime? at, DateTime now) {
+  if (at == null) return 'No AI helper has used it since Openote opened.';
+  final d = now.difference(at);
+  if (d.inMinutes < 1) return 'Last used by an AI helper just now.';
+  if (d.inMinutes < 60) {
+    final m = d.inMinutes;
+    return 'Last used by an AI helper $m minute${m == 1 ? '' : 's'} ago.';
+  }
+  if (d.inHours < 24) {
+    final h = d.inHours;
+    return 'Last used by an AI helper $h hour${h == 1 ? '' : 's'} ago.';
+  }
+  return 'Last used by an AI helper more than a day ago.';
+}
+
 class _McpDialog extends StatefulWidget {
   const _McpDialog({required this.app});
   final AppState app;
@@ -31,10 +54,23 @@ class _McpDialogState extends State<_McpDialog> {
 
   ClaudeConnectResult? _result;
 
+  /// Re-reads "N minutes ago" while the dialog is open, so it does not sit
+  /// at "just now" for as long as somebody looks at it.
+  Timer? _tick;
+
   @override
   void initState() {
     super.initState();
     _refreshLinked();
+    _tick = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
   }
 
   /// The one-line setup for other MCP clients' CLIs, shown under Advanced.
@@ -79,27 +115,79 @@ class _McpDialogState extends State<_McpDialog> {
     });
   }
 
-  /// **Blue means connected, brass means not.**
+  /// **Blue means set up, brass means not.**
   ///
   /// The two styles were already in use here and carried no meaning — Claude
   /// Code was filled and the rest tonal, which just looked arbitrary. Tying
   /// them to the one fact the reader wants makes the row consistent AND
   /// informative, and needs no colour that is not already in the theme.
   ///
-  /// A connected button stays pressable: pressing it again rewrites the entry,
+  /// **"Set up", not "connected"** (v1.0.2 #13): what [connectedClients]
+  /// knows is that the tool's config file has an `openote` entry. That is
+  /// one step better than a flag flipped on click and still says nothing
+  /// about whether the tool is running or can reach us. Whether anything
+  /// actually has is the status line's job, from [McpServer.lastRequest].
+  ///
+  /// A set-up button stays pressable: pressing it again rewrites the entry,
   /// which is how a moved port or a regenerated token is put right by hand.
   Widget _clientButton(
       String name,
-      bool connected,
+      bool setUp,
       ClaudeConnectResult Function({required int port, required String token})
           connector) {
-    final icon = Icon(connected ? Icons.link : Icons.link_off, size: 16);
-    final label = Text(connected ? '$name — connected' : 'Connect $name');
+    final icon = Icon(setUp ? Icons.check : Icons.add_link, size: 16);
+    final label = Text(setUp ? '$name — set up' : 'Set up $name');
     void press() => _connect(connector);
-    return connected
+    return setUp
         ? FilledButton.icon(icon: icon, label: label, onPressed: press)
         : FilledButton.tonalIcon(icon: icon, label: label, onPressed: press);
   }
+
+  /// A notifier that never changes, for the moment before the server exists.
+  static final _never = ValueNotifier<DateTime?>(null);
+
+  /// **What is actually known**, in the words the reader would use.
+  ///
+  /// "Ready" only once the server has bound, which it either did or did not.
+  /// Then when an AI helper last reached it — the one fact that answers "is
+  /// anything talking to me". And while nothing has, the thing that would
+  /// otherwise be unexplainable from inside the app: an AI helper looks for
+  /// Openote once, when it starts, and never retries, so one that was opened
+  /// first stays unable to see it however healthy Openote becomes.
+  Widget _status(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: ValueListenableBuilder<DateTime?>(
+          valueListenable: app.mcpLastRequest ?? _never,
+          builder: (context, at, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(Icons.circle,
+                    size: 9,
+                    color: at == null
+                        ? OnoteColors.graphite400
+                        : Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('Ready. ${mcpLastUsedLabel(at, DateTime.now())}',
+                      style: const TextStyle(fontSize: 12, height: 1.4)),
+                ),
+              ]),
+              if (at == null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4, left: 15),
+                  child: Text(
+                      'An AI helper looks for Openote when it starts. If '
+                      'yours was already open, restart it.',
+                      style: TextStyle(
+                          fontSize: 11,
+                          height: 1.4,
+                          color: OnoteColors.graphite400)),
+                ),
+            ],
+          ),
+        ),
+      );
 
   Widget _snippet(BuildContext context, String text) => Container(
         width: double.infinity,
@@ -165,6 +253,7 @@ class _McpDialogState extends State<_McpDialog> {
                       style: const TextStyle(
                           fontSize: 11, color: OnoteColors.danger)),
                 ),
+              if (app.mcpEnabled && app.mcpListening) _status(context),
               if (app.mcpEnabled) ...[
                 const SizedBox(height: 10),
                 // One row, one style rule — see [_clientButton].
@@ -256,6 +345,19 @@ class _McpDialogState extends State<_McpDialog> {
                           'this — the key inside is a password, so paste it '
                           'only into tools you trust.',
                           style: TextStyle(
+                              fontSize: 11, color: OnoteColors.graphite400)),
+                    ),
+                    const SizedBox(height: 6),
+                    // The port, where the jargon lives. It either bound or it
+                    // did not, so this is a fact rather than an inference.
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                          app.mcpListening
+                              ? 'Listening on port ${app.mcpPort}, on this '
+                                  'computer only.'
+                              : 'Not listening.',
+                          style: const TextStyle(
                               fontSize: 11, color: OnoteColors.graphite400)),
                     ),
                     const SizedBox(height: 6),
