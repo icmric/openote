@@ -22,6 +22,46 @@ import '../ui/onote_dialog.dart';
 /// a card that turns over is an object you are holding. The rotation is about
 /// the vertical axis with perspective set so it reads as a card rather than a
 /// rectangle being squashed.
+/// **An in-flow card is as wide as the paragraph it sits in**, and this tall.
+///
+/// v1.0.2 #7: *"A flashcard cannot be resized on its own — only the whole
+/// box."* And resizing the box did nothing either: the card was a fixed
+/// 420 x 132 in the editor whatever the box was, and up to 460 x 132-or-more
+/// in the reading view — so the two did not even agree, and the card moved
+/// when you clicked into its box. Insert ▸ Flashcard makes a text box that
+/// holds one card, so a card that follows its box's width IS a card you can
+/// resize, by the handle the box already has.
+///
+/// Fixed in height, and on purpose: a card turns over, and a height taken
+/// from whichever face is showing would change the paragraph's height
+/// mid-flip. Long text scrolls inside the face, as it always has. A text box
+/// has only a width handle anyway — its height follows what is in it.
+///
+/// Both views ask this, with the width each lays its paragraph out at, which
+/// is what keeps them in step. A size of the card's OWN, independent of its
+/// box, would mean storing one in the `?[front](back)` line — a file-format
+/// decision, and not this one.
+const double kInlineCardHeight = 132;
+
+/// See [kInlineCardHeight]. [paragraphWidth] is null only before the first
+/// layout, when the old fixed width is as good a guess as any.
+///
+/// [_kTailRoom] short of the full width, because in the editor the card is
+/// a placeholder standing for the line's first character, and the rest of
+/// the `?[front](back)` source trails it at a hairline size. A card exactly
+/// as wide as the line leaves that tail nowhere to go: it wraps onto a line
+/// of its own and the card sits lower in the editor than it does when read.
+/// Measured: 7.3px lower at the full width, against the 4px it has always
+/// sat lower by, which is the line's own metrics and a separate matter.
+double inlineCardWidth(double? paragraphWidth) =>
+    paragraphWidth == null || paragraphWidth <= _kTailRoom
+        ? 420
+        : paragraphWidth - _kTailRoom;
+
+/// Room for the hidden source text that follows a card — about a third of a
+/// pixel for a whole line, so two is ample. See [inlineCardWidth].
+const double _kTailRoom = 2;
+
 class FlipCard extends StatefulWidget {
   const FlipCard({
     super.key,
@@ -142,10 +182,18 @@ class _FlipCardState extends State<FlipCard>
                   mainAxisSize:
                       widget.compact ? MainAxisSize.min : MainAxisSize.max,
                   children: [
+                    // Flexible, ellipsised: a card follows its box's width
+                    // now, and a narrow box must not overflow the label
+                    // into a yellow-and-black bar.
                     Row(
                       children: [
-                        Text(back ? 'ANSWER' : 'QUESTION',
-                            style: OnoteType.overline.copyWith(color: accent)),
+                        Flexible(
+                          child: Text(back ? 'ANSWER' : 'QUESTION',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  OnoteType.overline.copyWith(color: accent)),
+                        ),
                         const Spacer(),
                         if (widget.trailing != null) widget.trailing!,
                       ],
@@ -162,9 +210,13 @@ class _FlipCardState extends State<FlipCard>
                         const Icon(Icons.autorenew,
                             size: 12, color: OnoteColors.graphite400),
                         const SizedBox(width: OnoteSpace.x2),
-                        Text(back ? 'Go back' : 'Reveal',
-                            style: OnoteType.caption
-                                .copyWith(color: OnoteColors.graphite400)),
+                        Flexible(
+                          child: Text(back ? 'Go back' : 'Reveal',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: OnoteType.caption
+                                  .copyWith(color: OnoteColors.graphite400)),
+                        ),
                       ],
                     ),
                   ],

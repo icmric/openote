@@ -13,6 +13,7 @@ import 'md_syntax.dart';
 import 'md_table.dart';
 import '../editor/flashcard_view.dart';
 import '../study/flashcards.dart' show inlineCardRe;
+import '../editor/live_markdown_controller.dart' show kEditorCaretMargin;
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -503,14 +504,22 @@ class _MarkdownViewState extends State<MarkdownView> {
     // got onto the page — see editor/flashcard_view.dart.
     final cardMatch = inlineCardRe.firstMatch(line);
     if (cardMatch != null) {
+      // As wide as the paragraph, through the same [inlineCardWidth] the
+      // editor asks — less the caret margin the editor's field reserves, so
+      // clicking into the box does not move the card by those few pixels.
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460, minHeight: 132),
-          child: FlipCard(
-            front: cardMatch.group(1) ?? '',
-            back: cardMatch.group(2) ?? '',
-            compact: true,
+        child: LayoutBuilder(
+          builder: (context, cons) => SizedBox(
+            width: inlineCardWidth(cons.maxWidth.isFinite
+                ? cons.maxWidth - kEditorCaretMargin
+                : null),
+            height: kInlineCardHeight,
+            child: FlipCard(
+              front: cardMatch.group(1) ?? '',
+              back: cardMatch.group(2) ?? '',
+              compact: true,
+            ),
           ),
         ),
       );

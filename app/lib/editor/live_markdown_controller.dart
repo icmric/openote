@@ -1326,10 +1326,15 @@ class LiveMarkdownController extends TextEditingController {
         out.add(_SourceSpan(
           source: line.substring(0, 1),
           alignment: PlaceholderAlignment.top,
+          // The width is in the key, as it is for an atom: a card that
+          // follows its box must be rebuilt when the box is resized, and a
+          // key of the text alone would hand back the card at its old width.
           child: _atom(
-              'card|$lineStart|${line.length}|$onLine|$line',
+              'card|$lineStart|${line.length}|$onLine|$line|'
+              '${layoutWidth?.round()}',
               () => _InlineCard(
                     key: ValueKey('card@$lineStart'),
+                    width: inlineCardWidth(layoutWidth),
                     front: card.group(1) ?? '',
                     back: card.group(2) ?? '',
                     selected: onLine,
@@ -1793,12 +1798,16 @@ class LiveMarkdownController extends TextEditingController {
 class _InlineCard extends StatelessWidget {
   const _InlineCard({
     super.key,
+    required this.width,
     required this.front,
     required this.back,
     required this.selected,
     required this.onEdit,
   });
 
+  /// From [inlineCardWidth] — the field's own width, so the card is exactly
+  /// as wide here as it is in the reading view.
+  final double width;
   final String front;
   final String back;
   final bool selected;
@@ -1810,8 +1819,8 @@ class _InlineCard extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Container(
-          width: 420,
-          height: 132,
+          width: width,
+          height: kInlineCardHeight,
           // A foreground decoration, so the caret outline costs no layout and
           // the card cannot shift a pixel when the caret enters its line.
           foregroundDecoration: selected
