@@ -4,6 +4,34 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — handwriting, and annotating a PDF
+
+- **An edit to handwriting is no longer undone by the next save.** Moving,
+  erasing, recolouring or resizing a note written on an earlier day wrote the
+  new position and the old strokes, so one page reload later the selection box
+  was in the place you dragged it to and the handwriting was where it started.
+  Reported as boxes that "suddenly jump to different positions" and drags that
+  "only move the selection box".
+- **Middle-drag pans over a PDF or a picture**, not just over blank page. A
+  slide covers the whole page, so on an annotated PDF there was nowhere left
+  that panning worked.
+- **You can box-select your notes on top of a slide.** A drag over the slide
+  now draws a selection box, because an imported slide is the surface you are
+  writing on and has no use for a drag of its own. Before, there was no empty
+  space left to start one from.
+- **A slide is not swept up by a selection box**, and a selection that somehow
+  contains one still moves everything else. Picking up a note that sat on a
+  locked slide used to move nothing at all.
+- **A selection box takes in what it covers, not what it grazes.** It now
+  wants about half of something before claiming it, so brushing the corner of
+  a picture on the way past leaves the picture behind.
+- **Marks made in different places are separate things.** Anything drawn
+  within two seconds of the last stroke joined it, wherever on the page it
+  was, so annotating the top of a slide and then the bottom produced one piece
+  of handwriting the size of the slide — which every selection box then caught.
+  A stroke now joins the note it was written beside.
+
+
 ### Added — try Openote in a browser before you download it
 
 - **There is a web demo.** It opens on a notebook with three pages already in

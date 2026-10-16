@@ -360,6 +360,15 @@ class Block {
   final int createdAt;
   int updatedAt;
 
+  /// A background layer: it cannot be moved, resized or typed into.
+  ///
+  /// Written by `export/pdf_import.dart` for an imported slide, which is the
+  /// page somebody is annotating rather than a thing on it. Everything that
+  /// acts on a selection asks this, because a slide that joined a selection it
+  /// has no part in is how a drag ends up moving nothing — reported in
+  /// issue #20.
+  bool get locked => content['locked'] == true;
+
   static const _known = {
     'id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'placement', 'frameId',
     'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',

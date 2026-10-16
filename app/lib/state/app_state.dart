@@ -9840,12 +9840,22 @@ class AppState extends ChangeNotifier
 
   /// Move every selected block by a page-space delta (ink blocks translate
   /// their stroke coordinates — Ink Spec §3, coordinates are page-absolute).
+  ///
+  /// A locked block stays where it is and does not stop the rest: a slide
+  /// that joined the selection used to be carried off the page with the notes
+  /// written on it.
   void moveSelectedBy(double dx, double dy) {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue;
       b.x += dx;
       b.y += dy;
       if (b.type == BlockType.ink) {
-        for (final sj in (b.content['strokes'] as List)) {
+        // Through [InkStorage.strokesOf], because a block whose blob has not
+        // arrived carries no working list and an unchecked cast threw out of
+        // the middle of this loop — leaving the blocks it had already reached
+        // moved, the rest not, and `notifyListeners` never called, so the
+        // page did not repaint until something else happened to change.
+        for (final sj in InkStorage.strokesOf(b.content)) {
           final m = (sj as Map);
           m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
           m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
@@ -9864,6 +9874,7 @@ class AppState extends ChangeNotifier
   /// margin so everything stays neat (matches the smart initial placement).
   void settleSelected() {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue; // never moved, so nothing to settle
       if (b.type != BlockType.ink) {
         if ((b.x - pageLeftMargin).abs() < 26) {
           b.x = pageLeftMargin;

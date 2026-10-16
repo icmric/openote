@@ -29,7 +29,7 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.8 |
 | 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
 | 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
-| 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it. |
+| 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is also the answer to splitting up a piece of handwriting that has grown — the lasso re-homes strokes, nothing names the pieces. |
 | 8 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
 | 9 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
 | 10 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
@@ -181,6 +181,26 @@ Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
 warning about what protection does *not* cover is the one most worth
 translating.
+
+### 1.13 There is no way to pan with a pen · **S**
+
+Middle-drag pans, two fingers pan, the wheel scrolls, and a graphics tablet
+has none of those. A pen drag on empty page is a selection box, so somebody
+working with a stylus can only move around the page by the scroll bar.
+
+From [#20](https://github.com/icmric/openote/issues/20): *"customizable
+shortcuts would be really helpful for graphics tablet users. For example,
+holding Alt + left-drag to pan and Shift + Alt + left-drag to zoom."*
+
+Two sizes of answer, and the small one is worth shipping on its own: **one
+modifier that means pan**, chosen rather than configured. Space-drag is the
+convention everywhere else and is free here; Alt is not, because Alt-drag
+already means "move this box instead of selecting its text", which is the
+escape hatch a text block needs.
+
+The large one is bindings somebody can change, which wants a settings surface,
+a store, and a decision about what is bindable — a release of its own, and the
+owner has said as much on the issue.
 
 ---
 

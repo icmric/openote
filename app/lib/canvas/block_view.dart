@@ -455,9 +455,7 @@ class _BlockViewState extends State<BlockView> {
     return t.trim().isEmpty ? '${b.type.name} block' : t;
   }
 
-  /// True for a background layer that must not be moved or resized —
-  /// currently an imported PDF slide (see `export/pdf_import.dart`).
-  bool get _locked => b.content['locked'] == true;
+  bool get _locked => b.locked;
 
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.

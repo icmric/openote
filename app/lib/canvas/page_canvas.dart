@@ -69,6 +69,29 @@ class PageCanvas extends StatefulWidget {
 
 enum _DragMode { none, pending, marquee, moveSelection, pan }
 
+/// Does a marquee of [marquee] take in the block at [block]?
+///
+/// Reported in issue #20: *"Box selection selects entire objects even with
+/// very little overlap."* It did — any intersection at all counted, so
+/// brushing the corner of a picture on the way past took the whole picture
+/// with you, and over an imported slide every marquee caught the slide.
+///
+/// Half of the block, rather than all of it. Requiring the whole thing is
+/// PowerPoint's rule and it means a box poking a few pixels out of the
+/// marquee is left behind with no way to tell why; requiring a touch is what
+/// was there. Half is the reading of "drag a box around the things you want"
+/// that does not ask anybody to be precise.
+///
+/// A block with no area — a zero-width ink block, a picture that has not
+/// loaded — falls back to a touch, because there is no proportion to take.
+bool marqueeCatches(Rect marquee, Rect block) {
+  final area = block.width * block.height;
+  if (area <= 0) return marquee.overlaps(block);
+  final hit = marquee.intersect(block);
+  if (hit.isEmpty) return false;
+  return hit.width * hit.height >= area / 2;
+}
+
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
 
@@ -92,6 +115,14 @@ class _PageCanvasState extends State<PageCanvas> {
   /// everywhere touch exists, and marquee stays reachable with a pen or a
   /// mouse. A finger TAP still does everything a click does.
   PointerDeviceKind _downKind = PointerDeviceKind.mouse;
+
+  /// Whether this gesture began over a background layer the canvas took the
+  /// drag back from. See [_selectDown].
+  bool _downOnLocked = false;
+
+  /// How far from an ink block a new stroke still counts as part of it, in
+  /// page units — about a line of handwriting. See [_inkUp].
+  static const double _kInkJoinMargin = 48;
 
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
@@ -513,12 +544,27 @@ class _PageCanvasState extends State<PageCanvas> {
         return;
       }
     }
+    // **Strokes join the block they were written next to, not the last one
+    // written.** Time alone was the whole test, so annotating the top of a
+    // slide and then the bottom within a couple of seconds produced one ink
+    // block the size of the slide — issue #20's *"handwritten strokes
+    // sometimes get grouped into one large object, and there's no way to
+    // separate them"*, and every marquee drawn anywhere caught it.
+    //
+    // The margin is about a line of handwriting, so the next word and the
+    // next line still land in the same block and a note somewhere else on the
+    // page starts its own. Splitting one that has already grown is the
+    // lasso's job (INK-7).
+    final reach = Rect.fromLTRB(w.x.reduce(math.min), w.y.reduce(math.min),
+            w.x.reduce(math.max), w.y.reduce(math.max))
+        .inflate(_kInkJoinMargin);
     app.pushUndo();
     Block? target;
     for (final b in app.blocks.reversed) {
       if (b.type == BlockType.ink &&
           nowMs() - b.updatedAt < 2000 &&
-          InkStorage.strokesOf(b.content).length < 512) {
+          InkStorage.strokesOf(b.content).length < 512 &&
+          reach.overlaps(_blockRect(b))) {
         target = b;
         break;
       }
@@ -777,8 +823,14 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── Select-mode pointer model ───────────────────────────────────────────
 
-  Rect _blockRect(Block b) => Rect.fromLTWH(
-      b.x, b.y, b.w, b.h ?? app.renderSizes[b.id]?.height ?? 60);
+  /// The rectangle a block occupies, for selection, erasing and hit-testing.
+  ///
+  /// [aspectHeight] before the measured height because a picture's own
+  /// proportions are known the moment it is added, while the measurement
+  /// arrives a frame after layout — so a slide was reckoned to be a sixty-
+  /// pixel strip for exactly as long as it took anybody to click on it.
+  Rect _blockRect(Block b) => Rect.fromLTWH(b.x, b.y, b.w,
+      b.h ?? aspectHeight(b) ?? app.renderSizes[b.id]?.height ?? 60);
 
   /// **The rect to CULL against, which is not the rect to hit-test against.**
   ///
@@ -822,24 +874,24 @@ class _PageCanvasState extends State<PageCanvas> {
   /// stays legible on a dark page, which was the reported failure.
   ///
   /// A PDF is a `file` block carrying the mime type, not a type of its own.
-  ///
-  /// Sized through [aspectHeight] rather than [_blockRect], because a slide
-  /// carries no height of its own and the measured one arrives a frame late —
-  /// see that function for what that cost.
   List<Rect> get _documentRects => [
         for (final b in app.blocks)
           if (b.type == BlockType.image ||
               (b.type == BlockType.file &&
                   b.content['mime'] == 'application/pdf'))
-            Rect.fromLTWH(
-                b.x,
-                b.y,
-                b.w,
-                b.h ??
-                    aspectHeight(b) ??
-                    app.renderSizes[b.id]?.height ??
-                    60),
+            _blockRect(b),
       ];
+
+  /// Whether the topmost thing under [pagePt] is a background layer.
+  ///
+  /// Topmost rather than any, because a note written on a slide is a block
+  /// over a block and the one on top is the one being pointed at.
+  bool _overLockedOnly(Offset pagePt) {
+    for (final b in app.blocks.reversed) {
+      if (_blockRect(b).contains(pagePt)) return b.locked;
+    }
+    return false;
+  }
 
   String? _hitInk(Offset pagePt) {
     for (final b in app.blocks.reversed.where((b) => b.type == BlockType.ink)) {
@@ -849,15 +901,36 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectDown(PointerDownEvent e) {
-    if (app.claimedPointers.remove(e.pointer)) return; // a block owns this one
+    final claimed = app.claimedPointers.remove(e.pointer);
     _downScreen = e.localPosition;
     _lastScreen = e.localPosition;
     _downKind = e.kind;
+    _downOnLocked = false;
 
+    // **Before the claim, because panning is not a block's business.** A block
+    // claims every pointer it is handed, whichever button pressed it, so a
+    // middle-drag that began over a picture never reached here — reported as
+    // *"middle-click dragging works on empty canvas, but not over PDFs or
+    // images"*. Nothing on the page has a use for the middle button, so this
+    // is a navigation gesture wherever it starts.
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kMiddleMouseButton) != 0) {
       _mode = _DragMode.pan;
       return;
+    }
+    if (claimed) {
+      // **A background layer hands the gesture back.** A locked block — an
+      // imported slide — cannot be moved, resized or typed into, so a drag on
+      // one has nothing of its own to do, and a slide covers the page: without
+      // this there is no empty space left to start a marquee from, which is
+      // *"almost impossible to select handwritten notes on top of a PDF
+      // without selecting the PDF itself"*.
+      //
+      // Only the drag. A press that turns out to be a click belongs to the
+      // block's own tap handler, which selects it; [_downOnLocked] is what
+      // stops this also creating a text box on top of it.
+      if (!_overLockedOnly(controller.screenToPage(e.localPosition))) return;
+      _downOnLocked = true;
     }
     // Right-click on empty canvas → context menu (blocks claim theirs first).
     if (e.kind == PointerDeviceKind.mouse &&
@@ -950,6 +1023,10 @@ class _PageCanvasState extends State<PageCanvas> {
     _mode = _DragMode.none;
     switch (mode) {
       case _DragMode.pending:
+        // A click on a background layer is the block's own: it selects the
+        // slide. Creating a text box on top of it as well is not a thing
+        // anybody asked for twice.
+        if (_downOnLocked) break;
         final pagePt = controller.screenToPage(e.localPosition);
         if (app.tool == Tool.text) {
           _createTextAt(pagePt); // Text tool: always create
@@ -983,7 +1060,10 @@ class _PageCanvasState extends State<PageCanvas> {
         final rect = Rect.fromPoints(_marqueeStartPage, _marqueeEndPage);
         final hit = [
           for (final b in app.blocks)
-            if (rect.overlaps(_blockRect(b))) b.id
+            // A background layer is what the others are drawn on, not one of
+            // them. Sweeping it up is how a selection ends up with a member
+            // that cannot move, which stops the drag dead.
+            if (!b.locked && marqueeCatches(rect, _blockRect(b))) b.id
         ];
         hit.isEmpty ? app.select(null) : app.selectMany(hit);
         setState(() {});
