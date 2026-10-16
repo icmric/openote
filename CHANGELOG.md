@@ -4,6 +4,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — the handwriting format is written down
+
+- **Anyone can read Openote handwriting without Openote.** The ink
+  specification now carries the stroke format's byte layout, with a worked
+  example to check an implementation against. It was the one part of a
+  notebook that nothing but Openote could read.
+
 ### Fixed — handwriting, and annotating a PDF
 
 - **An edit to handwriting is no longer undone by the next save.** Moving,

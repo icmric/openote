@@ -25,16 +25,15 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 1 | **Use the macOS and Linux builds** | S | Three platforms ship; two have never been run by a human. CI proves they compile. §1.1 |
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
-| 4 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.7 |
-| 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
-| 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
-| 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is also the answer to splitting up a piece of handwriting that has grown — the lasso re-homes strokes, nothing names the pieces. |
-| 8 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
-| 9 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
-| 10 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
-| 11 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
-| 12 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 13 | The structured `nodes` text model | XL | Gates per-run styling, paragraph collapse and real co-editing. §2.2 |
+| 4 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
+| 5 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
+| 6 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is also the answer to splitting up a piece of handwriting that has grown — the lasso re-homes strokes, nothing names the pieces. |
+| 7 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
+| 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
+| 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
+| 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
+| 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
+| 12 | The structured `nodes` text model | XL | Gates per-run styling, paragraph collapse and real co-editing. §2.2 |
 
 ---
 
@@ -109,18 +108,7 @@ there can be: a debug suite cannot observe what a release build does. It is a
 list rather than a rule, so it grows the first time another one bites. The
 app's own `debug*` test seams are untouched by it.
 
-### 1.7 Specify the ink blob format · **S**
-
-[Ink spec §2.2](../specs/13-ink-data-spec.md) describes the reference an ink
-block stores and then says the bytes behind it are not specified here. That is
-the one place the openness guarantee is unmet: an independent implementation can
-read every other part of a notebook and cannot draw the handwriting.
-
-It is a writing job, not a design one. `app/lib/ink/ink_codec.dart` documents the
-format thoroughly and the encoding is deterministic; it needs transcribing into
-the spec as a byte layout, with a worked example.
-
-### 1.8 MathML export · **S–M**
+### 1.7 MathML export · **S–M**
 
 [Maths spec §6](../specs/12-math-input-spec.md) specifies it and nothing builds
 it, so an equation leaves Openote as LaTeX only. Two consumers want it: a tool
@@ -133,7 +121,7 @@ already a MathML parser in the tree, `onenote/mathml_latex.dart`, going the othe
 way for OneNote import; it is a reference for the vocabulary, not something to
 reverse.
 
-### 1.9 Two acceptance criteria this project set itself and did not meet
+### 1.8 Two acceptance criteria this project set itself and did not meet
 
 Both are [ADR-0004](../adr/ADR-0004-editor-engine.md)'s, and both are small.
 
@@ -150,7 +138,7 @@ Composition is inherited from a stock `TextField` rather than reimplemented, so 
 is probably fine. "Probably" is the problem, and it needs somebody who types in one
 of those languages rather than a test.
 
-### 1.10 `cloud_sync_test`'s purge assertion still flakes
+### 1.9 `cloud_sync_test`'s purge assertion still flakes
 
 *"Purging a joined notebook leaves the other device alone"* passes alone and fails
 under a full suite, roughly once in several runs:
@@ -173,14 +161,14 @@ still appends to the shared folder after both devices' auto-sync is off.** That 
 worth finding on its own terms, because a write nobody expects into a replicated
 folder is interesting whether or not a test is watching.
 
-### 1.11 Finish the translation coverage
+### 1.10 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
 warning about what protection does *not* cover is the one most worth
 translating.
 
-### 1.12 There is no way to pan with a pen · **S**
+### 1.11 There is no way to pan with a pen · **S**
 
 Middle-drag pans, two fingers pan, the wheel scrolls, and a graphics tablet
 has none of those. A pen drag on empty page is a selection box, so somebody
