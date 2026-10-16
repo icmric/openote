@@ -17,13 +17,19 @@ What does **not** belong in a comment: measurements, a quote from a bug report, 
 **Never assert on wall-clock time.** `flutter test` runs files in parallel, so
 a `Stopwatch` bar measures how much CPU the machine had spare. It passes
 alone, fails in a full suite, and fails every time on a two-core CI runner.
-This has taken CI down twice while the code under test was working perfectly.
+This has taken CI down twice while the code under test was working perfectly,
+and a third time through a `retry:` that could not launder it — three
+attempts, 1,248 ms against 81 ms for the same code run alone. **A retry is not
+a fix for a wall-clock bar**; it only widens the window in which the machine
+has to behave.
 
 Count the work instead, on the one path your change exists to alter.
 `Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
 `OpLogStore.debugDirectoryListings` and `ImportWriterHandle.debugMeasureRequests`
 exist for this: a working cache adds zero and a broken one adds hundreds,
-and neither answer moves with the weather. Product code that a widget test
+and neither answer moves with the weather. `AppShell.clock` and
+`PageCanvas.clock` are the product-code half, for the two places a decision
+genuinely depends on elapsed time. Product code that a widget test
 drives needs the same treatment — the sidebar's double-click window takes an
 injectable `sidebarNow`.
 

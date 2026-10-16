@@ -701,16 +701,24 @@ test('the file is written with the .blob suffix, and found without it',
       expect(SyncRecorder.debugBackfillYields, 40,
           reason: 'the backfill fsyncs once per blob; unpaced, a real '
               'notebook is hundreds of them in one turn of the event loop');
-      expect(worstMs, lessThan(500),
-          reason: 'worst single block, including the log replay the warm does '
-              'before the backfill starts');
       // ignore: avoid_print
       print('[step5] backfill+prove 40 blobs: '
           'yields=${SyncRecorder.debugBackfillYields} ticks=$ticks '
           'worstBlockMs=$worstMs');
-      // `retry` stays for `worstMs` alone, for the same reason as above. The
-      // unpaced-backfill mutation now fails the yield count outright.
-    }, retry: 2);
+      // **`worstMs` is measured and no longer asserted, and `retry` went with
+      // it.** It read `lessThan(500)` and failed all three attempts in a full
+      // suite — 1,248 ms against 81 ms for the same code run alone, which is
+      // the wall-clock proxy this file already describes twice: the budget
+      // measures spare CPU on the runner, not the app.
+      //
+      // The sibling test above records the other half of the same lesson,
+      // checked by making its regression: `worstMs` PASSED on broken code
+      // there. Here the yield count is what makes the claim, and the unpaced
+      // mutation takes it from 40 to 0 on every attempt — so a retry had
+      // nothing left to launder and would only have hidden an intermittent
+      // in the assertion that does work. The number is still printed, because
+      // it is useful to read and useless to assert.
+    });
   });
 
   group('the folder Openote writes is the folder it checks', () {
