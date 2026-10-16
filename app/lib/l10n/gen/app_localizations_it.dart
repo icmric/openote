@@ -798,6 +798,9 @@ class LIt extends L {
   String get navMenuRemovePasscode => 'Togli il codice…';
 
   @override
+  String get navMenuRename => 'Rinomina';
+
+  @override
   String get navMenuSaveTemplate => 'Salva come modello…';
 
   @override

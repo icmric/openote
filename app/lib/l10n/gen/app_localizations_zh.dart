@@ -772,6 +772,9 @@ class LZh extends L {
   String get navMenuRemovePasscode => '移除密码…';
 
   @override
+  String get navMenuRename => '重命名';
+
+  @override
   String get navMenuSaveTemplate => '保存为模板…';
 
   @override

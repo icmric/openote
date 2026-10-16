@@ -794,6 +794,9 @@ class LPt extends L {
   String get navMenuRemovePasscode => 'Tirar a senha…';
 
   @override
+  String get navMenuRename => 'Renomear';
+
+  @override
   String get navMenuSaveTemplate => 'Salvar como modelo…';
 
   @override

@@ -1355,6 +1355,12 @@ abstract class L {
   /// **'Remove passcode…'**
   String get navMenuRemovePasscode;
 
+  /// Context-menu item: start renaming this page, section or group in place.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get navMenuRename;
+
   /// Context-menu item.
   ///
   /// In en, this message translates to:

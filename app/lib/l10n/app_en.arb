@@ -1070,6 +1070,10 @@
   "@navMenuRemovePasscode": {
     "description": "Context-menu item."
   },
+  "navMenuRename": "Rename",
+  "@navMenuRename": {
+    "description": "Context-menu item: start renaming this page, section or group in place."
+  },
   "navMenuSaveTemplate": "Save as template…",
   "@navMenuSaveTemplate": {
     "description": "Context-menu item."

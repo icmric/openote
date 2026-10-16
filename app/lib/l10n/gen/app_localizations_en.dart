@@ -796,6 +796,9 @@ class LEn extends L {
   String get navMenuRemovePasscode => 'Remove passcode…';
 
   @override
+  String get navMenuRename => 'Rename';
+
+  @override
   String get navMenuSaveTemplate => 'Save as template…';
 
   @override

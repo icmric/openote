@@ -609,6 +609,12 @@ class _GroupHeader extends StatefulWidget {
 
 class _GroupHeaderState extends State<_GroupHeader> {
   bool _renaming = false;
+
+  /// Begin the inline rename — the double-click route and the
+  /// menu route are the same field.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -664,9 +670,11 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 },
           onTapDown: (d) => _downPos = d.globalPosition,
           onSecondaryTapUp: (d) => showNodeMenu(context, app, group,
-              canIndent: false, position: d.globalPosition),
+              canIndent: false,
+              position: d.globalPosition,
+              onRename: _startRename),
           onLongPress: () => showNodeMenu(context, app, group,
-              canIndent: false, position: _downPos),
+              canIndent: false, position: _downPos, onRename: _startRename),
           child: Container(
             decoration: target
                 ? BoxDecoration(
@@ -1304,6 +1312,12 @@ class _SectionHeader extends StatefulWidget {
 
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
+
+  /// Begin the inline rename — the double-click route and the
+  /// menu route are the same field.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1382,9 +1396,11 @@ class _SectionHeaderState extends State<_SectionHeader> {
             },
       onTapDown: (d) => _downPos = d.globalPosition,
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
-          canIndent: false, position: d.globalPosition),
+          canIndent: false,
+          position: d.globalPosition,
+          onRename: _startRename),
       onLongPress: () => showNodeMenu(context, app, section,
-          canIndent: false, position: _downPos),
+          canIndent: false, position: _downPos, onRename: _startRename),
       child: Container(
         decoration: pageTarget
             ? BoxDecoration(
@@ -1750,6 +1766,12 @@ class _PageTile extends StatefulWidget {
 
 class _PageTileState extends State<_PageTile> {
   bool _renaming = false;
+
+  /// Begin the inline rename — the double-click route and the
+  /// menu route are the same field.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1874,9 +1896,11 @@ class _PageTileState extends State<_PageTile> {
               },
         onTapDown: (d) => _downPos = d.globalPosition,
         onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
-            canIndent: true, position: d.globalPosition),
+            canIndent: true,
+            position: d.globalPosition,
+            onRename: _startRename),
         onLongPress: () => showNodeMenu(context, app, page,
-            canIndent: true, position: _downPos),
+            canIndent: true, position: _downPos, onRename: _startRename),
         child: Container(
           decoration: subpageTarget
               ? BoxDecoration(
@@ -1979,7 +2003,16 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
     child: Row(children: [
       Icon(icon, size: 16, color: color),
       const SizedBox(width: 10),
-      Text(label, style: TextStyle(fontSize: 13, color: color)),
+      // **Shorten rather than paint past the edge.** A popup menu's rows are
+      // capped at Flutter's default 280px and a label longer than that was
+      // overflowing the row — found by a test, where the placeholder font
+      // makes every glyph a full em wide, and reachable on screen by a
+      // translation longer than the English.
+      Expanded(
+        child: Text(label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: color)),
+      ),
     ]),
   );
 }
@@ -2209,10 +2242,19 @@ void _keyboardEnteredRow(AppState app) {
 }
 
 /// Pop-out node menu (§7a.1): a compact menu anchored at the pointer, focused
-/// on actions that can *only* be done here. Rename lives inline (double-click
-/// the title) so it's not in this list; reorder + structural moves are.
+/// on actions that can *only* be done here: reorder and structural moves.
+///
+/// Rename is the exception, and it is here because two people went looking:
+/// *"I would like to be able to right click on a section and change the name"*
+/// (issue #18). It was left out on the grounds that double-clicking the title
+/// already does it, which is true and is not discoverable — a right-click
+/// menu is where somebody who has not found the double-click will look. The
+/// item starts the same inline field rather than opening a dialog, which is
+/// why [onRename] is a callback: the field belongs to the row, not to this.
 Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
-    {required bool canIndent, required Offset position}) async {
+    {required bool canIndent,
+    required Offset position,
+    required VoidCallback onRename}) async {
   final l = L.of(context);
   final isPage = node.kind == NodeKind.page;
   final isSection = node.kind == NodeKind.section;
@@ -2227,6 +2269,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       position.dy,
     ),
     items: [
+      _nodeItem('rename', Icons.drive_file_rename_outline, l.navMenuRename),
       _nodeItem('up', Icons.keyboard_arrow_up, l.navMenuMoveUp),
       _nodeItem('down', Icons.keyboard_arrow_down, l.navMenuMoveDown),
       if (isSection) ...[
@@ -2391,6 +2434,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (choice != null) {
         app.moveSectionToGroup(node.id, choice.isEmpty ? null : choice);
       }
+    case 'rename':
+      onRename();
     case 'indent':
       app.indentPage(node.id, 1);
     case 'outdent':

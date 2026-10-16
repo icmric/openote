@@ -229,6 +229,7 @@
   "navMenuRemoveExam": "Quitar la fecha del examen",
   "navMenuRemoveFavourite": "Quitar de favoritos",
   "navMenuRemovePasscode": "Quitar el código…",
+  "navMenuRename": "Cambiar nombre",
   "navMenuSaveTemplate": "Guardar como plantilla…",
   "navMenuSetExam": "Poner la fecha del examen…",
   "navMenuSharePdf": "Compartir como PDF…",

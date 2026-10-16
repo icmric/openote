@@ -797,6 +797,9 @@ class LFr extends L {
   String get navMenuRemovePasscode => 'Enlever le code…';
 
   @override
+  String get navMenuRename => 'Renommer';
+
+  @override
   String get navMenuSaveTemplate => 'Enregistrer comme modèle…';
 
   @override

@@ -11,6 +11,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   example to check an implementation against. It was the one part of a
   notebook that nothing but Openote could read.
 
+### Added — Rename is in the right-click menu
+
+- **Right-click a page, section or section group and there is Rename.**
+  Double-clicking the title has always renamed it, which is not something you
+  find by looking. It opens the same field in the same place — a menu item is
+  a signpost, not a second way of doing it.
+- Long menu labels now shorten with an ellipsis instead of running past the
+  edge of the menu, which a longer translation could already do.
+
 ### Fixed — the page title
 
 - **Clicking a page title edits the page title.** It also dropped a text box

@@ -797,6 +797,9 @@ class LDe extends L {
   String get navMenuRemovePasscode => 'Code entfernen…';
 
   @override
+  String get navMenuRename => 'Umbenennen';
+
+  @override
   String get navMenuSaveTemplate => 'Als Vorlage speichern…';
 
   @override

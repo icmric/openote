@@ -796,6 +796,9 @@ class LEs extends L {
   String get navMenuRemovePasscode => 'Quitar el código…';
 
   @override
+  String get navMenuRename => 'Cambiar nombre';
+
+  @override
   String get navMenuSaveTemplate => 'Guardar como plantilla…';
 
   @override
