@@ -11,6 +11,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   example to check an implementation against. It was the one part of a
   notebook that nothing but Openote could read.
 
+### Fixed — the page title
+
+- **Clicking a page title edits the page title.** It also dropped a text box
+  on the page underneath, and the caret went to the box rather than staying in
+  the title — so a title could be set when a page was created and never
+  changed afterwards.
+
 ### Fixed — handwriting, and annotating a PDF
 
 - **An edit to handwriting is no longer undone by the next save.** Moving,

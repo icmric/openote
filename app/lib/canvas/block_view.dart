@@ -212,7 +212,13 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerDown(PointerDownEvent e) {
-    app.claimedPointers.add(e.pointer);
+    // **A background layer does not claim.** Claiming is how a block tells the
+    // canvas to keep its hands off a gesture, and a locked block — an
+    // imported slide — has no gesture of its own: it cannot be moved, resized
+    // or typed into. Leaving the press to the canvas is what lets a marquee
+    // start on top of a slide; see `_selectDown`, which still leaves the
+    // CLICK to the tap handler below so the slide can be selected.
+    if (!_locked) app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressOnChrome = _isChromeAt(e.position);
     _selectBase = null;

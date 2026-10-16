@@ -67,8 +67,9 @@ things to settle before writing any:
 
 - **The op log names every blob ever written and is never compacted.** A sweep
   that treats a `blob.put` as a reference can therefore collect nothing. This
-  is the same problem as the dead video in [v1.0.2 §19](v1.0.2.md), and
-  `blob.forget` is the sketched answer.
+  is the same problem as deleted media in
+  [v1.0.2's decisions](v1.0.2.md#decisions-taken), and `blob.forget` is the
+  sketched answer to both.
 - **The clipboard and the undo stack are reachability roots** and ADR-0007's
   list of four does not mention them. A blob whose only reference was just cut
   is reachable from the cut.

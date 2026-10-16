@@ -918,20 +918,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.pan;
       return;
     }
-    if (claimed) {
-      // **A background layer hands the gesture back.** A locked block — an
-      // imported slide — cannot be moved, resized or typed into, so a drag on
-      // one has nothing of its own to do, and a slide covers the page: without
-      // this there is no empty space left to start a marquee from, which is
-      // *"almost impossible to select handwritten notes on top of a PDF
-      // without selecting the PDF itself"*.
-      //
-      // Only the drag. A press that turns out to be a click belongs to the
-      // block's own tap handler, which selects it; [_downOnLocked] is what
-      // stops this also creating a text box on top of it.
-      if (!_overLockedOnly(controller.screenToPage(e.localPosition))) return;
-      _downOnLocked = true;
-    }
+    if (claimed) return; // a block, the title band or the bar owns this one
     // Right-click on empty canvas → context menu (blocks claim theirs first).
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kSecondaryMouseButton) != 0) {
@@ -951,6 +938,17 @@ class _PageCanvasState extends State<PageCanvas> {
     }
 
     final pagePt = controller.screenToPage(e.localPosition);
+    // **A background layer hands the gesture back.** A locked block — an
+    // imported slide — cannot be moved, resized or typed into, so it does not
+    // claim its pointers and the press arrives here instead. A slide covers
+    // the page, so without this there is no empty space left to start a
+    // marquee from: *"almost impossible to select handwritten notes on top of
+    // a PDF without selecting the PDF itself"*.
+    //
+    // Only the drag. A press that turns out to be a click belongs to the
+    // block's own tap, which selects the slide, and [_downOnLocked] is what
+    // stops this also creating a text box on top of it.
+    _downOnLocked = _overLockedOnly(pagePt);
     final inkHit = _hitInk(pagePt);
     if (inkHit != null) {
       if (!app.selectedIds.contains(inkHit)) {
@@ -1401,11 +1399,22 @@ class _PageCanvasState extends State<PageCanvas> {
                           top: 20,
                           child: IgnorePointer(
                             ignoring: _inkTool,
-                            child: PageTitleView(
-                              key: ValueKey('title-${app.pageId}'),
-                              app: app,
-                              width: pageSize.width -
-                                  AppState.pageLeftMargin * 2,
+                            // **Claims its pointers, the way a block does.**
+                            // Without this the canvas also saw the click and
+                            // did what a click on empty page does — reported
+                            // as *"clicking on the title creates a text box
+                            // on the page"*, with the caret landing in the
+                            // title and then leaving for the box that had
+                            // just appeared underneath it.
+                            child: Listener(
+                              onPointerDown: (e) =>
+                                  app.claimedPointers.add(e.pointer),
+                              child: PageTitleView(
+                                key: ValueKey('title-${app.pageId}'),
+                                app: app,
+                                width: pageSize.width -
+                                    AppState.pageLeftMargin * 2,
+                              ),
                             ),
                           ),
                         ),
