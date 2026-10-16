@@ -646,14 +646,18 @@ void main() {
       expect(persisted.containsKey('strokes'), isFalse);
 
       // Read it the way the editor does…
-      final working = InkStorage.toWorking(persisted, (h) => store[h]);
+      final working = InkStorage.toWorking(persisted, (h) => store[h], rev: 7);
       expect(working['strokes'], isA<List>(),
           reason: 'consumers must still see strokes');
 
       // …and save it again. THIS is where the geometry used to come back.
+      //
+      // The same revision both ways is what says the strokes have not been
+      // touched since they were decoded. Without it the save re-encodes, which
+      // is the price of never losing an edit — see `ink_edit_survives_save`.
       final again = InkStorage.toPersisted(working, (_) {
         fail('an unchanged reference must not write a second blob');
-      });
+      }, rev: 7);
       expect(again.containsKey('strokes'), isFalse,
           reason: 'the working strokes must not reach the disk');
       expect(InkStorage.refsOf(again), InkStorage.refsOf(persisted),

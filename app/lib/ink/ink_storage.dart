@@ -47,6 +47,19 @@ const String kInkKey = 'ink';
 /// has to keep working.
 const String kStrokesKey = 'strokes';
 
+/// **Working form only: the block revision these strokes were decoded at.**
+///
+/// Written by [InkStorage.toWorking] and stripped by [InkStorage.toPersisted],
+/// so it never reaches a file. It is what lets a save tell handwriting that
+/// has been edited from handwriting that has only been looked at: a block's
+/// `updatedAt` moves on every change to it, so strokes decoded at one
+/// revision and persisted at another have been touched in between.
+///
+/// Absent means "nobody said", and the answer to that is to re-encode. A
+/// wrong re-encode costs an encode nobody needed; a wrong skip loses whatever
+/// the person just did.
+const String kInkFromKey = 'inkFrom';
+
 abstract final class InkStorage {
   /// Does this block's content hold ink in the persisted (blob-ref) form?
   static bool isRefForm(Map<String, dynamic> content) =>
@@ -113,10 +126,16 @@ abstract final class InkStorage {
   /// Returns [content] unchanged when there is nothing to do — already
   /// persisted, or not ink at all — so this is safe to call on every block of
   /// every page.
+  ///
+  /// [rev] is the block's `updatedAt`. Given it, strokes that have not changed
+  /// since [toWorking] decoded them are written back as the reference they
+  /// came from rather than re-encoded; without it every block is re-encoded,
+  /// which is slower and never wrong. See [kInkFromKey].
   static Map<String, dynamic> toPersisted(
     Map<String, dynamic> content,
-    String Function(Uint8List bytes) putBlob,
-  ) {
+    String Function(Uint8List bytes) putBlob, {
+    int? rev,
+  }) {
     if (isRefForm(content)) {
       // **Already a reference — but drop the working strokes on the way out.**
       //
@@ -130,33 +149,79 @@ abstract final class InkStorage {
       //
       // Reported exactly that way: "it could not shrink any of the 113 pages —
       // a page matched the search but held no convertable handwriting".
-      if (!content.containsKey(kStrokesKey)) return content;
-      return Map<String, dynamic>.of(content)..remove(kStrokesKey);
+      if (content[kStrokesKey] is! List) return content;
+      final from = content[kInkFromKey];
+      if (rev != null && from is int && from == rev) {
+        return Map<String, dynamic>.of(content)
+          ..remove(kStrokesKey)
+          ..remove(kInkFromKey);
+      }
+      // **Touched since it was decoded, so the reference no longer describes
+      // it.** Dropping the working strokes here is what lost a move, an erase
+      // and a recolour: the rectangle on disk was the new one and the
+      // handwriting inside it was the old one, which is the mismatch between a
+      // selection box and its contents that issue #20 reported.
+      //
+      // Re-encoding is not a migration back to the inline shape — the output
+      // is a fresh `ink` reference. The old `add`/`gone` go with it because
+      // [toWorking] has already applied both, so the live strokes are what
+      // those described.
+      return _encoded(content, putBlob, over: content[kInkKey]);
     }
-    final legacy = content[kStrokesKey];
-    if (legacy is! List) return content;
+    if (content[kStrokesKey] is! List) return content;
+    return _encoded(content, putBlob);
+  }
+
+  /// Encode `content[kStrokesKey]` into a blob and return the reference form.
+  ///
+  /// [over] is the reference being replaced, if there was one: a decode that
+  /// could not reach its bytes hands back an empty working list (see
+  /// [_blank]), and encoding that over a reference to real handwriting would
+  /// destroy it. So an empty result never replaces a reference that claims
+  /// strokes — the save keeps the reference and loses the edit instead, which
+  /// is the smaller of the two losses and the one that is recoverable.
+  static Map<String, dynamic> _encoded(
+    Map<String, dynamic> content,
+    String Function(Uint8List bytes) putBlob, {
+    Object? over,
+  }) {
+    // Keep what is already on disk and write nothing new. For a block that
+    // arrived as a reference that is the reference itself; for one that
+    // arrived inline it is the inline strokes, which still render and still
+    // save, just not smaller.
+    Map<String, dynamic> keepWhatIsThere() => over == null
+        ? content
+        : (Map<String, dynamic>.of(content)
+          ..remove(kStrokesKey)
+          ..remove(kInkFromKey));
 
     final strokes = <Stroke>[];
-    for (final s in legacy) {
+    for (final s in (content[kStrokesKey] as List)) {
       if (s is Map) {
         try {
           strokes.add(Stroke.fromJson(s.cast<String, dynamic>()));
         } catch (_) {
           // A stroke this build cannot parse. Dropping it silently would lose
-          // handwriting, so bail out and leave the block in its legacy form —
-          // it still renders, it is still saved, it is just not smaller.
-          return content;
+          // handwriting.
+          return keepWhatIsThere();
         }
       }
     }
 
-    // An empty ink block has no blob. Writing a zero-stroke object would
-    // create a hash every empty block shared, which is harmless but pointless.
     if (strokes.isEmpty) {
-      final out = Map<String, dynamic>.of(content)..remove(kStrokesKey);
-      out[kInkKey] = {'v': 1, 'base': '', 'add': const [], 'gone': '', 'n': 0,
-        'o': const [0.0, 0.0]};
-      return out;
+      if (over is Map && ((over['n'] as num?) ?? 0) > 0) {
+        return keepWhatIsThere();
+      }
+      // An empty ink block has no blob. Writing a zero-stroke object would
+      // create a hash every empty block shared, which is harmless but
+      // pointless.
+      return Map<String, dynamic>.of(content)
+        ..remove(kStrokesKey)
+        ..remove(kInkFromKey)
+        ..[kInkKey] = {
+          'v': 1, 'base': '', 'add': const [], 'gone': '', 'n': 0,
+          'o': const [0.0, 0.0],
+        };
     }
 
     // The origin is the block's own top-left extent, which is what keeps the
@@ -171,18 +236,18 @@ abstract final class InkStorage {
     if (!ox.isFinite) ox = 0;
     if (!oy.isFinite) oy = 0;
 
-    final hash =
-        putBlob(InkCodec.encode(strokes, originX: ox, originY: oy));
-    final out = Map<String, dynamic>.of(content)..remove(kStrokesKey);
-    out[kInkKey] = {
-      'v': 1,
-      'base': hash,
-      'add': const <String>[],
-      'gone': '',
-      'n': strokes.length,
-      'o': [ox, oy],
-    };
-    return out;
+    final hash = putBlob(InkCodec.encode(strokes, originX: ox, originY: oy));
+    return Map<String, dynamic>.of(content)
+      ..remove(kStrokesKey)
+      ..remove(kInkFromKey)
+      ..[kInkKey] = {
+        'v': 1,
+        'base': hash,
+        'add': const <String>[],
+        'gone': '',
+        'n': strokes.length,
+        'o': [ox, oy],
+      };
   }
 
   /// The working form of [content], reading blobs through [getBlob].
@@ -191,10 +256,14 @@ abstract final class InkStorage {
   /// are not available — a notebook joined from a git remote can legitimately
   /// hold a ref whose blob has not arrived yet, and the right behaviour then is
   /// an ink block that draws nothing rather than a page that fails to open.
+  ///
+  /// [rev] is the block's `updatedAt`, recorded under [kInkFromKey] so a later
+  /// save can tell whether these strokes have been edited since.
   static Map<String, dynamic> toWorking(
     Map<String, dynamic> content,
-    Uint8List? Function(String hash) getBlob,
-  ) {
+    Uint8List? Function(String hash) getBlob, {
+    int? rev,
+  }) {
     final ink = content[kInkKey];
     if (ink is! Map) return content;
     final base = ink['base'];
@@ -260,8 +329,10 @@ abstract final class InkStorage {
     final out = Map<String, dynamic>.of(content);
     // The ink descriptor is KEPT alongside the working strokes, so a save that
     // does not touch this block can put the identical ref back rather than
-    // re-encoding and re-hashing bytes that have not changed.
+    // re-encoding and re-hashing bytes that have not changed. Which of the two
+    // happened is what [kInkFromKey] records.
     out[kStrokesKey] = [for (final s in live) s.toJson()];
+    if (rev != null) out[kInkFromKey] = rev;
     return out;
   }
 
@@ -306,7 +377,7 @@ abstract final class InkStorage {
         out.add(b);
         continue;
       }
-      final next = toPersisted(b.content, putBlob);
+      final next = toPersisted(b.content, putBlob, rev: b.updatedAt);
       if (next == b.content) {
         out.add(b);
         continue;
@@ -333,7 +404,7 @@ abstract final class InkStorage {
         out.add(b);
         continue;
       }
-      final next = toWorking(b.content, getBlob);
+      final next = toWorking(b.content, getBlob, rev: b.updatedAt);
       if (next == b.content) {
         out.add(b);
         continue;
