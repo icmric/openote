@@ -919,12 +919,24 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (claimed) return; // a block, the title band or the bar owns this one
+
+    final pagePt = controller.screenToPage(e.localPosition);
+    // **A background layer hands the gesture back.** A locked block — an
+    // imported slide — cannot be moved, resized or typed into, so it does not
+    // claim its pointers and the press arrives here instead. A slide covers
+    // the page, so without this there is no empty space left to start a
+    // marquee from: *"almost impossible to select handwritten notes on top of
+    // a PDF without selecting the PDF itself"*.
+    //
+    // The drag is all the canvas takes. A click and a right-click are still
+    // the block's, which is what selects a slide and opens its menu.
+    _downOnLocked = _overLockedOnly(pagePt);
+
     // Right-click on empty canvas → context menu (blocks claim theirs first).
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kSecondaryMouseButton) != 0) {
       _mode = _DragMode.none;
-      showCanvasMenu(
-          context, app, e.position, controller.screenToPage(e.localPosition));
+      if (!_downOnLocked) showCanvasMenu(context, app, e.position, pagePt);
       return;
     }
     if (e.kind == PointerDeviceKind.touch) {
@@ -937,18 +949,6 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
-    final pagePt = controller.screenToPage(e.localPosition);
-    // **A background layer hands the gesture back.** A locked block — an
-    // imported slide — cannot be moved, resized or typed into, so it does not
-    // claim its pointers and the press arrives here instead. A slide covers
-    // the page, so without this there is no empty space left to start a
-    // marquee from: *"almost impossible to select handwritten notes on top of
-    // a PDF without selecting the PDF itself"*.
-    //
-    // Only the drag. A press that turns out to be a click belongs to the
-    // block's own tap, which selects the slide, and [_downOnLocked] is what
-    // stops this also creating a text box on top of it.
-    _downOnLocked = _overLockedOnly(pagePt);
     final inkHit = _hitInk(pagePt);
     if (inkHit != null) {
       if (!app.selectedIds.contains(inkHit)) {
@@ -1021,13 +1021,17 @@ class _PageCanvasState extends State<PageCanvas> {
     _mode = _DragMode.none;
     switch (mode) {
       case _DragMode.pending:
-        // A click on a background layer is the block's own: it selects the
-        // slide. Creating a text box on top of it as well is not a thing
-        // anybody asked for twice.
-        if (_downOnLocked) break;
         final pagePt = controller.screenToPage(e.localPosition);
         if (app.tool == Tool.text) {
-          _createTextAt(pagePt); // Text tool: always create
+          // Text tool: always create. Deliberately chosen, so it lands where
+          // it was pointed — including on a slide being annotated, which is
+          // where somebody would most want to type.
+          _createTextAt(pagePt);
+        } else if (_downOnLocked) {
+          // Otherwise a click on a background layer is the block's own: it
+          // selects the slide. Creating a text box on top of it as well is
+          // not a thing anybody asked for twice.
+          break;
         } else if (app.editingBlockId != null) {
           // **Writing somewhere, then clicking the page, means "and now
           // here".** The owner: *"If i am in a box and click out onto the

@@ -198,6 +198,39 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('the text tool still puts a box on the slide', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final before = app.blocks.length;
+      await pump(t);
+      app.setTool(Tool.text);
+      await t.pump();
+
+      await t.tapAt(const Offset(400, 300));
+      await t.pump();
+
+      expect(app.blocks, hasLength(before + 1),
+          reason: 'a tool somebody chose does what it says, wherever they '
+              'point it');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('right-clicking the slide opens one menu, not two', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pump(t);
+
+      final g = await t.startGesture(const Offset(400, 300),
+          kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+      await g.up();
+      await t.pumpAndSettle();
+
+      // The canvas menu's own row. The block menu is the one that should be
+      // up: a locked block no longer claims its pointers, so without a guard
+      // both handlers fire and two menus stack.
+      expect(find.text('Paste'), findsNothing,
+          reason: 'the canvas menu did not also open');
+      app.cancelPendingSave();
+    });
+
     test('A LOCKED SLIDE DOES NOT STOP THE REST, AND DOES NOT COME ALONG', () {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final note = noteAt(100, 100);
