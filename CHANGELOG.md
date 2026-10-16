@@ -30,6 +30,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   was, so annotating the top of a slide and then the bottom produced one piece
   of handwriting the size of the slide — which every selection box then caught.
   A stroke now joins the note it was written beside.
+- **An imported picture keeps its real format.** Everything brought in from
+  OneNote was labelled a PNG whatever it was, so exporting that notebook to a
+  folder wrote JPEGs with a `.png` name. The format is read from the bytes,
+  and an exported picture is named accordingly.
 
 
 ### Added — try Openote in a browser before you download it

@@ -3003,6 +3003,11 @@ class Repository {
         starts([0x57, 0x45, 0x42, 0x50], at: 8)) {
       return 'image/webp';
     }
+    if (starts([0x42, 0x4d])) return 'image/bmp';
+    // Both byte orders: 'II' little-endian, 'MM' big-endian.
+    if (starts([0x49, 0x49, 0x2a, 0x00]) || starts([0x4d, 0x4d, 0x00, 0x2a])) {
+      return 'image/tiff';
+    }
     if (starts([0x4f, 0x49, 0x53, 0x31])) return inkMimeType; // 'OIS1'
     return 'application/octet-stream';
   }

@@ -25,8 +25,7 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 1 | **Use the macOS and Linux builds** | S | Three platforms ship; two have never been run by a human. CI proves they compile. §1.1 |
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
-| 4 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
-| 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.8 |
+| 4 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.7 |
 | 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
 | 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
 | 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is also the answer to splitting up a piece of handwriting that has grown — the lasso re-homes strokes, nothing names the pieces. |
@@ -79,22 +78,15 @@ things to settle before writing any:
 delete costs somebody's lecture, so every decision in it is deliberately
 asymmetric, and no evidence is never treated as evidence of absence.
 
-### 1.4 The imported-image mime label · **S**
-
-`onenote/` writes `image/png` for every image it extracts, whatever the bytes
-actually are — the parser does not transcode, so a JPEG stays a JPEG and gets
-the wrong label. `export/open_export.dart` derives the asset filename from the
-mime, so the open folder contains JPEGs named `.png`. Sniff the magic bytes.
-
-### 1.5 Large file drops read the whole file into memory
+### 1.4 Large file drops read the whole file into memory
 
 `canvas/media_drop.dart`, in the two drop handlers. Insert ▸ Video already
 streams. The half of this that *lied* — a drop that landed nothing and said
 nothing — is fixed; the progress half is not.
 
-### 1.6 Keep source files searchable
+### 1.5 Keep source files searchable
 
-`test/source_hygiene_test.dart` now refuses any control character in `lib/` or
+`test/source_hygiene_test.dart` refuses any control character in `lib/` or
 `test/`, because ripgrep treats a file containing one as binary and skips it
 entirely. That is how nine hundred lines of `text_block_view.dart` became
 invisible to every code search in the repo.
@@ -104,14 +96,20 @@ comment through a shell that interprets it becomes a control character silently.
 Ten files were carrying one when the check was widened, and two of them were tests
 whose assertions had been vacuous as a result.
 
-### 1.7 `lib/` must not touch a `debug*` member outside an assert
+### 1.6 `lib/` must not touch a `debug*` member outside an assert
 
 `RenderObject.debugNeedsLayout` is assigned inside an `assert`, so it throws
 with asserts stripped — release and profile only. Every open inline equation
 broke its paragraph's layout in the build a student downloads, and the whole
-suite passed. A sweep is the only way to check for more.
+suite passed.
 
-### 1.8 Specify the ink blob format · **S**
+`test/source_hygiene_test.dart` names the ones that behave this way and
+refuses them in `lib/` outside an assert, which is the only kind of check
+there can be: a debug suite cannot observe what a release build does. It is a
+list rather than a rule, so it grows the first time another one bites. The
+app's own `debug*` test seams are untouched by it.
+
+### 1.7 Specify the ink blob format · **S**
 
 [Ink spec §2.2](../specs/13-ink-data-spec.md) describes the reference an ink
 block stores and then says the bytes behind it are not specified here. That is
@@ -122,7 +120,7 @@ It is a writing job, not a design one. `app/lib/ink/ink_codec.dart` documents th
 format thoroughly and the encoding is deterministic; it needs transcribing into
 the spec as a byte layout, with a worked example.
 
-### 1.9 MathML export · **S–M**
+### 1.8 MathML export · **S–M**
 
 [Maths spec §6](../specs/12-math-input-spec.md) specifies it and nothing builds
 it, so an equation leaves Openote as LaTeX only. Two consumers want it: a tool
@@ -135,7 +133,7 @@ already a MathML parser in the tree, `onenote/mathml_latex.dart`, going the othe
 way for OneNote import; it is a reference for the vocabulary, not something to
 reverse.
 
-### 1.10 Two acceptance criteria this project set itself and did not meet
+### 1.9 Two acceptance criteria this project set itself and did not meet
 
 Both are [ADR-0004](../adr/ADR-0004-editor-engine.md)'s, and both are small.
 
@@ -152,7 +150,7 @@ Composition is inherited from a stock `TextField` rather than reimplemented, so 
 is probably fine. "Probably" is the problem, and it needs somebody who types in one
 of those languages rather than a test.
 
-### 1.11 `cloud_sync_test`'s purge assertion still flakes
+### 1.10 `cloud_sync_test`'s purge assertion still flakes
 
 *"Purging a joined notebook leaves the other device alone"* passes alone and fails
 under a full suite, roughly once in several runs:
@@ -175,14 +173,14 @@ still appends to the shared folder after both devices' auto-sync is off.** That 
 worth finding on its own terms, because a write nobody expects into a replicated
 folder is interesting whether or not a test is watching.
 
-### 1.12 Finish the translation coverage
+### 1.11 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
 warning about what protection does *not* cover is the one most worth
 translating.
 
-### 1.13 There is no way to pan with a pen · **S**
+### 1.12 There is no way to pan with a pen · **S**
 
 Middle-drag pans, two fingers pan, the wheel scrolls, and a graphics tablet
 has none of those. A pen drag on empty page is a selection box, so somebody

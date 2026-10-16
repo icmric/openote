@@ -279,7 +279,7 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
             (b.content['blob'] as String? ?? '').replaceFirst('sha256:', '');
         if (hash.isNotEmpty) {
           final mime = b.content['mime'] as String? ?? 'image/png';
-          final ext = mime.split('/').last.replaceFirst('jpeg', 'jpg');
+          final ext = extensionForMime(mime);
           assets[hash] = '$hash.$ext';
           buf.writeln('![image]($assetPrefix/$hash.$ext)\n');
         }
@@ -382,7 +382,7 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
         final hash =
             (b.content['blob'] as String? ?? '').replaceFirst('sha256:', '');
         final mime = b.content['mime'] as String? ?? 'image/png';
-        final ext = mime.split('/').last.replaceFirst('jpeg', 'jpg');
+        final ext = extensionForMime(mime);
         nodes.add({
           'id': b.id,
           'type': 'file',

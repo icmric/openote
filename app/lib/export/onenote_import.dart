@@ -11,6 +11,7 @@ import '../core/onote_ffi.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
+import '../store/repository.dart';
 import 'import_sink.dart';
 import '../ui/onote_dialog.dart';
 
@@ -964,7 +965,16 @@ String importOneParsedPage(ImportSink sink, String sectionId,
           continue;
         }
       }
-      final hash = sink.blob(png, 'image/png');
+      // **Whatever the bytes actually are.** Nothing here transcodes, so a
+      // JPEG in a OneNote section stays a JPEG — and every imported picture
+      // was labelled `image/png` regardless, which is how the open-folder
+      // export came to name JPEGs `.png`. An unrecognised format keeps the
+      // old label rather than being called octet-stream: these came out of a
+      // picture element, and a name that is wrong about which picture format
+      // is better than one that denies it is a picture.
+      final sniffed = Repository.sniffMime(png);
+      final mime = sniffed.startsWith('image/') ? sniffed : 'image/png';
+      final hash = sink.blob(png, mime);
       hashByIndex[i] = hash;
       lastImportedImages++;
       if (img['in_flow'] == true) continue; // rides a text box's flow
@@ -978,7 +988,7 @@ String importOneParsedPage(ImportSink sink, String sectionId,
         y: (img['y'] as num?)?.toDouble() ?? AppState.contentTop,
         w: w,
         h: h,
-        content: {'blob': 'sha256:$hash', 'mime': 'image/png'},
+        content: {'blob': 'sha256:$hash', 'mime': mime},
       ));
     }
 
