@@ -73,8 +73,19 @@ void main() {
       m['y'] = [for (final v in (m['y'] as List)) (v as num) + 100];
     }
 
+    final before = written.length;
     final saved = InkStorage.toPersisted(working, put, rev: 101);
     expect(xsOf(InkStorage.toWorking(saved, get, rev: 101)), [110, 120, 130]);
+
+    // **And a drag costs no bytes**, which the codec's doc comment promises
+    // and which was not true until this re-encode existed: the blob holds
+    // coordinates relative to an origin the block carries, so moving the
+    // whole thing changes the origin and not one byte of geometry. The
+    // encoding is deterministic, so the same strokes hash to the same blob.
+    expect(written.length, before + 1, reason: 'one encode');
+    expect(store, hasLength(1), reason: 'and it was a blob we already had');
+    expect((saved[kInkKey] as Map)['o'], [110.0, 110.0],
+        reason: 'the origin moved instead');
   });
 
   test('an erase is not undone by the save that follows it', () {
