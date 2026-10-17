@@ -1,11 +1,16 @@
-// Which ink block a new stroke joins.
+// Which ink block a new stroke lands in: its own.
 //
-// A stroke lands in the block it was written beside. The test used to be time
-// alone — anything drawn within two seconds joined the last block touched,
-// wherever on the page it was — so annotating two corners of a slide in quick
-// succession produced one ink block the size of the slide. From issue #20:
-// *"handwritten strokes sometimes get grouped into one large object, and
-// there's no way to separate them."*
+// Two guesses have been tried and both swept separate marks into one object —
+// time alone (anything within two seconds joined the last block touched,
+// wherever it was), then time and distance. From issue #20: *"i just drew a
+// bit where i had several seperate strokes and they all got grouped into one
+// large thing. It should be split stroke by stroke, if they are visibly not
+// connected they shouldnt be connected as an object (unless they are grouped
+// together)."*
+//
+// Grouping is the lasso's job (INK-7) and is tested here beside the splitting,
+// because "one stroke per block" is only the right default if saying otherwise
+// actually works.
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -81,7 +86,7 @@ void main() {
 
   int inkBlocks() => app.blocks.where((b) => b.type == BlockType.ink).length;
 
-  testWidgets('WRITING ON IN THE SAME PLACE STAYS ONE BLOCK', (t) async {
+  testWidgets('TWO STROKES IN THE SAME PLACE ARE TWO BLOCKS', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await openPage(t);
     app.setTool(Tool.pen);
@@ -89,18 +94,24 @@ void main() {
     await stroke(t, const Offset(200, 200), const Offset(240, 210));
     await stroke(t, const Offset(246, 202), const Offset(280, 212));
 
-    expect(inkBlocks(), 1, reason: 'the next word is part of the same note');
+    expect(inkBlocks(), 2, reason: 'nothing decided they were one mark');
   });
 
-  testWidgets('THE NEXT LINE DOWN IS STILL THE SAME NOTE', (t) async {
+  testWidgets('AND EACH BLOCK IS ONLY AS BIG AS ITS OWN STROKE', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await openPage(t);
     app.setTool(Tool.pen);
 
-    await stroke(t, const Offset(200, 200), const Offset(280, 205));
-    await stroke(t, const Offset(200, 228), const Offset(280, 233));
+    await stroke(t, const Offset(200, 200), const Offset(240, 210));
+    await stroke(t, const Offset(500, 400), const Offset(540, 410));
 
-    expect(inkBlocks(), 1);
+    // The symptom of a block that grew: its rectangle covers ground it has no
+    // ink on, so a marquee anywhere inside catches it and a click on empty
+    // page picks it up.
+    for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
+      expect(b.w, lessThan(120), reason: 'no block spans the gap');
+      expect(b.h, lessThan(120));
+    }
   });
 
   testWidgets('A NOTE SOMEWHERE ELSE ON THE PAGE IS ITS OWN BLOCK', (t) async {
@@ -115,5 +126,37 @@ void main() {
     expect(inkBlocks(), 2,
         reason: 'two marks at opposite corners are two things, and a marquee '
             'over one of them must not pick up the other');
+  });
+
+  testWidgets('THE LASSO IS HOW STROKES BECOME ONE OBJECT', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await openPage(t);
+    app.setTool(Tool.pen);
+
+    await stroke(t, const Offset(200, 200), const Offset(240, 210));
+    await stroke(t, const Offset(246, 202), const Offset(280, 212));
+    expect(inkBlocks(), 2);
+
+    app.setTool(Tool.lasso);
+    await t.pump();
+    final g = await t.startGesture(const Offset(180, 180),
+        kind: PointerDeviceKind.mouse);
+    for (final p in const [
+      Offset(300, 180),
+      Offset(300, 240),
+      Offset(180, 240),
+      Offset(180, 182),
+    ]) {
+      await g.moveTo(p);
+      await t.pump();
+    }
+    await g.up();
+    await t.pump();
+    app.cancelPendingSave();
+
+    expect(inkBlocks(), 1, reason: 'the loop said these two are one thing');
+    expect(app.selectedIds, hasLength(1),
+        reason: 'and handed it over selected, ready to be moved at once');
+    expect(app.tool, Tool.select);
   });
 }

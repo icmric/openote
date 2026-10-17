@@ -184,8 +184,7 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('a click on the slide selects the slide and nothing else',
-        (t) async {
+    testWidgets('A CLICK ON THE SLIDE SELECTS NOTHING AT ALL', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final before = app.blocks.length;
       await pump(t);
@@ -195,6 +194,26 @@ void main() {
 
       expect(app.blocks, hasLength(before),
           reason: 'no text box was created over it');
+      // Issue #20, second time round: *"it should more or less act as a
+      // background piece, i think the only time it should not act as one is
+      // if i right click it … and unlock it."* Selecting it was the last way
+      // a slide could be picked up, and the only one somebody could reach by
+      // accident while writing on it.
+      expect(app.selectedIds, isEmpty);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and it puts down what was being held', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final note = noteAt(200, 200);
+      await pump(t);
+      app.select(note.id);
+
+      await t.tapAt(const Offset(600, 500));
+      await t.pump();
+
+      expect(app.selectedIds, isEmpty,
+          reason: 'a click on the background is how you put something down');
       app.cancelPendingSave();
     });
 

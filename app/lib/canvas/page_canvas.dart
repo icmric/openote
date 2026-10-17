@@ -120,10 +120,6 @@ class _PageCanvasState extends State<PageCanvas> {
   /// drag back from. See [_selectDown].
   bool _downOnLocked = false;
 
-  /// How far from an ink block a new stroke still counts as part of it, in
-  /// page units — about a line of handwriting. See [_inkUp].
-  static const double _kInkJoinMargin = 48;
-
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
   double? _pinchBaseDist;
@@ -544,32 +540,22 @@ class _PageCanvasState extends State<PageCanvas> {
         return;
       }
     }
-    // **Strokes join the block they were written next to, not the last one
-    // written.** Time alone was the whole test, so annotating the top of a
-    // slide and then the bottom within a couple of seconds produced one ink
-    // block the size of the slide — issue #20's *"handwritten strokes
-    // sometimes get grouped into one large object, and there's no way to
-    // separate them"*, and every marquee drawn anywhere caught it.
+    // **A stroke is its own object.** Nothing guesses which marks belong
+    // together. The test was time alone, so two corners of a slide annotated
+    // within two seconds became one block the size of the slide; then it was
+    // time and distance, which still swept up a line of separate marks:
+    // *"i just drew a bit where i had several seperate strokes and they all
+    // got grouped into one large thing. It should be split stroke by stroke,
+    // if they are visibly not connected they shouldnt be connected as an
+    // object."* (Issue #20.)
     //
-    // The margin is about a line of handwriting, so the next word and the
-    // next line still land in the same block and a note somewhere else on the
-    // page starts its own. Splitting one that has already grown is the
-    // lasso's job (INK-7).
-    final reach = Rect.fromLTRB(w.x.reduce(math.min), w.y.reduce(math.min),
-            w.x.reduce(math.max), w.y.reduce(math.max))
-        .inflate(_kInkJoinMargin);
+    // Guessing is what was wrong with it, not the particular guess. Strokes
+    // are page-absolute and immutable (Ink Spec §2), so which block holds
+    // which stroke costs nothing to get right later — and the lasso (INK-7)
+    // already gathers what it caught into one block and selects it, which is
+    // grouping said out loud instead of inferred from a timer.
     app.pushUndo();
-    Block? target;
-    for (final b in app.blocks.reversed) {
-      if (b.type == BlockType.ink &&
-          nowMs() - b.updatedAt < 2000 &&
-          InkStorage.strokesOf(b.content).length < 512 &&
-          reach.overlaps(_blockRect(b))) {
-        target = b;
-        break;
-      }
-    }
-    target ??= app.addBlock(
+    final target = app.addBlock(
         Block(type: BlockType.ink, x: 0, y: 0, content: {'strokes': []}),
         recordUndo: false);
     (target.content[kStrokesKey] as List).add(w.toJson());
@@ -1028,10 +1014,12 @@ class _PageCanvasState extends State<PageCanvas> {
           // where somebody would most want to type.
           _createTextAt(pagePt);
         } else if (_downOnLocked) {
-          // Otherwise a click on a background layer is the block's own: it
-          // selects the slide. Creating a text box on top of it as well is
-          // not a thing anybody asked for twice.
-          break;
+          // **A click on a background layer puts down whatever was held.**
+          // It is the page behind the notes, so it does what a click on empty
+          // page does, minus the text box nobody wants dropped on a slide
+          // they are annotating. The slide itself does not join the
+          // selection — see [BlockView._tap].
+          app.select(null);
         } else if (app.editingBlockId != null) {
           // **Writing somewhere, then clicking the page, means "and now
           // here".** The owner: *"If i am in a box and click out onto the

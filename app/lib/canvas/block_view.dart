@@ -152,6 +152,17 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.table;
 
   void _tap() {
+    // **A background layer is not one of the things on the page.** A locked
+    // slide stays out of the selection however it is reached — the marquee
+    // skips it, and a click on it is a click on the page behind the notes,
+    // which the canvas answers by clearing the selection. Issue #20: *"it
+    // should more or less act as a background piece, i think the only time it
+    // should not act as one is if i right click it … and unlock it."*
+    //
+    // Only for the types that cannot be edited, which is every kind of slide.
+    // Locking a text box is locking where it sits; typing in it is not moving
+    // it, and taking that away is not what the menu item offers.
+    if (_locked && !_editableType) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
     if (shift) {
       app.select(b.id, additive: true);

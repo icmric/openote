@@ -360,13 +360,16 @@ class Block {
   final int createdAt;
   int updatedAt;
 
-  /// A background layer: it cannot be moved, resized or typed into.
+  /// A background layer: it cannot be moved or resized, and nothing that
+  /// picks blocks up picks it up.
   ///
   /// Written by `export/pdf_import.dart` for an imported slide, which is the
-  /// page somebody is annotating rather than a thing on it. Everything that
-  /// acts on a selection asks this, because a slide that joined a selection it
-  /// has no part in is how a drag ends up moving nothing — reported in
-  /// issue #20.
+  /// page somebody is annotating rather than a thing on it. A click goes to
+  /// the canvas, a marquee skips it, and what remains is its right-click menu
+  /// — where "Unlock" is, which is the way back out. Issue #20.
+  ///
+  /// A locked box that can be edited can still be typed into: locking is
+  /// about where a thing sits.
   bool get locked => content['locked'] == true;
 
   static const _known = {
