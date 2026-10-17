@@ -337,6 +337,13 @@ class LDe extends L {
   String get canvasDeleteSelection => 'Löschen  (Entf)';
 
   @override
+  String get canvasGroupSelection => 'Gruppieren  (Strg+G)';
+
+  @override
+  String get canvasUngroupSelection =>
+      'Gruppierung aufheben  (Strg+Umschalt+G)';
+
+  @override
   String get commonBack => 'Zurück';
 
   @override

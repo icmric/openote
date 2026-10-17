@@ -460,6 +460,14 @@
   "@canvasDeleteSelection": {
     "description": "Tooltip on the button that appears above a selection. Keep the key name in brackets as the local keyboard spells it."
   },
+  "canvasGroupSelection": "Group  (Ctrl+G)",
+  "@canvasGroupSelection": {
+    "description": "Tooltip on the Group button above a selection. Keep the shortcut in brackets as the local keyboard spells it."
+  },
+  "canvasUngroupSelection": "Ungroup  (Ctrl+Shift+G)",
+  "@canvasUngroupSelection": {
+    "description": "Tooltip on the Ungroup button above a selection. Keep the shortcut in brackets as the local keyboard spells it."
+  },
   "commonBack": "Back",
   "@commonBack": {
     "description": "Button: return to the previous step of a multi-step flow."

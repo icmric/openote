@@ -92,6 +92,8 @@
   "barUndo": "撤销  (Ctrl+Z)",
   "barUpdateTo": "更新到 {version}…",
   "canvasDeleteSelection": "删除  (Del)",
+  "canvasGroupSelection": "组合  (Ctrl+G)",
+  "canvasUngroupSelection": "取消组合  (Ctrl+Shift+G)",
   "commonBack": "上一步",
   "commonCancel": "取消",
   "commonCopy": "复制",

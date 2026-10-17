@@ -121,6 +121,16 @@ class _BlockViewState extends State<BlockView> {
   int? _selectBase;
   bool _textDragging = false;
 
+  /// Whether the press that started this gesture landed on a member of a group
+  /// that was not yet held.
+  ///
+  /// **Latched at pointer-down, because picking the group up is the first
+  /// thing the gesture does.** Read live instead, it would be true for the
+  /// press and false for every move after it — handing the rest of the drag
+  /// to the member's own text selection, which is exactly the gesture the
+  /// group was supposed to take.
+  bool _pressTookGroup = false;
+
   /// Whether the press that started this gesture landed on CHROME — the move
   /// bar, a resize handle, or the hit-padding — rather than on the block's own
   /// content.
@@ -138,6 +148,20 @@ class _BlockViewState extends State<BlockView> {
   bool get selected => app.selectedIds.contains(b.id);
   bool get primary => app.selectedBlockId == b.id;
   bool get editing => app.editingBlockId == b.id;
+
+  /// Is this block's group already the thing being held?
+  ///
+  /// A selection is closed over groups ([AppState.select]), so one member
+  /// being selected means every member is — which is what lets a question
+  /// about the group be answered by looking at this block alone.
+  bool get _groupHeld => b.groupId != null && selected;
+
+  /// Does the group own the next gesture on this block, rather than the block
+  /// itself? True for a member of a group nobody has picked up yet: the first
+  /// click selects the group and the first drag moves it, and only once it is
+  /// held do this block's own body gestures — selecting its text, panning its
+  /// graph — come back. See [_tap].
+  bool get _groupTakesGesture => b.groupId != null && !_groupHeld;
 
   /// A click just opened this box with nothing in it and nothing typed
   /// since — OneNote-style: the caret is live but the box itself stays
@@ -164,6 +188,19 @@ class _BlockViewState extends State<BlockView> {
     // it, and taking that away is not what the menu item offers.
     if (_locked && !_editableType) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    // **A grouped block answers for its group first.** Clicking one member
+    // picks the whole group up, which is the point of having joined it; a
+    // second click, now that the group is already held, goes to the member
+    // under the pointer and opens it. That is how every drawing tool lets you
+    // reach inside a group, and it is the only way a grouped text box stays
+    // typeable without making the first click ambiguous.
+    //
+    // Shift is excluded because it means "add to what I have", and
+    // [AppState.select] already toggles the whole group for it.
+    if (!shift && _groupTakesGesture) {
+      app.select(b.id);
+      return;
+    }
     if (shift) {
       app.select(b.id, additive: true);
     } else if (_editableType) {
@@ -232,6 +269,7 @@ class _BlockViewState extends State<BlockView> {
     if (!_locked) app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressOnChrome = _isChromeAt(e.position);
+    _pressTookGroup = _groupTakesGesture;
     _selectBase = null;
     _textDragging = false;
   }
@@ -242,6 +280,9 @@ class _BlockViewState extends State<BlockView> {
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
     if (_pressOnChrome) return;
+    // A group nobody is holding moves as one thing. Its members' text stays
+    // selectable, but only after the group has been picked up.
+    if (_pressTookGroup) return;
     if (!_textDragging && (e.position - from).distance < 4) return;
     if (HardwareKeyboard.instance.isAltPressed) return; // Alt-drag moves
     if (!_textDragging) {
@@ -339,7 +380,11 @@ class _BlockViewState extends State<BlockView> {
                 b.type != BlockType.board &&
                 b.type != BlockType.graph &&
                 b.type != BlockType.substitute) ||
-            HardwareKeyboard.instance.isAltPressed;
+            HardwareKeyboard.instance.isAltPressed ||
+            // A member of a group nobody has picked up yet drags the whole
+            // group, whatever the block would otherwise have done with the
+            // gesture — the same rule [_tap] applies to the first click.
+            _pressTookGroup;
     if (_bodyDragMoves) _dragStart(d);
   }
 
@@ -659,7 +704,9 @@ class _BlockViewState extends State<BlockView> {
     final body = MouseRegion(
       onEnter: (_) => _setHover(body: true),
       onExit: (_) => _setHover(body: false),
-      cursor: _editableType && !editing
+      // An I-beam over a group nobody is holding would promise a caret that
+      // the first click does not give — it selects the group instead.
+      cursor: _editableType && !editing && !_groupTakesGesture
           ? SystemMouseCursors.text
           : MouseCursor.defer,
       child: GestureDetector(

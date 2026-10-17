@@ -338,6 +338,12 @@ class LIt extends L {
   String get canvasDeleteSelection => 'Elimina  (Canc)';
 
   @override
+  String get canvasGroupSelection => 'Raggruppa  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Separa  (Ctrl+Maiusc+G)';
+
+  @override
   String get commonBack => 'Indietro';
 
   @override

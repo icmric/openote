@@ -319,6 +319,16 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       if (b.type == BlockType.embed && PortalRef.parse(b.content) != null)
         _item('to-link', Icons.link, 'Change to a page link'),
       const PopupMenuDivider(),
+      // **Joining handwriting.** A stroke is its own block, so the lasso is
+      // the only thing that gathers a written word — and until now that
+      // gathering lasted exactly as long as the selection. Offered only when
+      // there is something to do: with one whole group selected the answer is
+      // Ungroup, and neither row appears for a single loose block.
+      if (app.canGroup)
+        _item('group', Icons.group_work_outlined, 'Group', shortcut: 'Ctrl+G'),
+      if (app.canUngroup)
+        _item('ungroup', Icons.scatter_plot_outlined, 'Ungroup',
+            shortcut: 'Ctrl+Shift+G'),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
       const PopupMenuDivider(),
@@ -378,6 +388,10 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       app.cutSelectedBlocks();
     case 'duplicate':
       app.duplicateBlock(b.id);
+    case 'group':
+      app.groupSelected();
+    case 'ungroup':
+      app.ungroupSelected();
     case 'front':
       app.bringToFront(b.id);
     case 'back':

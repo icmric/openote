@@ -33,6 +33,9 @@ import 'portal_view.dart';
 ///   · click empty page (something selected)→ deselect
 ///   · drag empty page                      → marquee multi-select (CANVAS-7)
 ///   · click ink                            → select ink block; drag moves it
+///   · click a grouped block                → select the whole group; click
+///                                            again to reach the member
+///                                            (CANVAS-7, Data Model §3.2)
 ///   · middle-drag                          → pan · Ctrl+scroll → zoom
 ///   · trackpad pan/pinch                   → pan/zoom · two-finger touch → pinch
 class PageCanvas extends StatefulWidget {
@@ -1189,12 +1192,28 @@ class _PageCanvasState extends State<PageCanvas> {
     final vp = controller.viewport;
     if (vp == Size.zero) return const [];
     final at = controller.pageToScreen(rect.topLeft);
-    const w = 36.0, h = 30.0, gap = 6.0;
+    const bw = 36.0, h = 30.0, gap = 6.0;
+    final l = L.of(context);
+    // **Group lives here for the same reason Delete does.** Joining strokes is
+    // what the lasso is for, and Ctrl+G is not on a tablet held in one hand
+    // with a pen in the other either. Offered only when there is something to
+    // do, so the row stays one button wide in the ordinary case.
+    final actions = <(IconData, String, VoidCallback)>[
+      if (app.canGroup)
+        (Icons.group_work_outlined, l.canvasGroupSelection, app.groupSelected),
+      if (app.canUngroup)
+        (
+          Icons.scatter_plot_outlined,
+          l.canvasUngroupSelection,
+          app.ungroupSelected
+        ),
+      (Icons.delete_outline, l.canvasDeleteSelection, app.removeSelected),
+    ];
+    final w = bw * actions.length;
     final top = (at.dy - h - gap)
         .clamp(2.0, math.max(2.0, vp.height - h - 2))
         .toDouble();
     final left = at.dx.clamp(2.0, math.max(2.0, vp.width - w - 2)).toDouble();
-    final l = L.of(context);
     return [
       Positioned(
         left: left,
@@ -1212,12 +1231,22 @@ class _PageCanvasState extends State<PageCanvas> {
             child: SizedBox(
               width: w,
               height: h,
-              child: IconButton(
-                icon: const Icon(Icons.delete_outline, size: OnoteIcon.md),
-                tooltip: l.canvasDeleteSelection,
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                onPressed: app.removeSelected,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (icon, tip, act) in actions)
+                    SizedBox(
+                      width: bw,
+                      height: h,
+                      child: IconButton(
+                        icon: Icon(icon, size: OnoteIcon.md),
+                        tooltip: tip,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: act,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),

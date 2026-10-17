@@ -92,6 +92,8 @@
   "barUndo": "Annulla  (Ctrl+Z)",
   "barUpdateTo": "Aggiorna alla {version}…",
   "canvasDeleteSelection": "Elimina  (Canc)",
+  "canvasGroupSelection": "Raggruppa  (Ctrl+G)",
+  "canvasUngroupSelection": "Separa  (Ctrl+Maiusc+G)",
   "commonBack": "Indietro",
   "commonCancel": "Annulla",
   "commonCopy": "Copia",

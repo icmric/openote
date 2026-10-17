@@ -338,6 +338,12 @@ class LFr extends L {
   String get canvasDeleteSelection => 'Supprimer  (Suppr)';
 
   @override
+  String get canvasGroupSelection => 'Grouper  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Dissocier  (Ctrl+Maj+G)';
+
+  @override
   String get commonBack => 'Retour';
 
   @override

@@ -92,6 +92,8 @@
   "barUndo": "Annuler  (Ctrl+Z)",
   "barUpdateTo": "Mettre à jour vers {version}…",
   "canvasDeleteSelection": "Supprimer  (Suppr)",
+  "canvasGroupSelection": "Grouper  (Ctrl+G)",
+  "canvasUngroupSelection": "Dissocier  (Ctrl+Maj+G)",
   "commonBack": "Retour",
   "commonCancel": "Annuler",
   "commonCopy": "Copier",

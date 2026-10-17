@@ -328,6 +328,12 @@ class LZh extends L {
   String get canvasDeleteSelection => '删除  (Del)';
 
   @override
+  String get canvasGroupSelection => '组合  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => '取消组合  (Ctrl+Shift+G)';
+
+  @override
   String get commonBack => '上一步';
 
   @override

@@ -665,6 +665,18 @@ abstract class L {
   /// **'Delete  (Del)'**
   String get canvasDeleteSelection;
 
+  /// Tooltip on the Group button above a selection. Keep the shortcut in brackets as the local keyboard spells it.
+  ///
+  /// In en, this message translates to:
+  /// **'Group  (Ctrl+G)'**
+  String get canvasGroupSelection;
+
+  /// Tooltip on the Ungroup button above a selection. Keep the shortcut in brackets as the local keyboard spells it.
+  ///
+  /// In en, this message translates to:
+  /// **'Ungroup  (Ctrl+Shift+G)'**
+  String get canvasUngroupSelection;
+
   /// Button: return to the previous step of a multi-step flow.
   ///
   /// In en, this message translates to:

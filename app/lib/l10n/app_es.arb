@@ -92,6 +92,8 @@
   "barUndo": "Deshacer  (Ctrl+Z)",
   "barUpdateTo": "Actualizar a {version}…",
   "canvasDeleteSelection": "Eliminar  (Supr)",
+  "canvasGroupSelection": "Agrupar  (Ctrl+G)",
+  "canvasUngroupSelection": "Desagrupar  (Ctrl+Mayús+G)",
   "commonBack": "Atrás",
   "commonCancel": "Cancelar",
   "commonCopy": "Copiar",

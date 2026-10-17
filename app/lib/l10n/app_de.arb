@@ -92,6 +92,8 @@
   "barUndo": "Rückgängig  (Strg+Z)",
   "barUpdateTo": "Auf {version} aktualisieren…",
   "canvasDeleteSelection": "Löschen  (Entf)",
+  "canvasGroupSelection": "Gruppieren  (Strg+G)",
+  "canvasUngroupSelection": "Gruppierung aufheben  (Strg+Umschalt+G)",
   "commonBack": "Zurück",
   "commonCancel": "Abbrechen",
   "commonCopy": "Kopieren",

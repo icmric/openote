@@ -651,6 +651,22 @@ class _AppShellState extends State<AppShell> {
         if (s != null) app.duplicateBlock(s);
         return true;
       }
+      if (k == LogicalKeyboardKey.keyG) {
+        // Ctrl+G joins, Ctrl+Shift+G takes apart — the pairing every drawing
+        // tool has used for thirty years, so it needs no teaching.
+        //
+        // Not swallowed when there is nothing to do: a chord that returns
+        // true having changed nothing is a dead key, and this one is reached
+        // whenever the canvas has the keyboard.
+        if (shift) {
+          if (!app.canUngroup) return false;
+          app.ungroupSelected();
+        } else {
+          if (!app.canGroup) return false;
+          app.groupSelected();
+        }
+        return true;
+      }
       if (k == LogicalKeyboardKey.equal || k == LogicalKeyboardKey.add) {
         app.canvas.setZoom(app.canvas.scale * 1.2);
         return true;

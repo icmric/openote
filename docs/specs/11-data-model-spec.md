@@ -66,6 +66,7 @@ Every block shares this envelope. `content` is per type, and §4 is the registry
   "z": 3,                            // paint order among page blocks
   "placement": "free",               // "free" | "snapped"
   "frameId": null,                   // membership in a frame (§6), or null
+  "groupId": "0198f3c2-…",           // membership in a group (§3.2); OMITTED when none
   "absorbedIds": [],                 // §2 rule 6
   "access": null,                    // RESERVED for block ownership/locking (P3 collaboration):
                                      // { "ownerId": "...", "lock": "unlocked"|"owner-only"|"locked" }
@@ -107,6 +108,55 @@ of them.
 `pageWidth` is the width of the presented page surface. At normal zoom the page
 fills the window as one continuous surface; zoomed out it presents as a bounded
 sheet whose height and right edge grow with content.
+
+### 3.2 Groups
+
+Blocks sharing a non-null `groupId` are **one thing to pick up**: selecting any
+member selects all of them, so they move, copy, cut and delete as a unit.
+
+```jsonc
+{"id": "…a", "type": "ink",  "groupId": "0198f3c2-7b1e-7cc3-9f10-3d2a8c41e977"}
+{"id": "…b", "type": "ink",  "groupId": "0198f3c2-7b1e-7cc3-9f10-3d2a8c41e977"}
+{"id": "…c", "type": "text", "groupId": "0198f3c2-7b1e-7cc3-9f10-3d2a8c41e977"}
+```
+
+The id is a UUIDv7 like any other (§2 rule 1), and it names the group rather
+than any block in it — so no member is privileged and removing one does not
+rehome the rest.
+
+**Rules.**
+
+1. **Flat.** One id per block means a block is in at most one group. Groups do
+   not nest, and grouping a selection that spans two existing groups MERGES
+   them into one rather than nesting either.
+2. **A group of one is not a group.** When a group has fewer than two members
+   — the others were deleted, or only one was pasted — a writer MUST clear the
+   `groupId`, and a reader MUST treat the lone member as ungrouped.
+3. **`groupId` is a link within the selection** (§2 rule 3), so an operation
+   that re-identifies blocks MUST remap it to a fresh id rather than carry it
+   — paste and duplicate are the two that do today. Pasted blocks form their
+   own group and never join the one they came from, which is what stops a drag
+   of the original walking the copies across the page with it. Paste part of a
+   group and the result is a group of just that part.
+4. **Omitted when there is none.** A writer MUST NOT emit `"groupId": null`.
+   An unconditional key would change the JSON of every block ever written, so
+   the next save of an untouched notebook would rewrite all of it and hand the
+   op log a diff per block — the same reason §3.1's paged keys are conditional.
+5. **Membership survives a reader that does not understand it.** It is an
+   envelope field, so a release that has never heard of groups rescues it under
+   the unknown-field rule above and writes it back untouched. Such a reader will
+   not honour the relation — moving one member there leaves the others behind —
+   but it cannot destroy it.
+
+**Not a frame.** A group has no bounds, no label and no place in the paint
+order; membership is the whole of what it is. §6's `frame` is the opposite —
+a visible region that happens to contain things. They are separate fields
+because they answer separate questions, and a block may have both.
+
+*(Informative)* A group is modelled as a field rather than a `group` block
+because a block would need bounds nobody authored, would take a place in the
+paint order it has no business in, and — worst — a reader that moved or dropped
+it would silently change what the group meant. A field can only be carried.
 
 ## 4. Block types
 
@@ -374,6 +424,9 @@ inside it carrying `frameId` and moving with it.
 **Nothing creates one.** The type is reserved, a reader should expect never to
 meet it, and it MUST round-trip like any other unknown block if it does.
 
+A frame is **not** how blocks are joined so they move together — that is §3.2's
+`groupId`, which is built. A frame is a region with an identity of its own.
+
 It is specified because it is the shape a durable *spatial* embed target wants:
 frames have identity, they grow and move with their content, and they appear in
 backlinks, where a raw rectangle drifts as soon as somebody rearranges the canvas.
@@ -470,7 +523,8 @@ forever, which is the canonical failure this rule exists to prevent.
 Each of these is checkable, and each has a test behind it.
 
 1. **Ids are unique** within a notebook, and no block names a `frameId` that does
-   not exist on its own page.
+   not exist on its own page. A `groupId` names no block, so it cannot dangle —
+   but no page carries one that only a single block holds (§3.2 rule 2).
 2. **The container agrees with the log.** Replaying every operation reproduces
    `page_mirror`, `nodes` and the projections. This is not a nicety: it is the
    check that makes the container safely rebuildable, and it is what a second

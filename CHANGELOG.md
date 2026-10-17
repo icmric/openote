@@ -28,6 +28,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   pair is your colour and Automatic, which is the "a couple of words, not
   every word" case.
 
+### Added — things on the canvas stay joined
+
+- **Group and ungroup.** A stroke is its own block, so a written word is
+  several of them and the lasso was the only thing that gathered them — for
+  exactly as long as the selection lasted. Joined blocks are now one thing to
+  pick up: clicking any member selects all of them, and they move, copy, cut
+  and delete together. Ctrl+G joins, Ctrl+Shift+G takes apart, and both are in
+  the right-click menu and on the button above a selection, because neither
+  chord is on a tablet held in one hand with a pen in the other.
+  - A grouped text box is still typeable: the first click picks the group up,
+    the second opens the box under the pointer.
+  - A copy never joins the group it was copied from, and a group left with one
+    member is no longer a group.
+  - Membership is an envelope field (`groupId`, Data Model Spec §3.2), so an
+    older release carries it through untouched rather than destroying it — it
+    just will not move the other members for you.
+
 ### Added — bold and a colour on the same word
 
 - **Two kinds of formatting can be combined.** Colouring a word that was

@@ -335,6 +335,12 @@ class LEn extends L {
   String get canvasDeleteSelection => 'Delete  (Del)';
 
   @override
+  String get canvasGroupSelection => 'Group  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Ungroup  (Ctrl+Shift+G)';
+
+  @override
   String get commonBack => 'Back';
 
   @override

@@ -337,6 +337,12 @@ class LPt extends L {
   String get canvasDeleteSelection => 'Eliminar  (Del)';
 
   @override
+  String get canvasGroupSelection => 'Agrupar  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Desagrupar  (Ctrl+Shift+G)';
+
+  @override
   String get commonBack => 'Voltar';
 
   @override

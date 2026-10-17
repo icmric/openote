@@ -28,13 +28,12 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 4 | **The spell checker knows mitochondria and not Monday** | M | Four reports in one: the bundled list is a Scrabble lexicon, so every name and most of this decade is underlined. §1.12 |
 | 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
 | 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
-| 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is now what *joining* handwriting means: a stroke is its own block, and the lasso is the only thing that gathers them. The owner, on strokes: *"unless they are grouped together, which from what i can see hasnt actually been implemented yet"*. |
-| 8 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
-| 9 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
-| 10 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
-| 11 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
-| 12 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 13 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
+| 7 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
+| 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
+| 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
+| 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
+| 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
+| 12 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
 
 ---
 
