@@ -46,6 +46,15 @@ sixteen-core machine and does not fit. Those carry
 kind: intermittent, one platform, one test at a time, reported as
 "TimeoutException after 0:00:30" with nothing in it about git.
 
+**A widget test is on Android unless it says otherwise**, and a good deal of
+framework behaviour turns on that. `EditableText` unfocuses on a tap outside
+on Windows, macOS and Linux and deliberately does not on Android and iOS — so
+a desktop-only focus bug is simply not reachable under the default, and a test
+written against it greens on a broken build. Set
+`debugDefaultTargetPlatformOverride` and **clear it inside the test body**: the
+framework checks the foundation debug flags before any `addTearDown` callback
+runs, so clearing it there fails the test that just passed.
+
 **Never put a control character in a source file.** Ripgrep treats a file holding
 one as binary and skips it, so the file becomes invisible to every code search —
 which is how nine hundred lines of one widget hid from the audits looking for

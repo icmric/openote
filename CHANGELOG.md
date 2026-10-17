@@ -4,6 +4,17 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — bold and a colour on the same word
+
+- **Two kinds of formatting can be combined.** Colouring a word that was
+  already bold — or emboldening one that was already coloured — showed the
+  markup instead of the word. Bold with a highlight, an underline inside a
+  colour and strikethrough inside either did the same. Styles now nest up to
+  six deep, in the editor and on the page, whichever order you applied them
+  in.
+- **Code and equations stay literal**, so the asterisks inside a code span are
+  still asterisks.
+
 ### Added — the handwriting format is written down
 
 - **Anyone can read Openote handwriting without Openote.** The ink
@@ -26,6 +37,11 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   on the page underneath, and the caret went to the box rather than staying in
   the title — so a title could be set when a page was created and never
   changed afterwards.
+- **And on the first click, not the second.** With a box open somewhere on the
+  page, clicking the title opened the field and left the caret where it was,
+  so the first click looked like it had done nothing at all. Clicking the
+  title now also closes whatever you were typing in, which is what it looked
+  like it was doing.
 
 ### Fixed — handwriting, and annotating a PDF
 
@@ -42,17 +58,28 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   now draws a selection box, because an imported slide is the surface you are
   writing on and has no use for a drag of its own. Before, there was no empty
   space left to start one from.
-- **A slide is not swept up by a selection box**, and a selection that somehow
-  contains one still moves everything else. Picking up a note that sat on a
-  locked slide used to move nothing at all.
+- **A locked slide behaves like the page behind your notes.** A selection box
+  passes over it, and clicking it no longer picks it up — so it cannot be
+  dragged, resized or carried off while you are writing on it, and a selection
+  of notes made over the top of one moves the notes. Right-clicking it still
+  reaches its own menu, which is where Unlock is.
+- **A PDF locks and unlocks as one document.** "Unlock every page of this PDF"
+  does the whole import at once, which on a forty-page deck was forty
+  right-clicks on forty pages. Unlocking the one slide in front of you is
+  still there beside it.
 - **A selection box takes in what it covers, not what it grazes.** It now
   wants about half of something before claiming it, so brushing the corner of
   a picture on the way past leaves the picture behind.
-- **Marks made in different places are separate things.** Anything drawn
-  within two seconds of the last stroke joined it, wherever on the page it
-  was, so annotating the top of a slide and then the bottom produced one piece
-  of handwriting the size of the slide — which every selection box then caught.
-  A stroke now joins the note it was written beside.
+- **Every stroke is its own mark.** Nothing decides which of your strokes
+  belong together any more. Anything drawn within two seconds of the last one
+  used to join it wherever on the page it was, so annotating the top of a
+  slide and then the bottom produced one piece of handwriting the size of the
+  slide — which every selection box then caught. To treat several strokes as
+  one thing, circle them with the lasso: it gathers them into one piece and
+  hands it over selected.
+- **A selection of handwriting is still drawn as one box**, not one per
+  stroke — which is what it looked like when a word was one piece, and the
+  selection is one thing you are about to move.
 - **An imported picture keeps its real format.** Everything brought in from
   OneNote was labelled a PNG whatever it was, so exporting that notebook to a
   folder wrote JPEGs with a `.png` name. The format is read from the bytes,

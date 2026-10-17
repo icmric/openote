@@ -229,12 +229,15 @@ over a text area is an ink block layered above it, never part of its flow.
 
 ### 5.2 The Markdown dialect
 
-**CommonMark + GFM** — tables, task lists, strikethrough — plus five documented
-extensions:
+**CommonMark + GFM** — tables, task lists, strikethrough — plus these
+documented extensions:
 
 | | |
 |---|---|
 | `==highlight==` | |
+| `++underline++` | |
+| `~sub~` and `^sup^` | Pandoc's, and subject to Pandoc's no-whitespace rule |
+| `{{#RRGGBB text}}` | a colour span; `RRGGBBAA` is also accepted |
 | `[[wiki-links]]` | exported as `[title](onote://notebook/page#block)` in strict-Markdown mode |
 | `$…$` and `$$…$$` | inline and display maths |
 | `![alt](sha256:<hash>)` | an in-flow picture, §5.2.1 |
@@ -243,9 +246,20 @@ extensions:
 Everything in §5.1's structured form has a defined projection into this dialect.
 `color` degrades to plain text, with a documented HTML-span option.
 
-The editor renders this syntax **in place as typed**: markers collapse when a
-construct completes and reappear when the caret enters it, so a reader never
-sees raw asterisks. On export, `![alt](sha256:…)` is rewritten to
+**Styling nests (normative).** A run's text is itself parsed, so
+`{{#C63838 **word**}}` and `**{{#C63838 word}}**` both mean one word that is
+bold and red, and a reader must compose the styles rather than take the
+outermost. Nesting is bounded at six deep. Three kinds do not descend: a code
+span and both maths forms are literal, and a link's label is its own
+projection. A reader that does not descend at all is still a conforming
+Markdown reader — it will show the inner markers as text, which is what every
+foreign reader does with an extension it has never heard of.
+
+The editor renders this syntax **in place as typed**: a construct's markers
+stop being drawn once it is complete, and stay that way when the caret enters
+it — they are laid out at a hairline rather than removed, so every offset in
+the buffer is still where it was, and the caret is stepped over them in one
+press. A reader never sees raw asterisks and nor does the person typing. On export, `![alt](sha256:…)` is rewritten to
 `assets/<hash>.<ext>`, which is what makes the exported folder readable by any
 Markdown tool.
 

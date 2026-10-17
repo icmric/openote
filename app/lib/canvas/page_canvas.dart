@@ -92,6 +92,19 @@ bool marqueeCatches(Rect marquee, Rect block) {
   return hit.width * hit.height >= area / 2;
 }
 
+/// **One dashed box around a selection of handwriting**, or none.
+///
+/// A stroke is its own block, so a written word is several of them, and a
+/// dashed box per stroke is a box per letter drawn over somebody's own
+/// handwriting. The selection is one thing about to be moved, which is what
+/// this drew before a word stopped being one block, and what OneNote draws
+/// too.
+///
+/// Top-level and pure so the rule can be tested without a canvas.
+List<Rect> inkSelectionBox(List<Rect> selected) => selected.isEmpty
+    ? const []
+    : [selected.reduce((a, b) => a.expandToInclude(b))];
+
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
 
@@ -1342,10 +1355,10 @@ class _PageCanvasState extends State<PageCanvas> {
                 visible.overlaps(_cullRect(b)))
               ..._strokesOf(b),
         ];
-        final selectedInkRects = [
+        final selectedInkRects = inkSelectionBox([
           for (final b in inkBlocks)
             if (app.selectedIds.contains(b.id)) _blockRect(b),
-        ];
+        ]);
         return RepaintBoundary(
           key: app.canvasKey,
           child: ClipRect(

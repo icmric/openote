@@ -63,6 +63,30 @@ void main() {
     });
   });
 
+  group('what a selection of strokes looks like', () {
+    // The per-stroke change would otherwise draw a dashed box per letter over
+    // the student's own handwriting. One box is also what this drew when a
+    // word was one block, so nothing about selection changed appearance.
+    test('IS ONE BOX, HOWEVER MANY STROKES ARE IN IT', () {
+      expect(
+          inkSelectionBox(const [
+            Rect.fromLTWH(100, 100, 20, 30),
+            Rect.fromLTWH(130, 110, 20, 30),
+            Rect.fromLTWH(160, 90, 20, 30),
+          ]),
+          [const Rect.fromLTRB(100, 90, 180, 140)]);
+    });
+
+    test('and nothing at all when nothing is selected', () {
+      expect(inkSelectionBox(const []), isEmpty);
+    });
+
+    test('one stroke keeps its own box', () {
+      expect(inkSelectionBox(const [Rect.fromLTWH(5, 6, 7, 8)]),
+          [const Rect.fromLTWH(5, 6, 7, 8)]);
+    });
+  });
+
   group('on a page with a slide on it', () {
     late Repository repo;
     late Directory tmp;

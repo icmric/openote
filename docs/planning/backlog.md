@@ -25,15 +25,17 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 1 | **Use the macOS and Linux builds** | S | Three platforms ship; two have never been run by a human. CI proves they compile. §1.1 |
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
-| 4 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
-| 5 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
-| 6 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is also the answer to splitting up a piece of handwriting that has grown — the lasso re-homes strokes, nothing names the pieces. |
-| 7 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
-| 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
-| 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
-| 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
-| 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 12 | The structured `nodes` text model | XL | Gates per-run styling, paragraph collapse and real co-editing. §2.2 |
+| 4 | **The spell checker knows mitochondria and not Monday** | M | Four reports in one: the bundled list is a Scrabble lexicon, so every name and most of this decade is underlined. §1.12 |
+| 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
+| 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
+| 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it, and it is now what *joining* handwriting means: a stroke is its own block, and the lasso is the only thing that gathers them. The owner, on strokes: *"unless they are grouped together, which from what i can see hasnt actually been implemented yet"*. |
+| 8 | A graph face on the object row | S | Graphs are the only first-class canvas object with no control row, which is the rule the row exists to hold. Its controls already exist. |
+| 9 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
+| 10 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
+| 11 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
+| 12 | OCR on images | L | Additive — search already indexes a hidden text layer. |
+| 13 | Strokes selectable inside one block | M | One stroke per block made selection honest and page JSON 197x bigger on a dense page. Measured. §1.13 |
+| 14 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
 
 ---
 
@@ -188,6 +190,107 @@ escape hatch a text block needs.
 The large one is bindings somebody can change, which wants a settings surface,
 a store, and a decision about what is bindable — a release of its own, and the
 owner has said as much on the issue.
+
+### 1.12 The spell checker knows mitochondria and not Monday · **M**
+
+The owner: *"we do currently have spellcheck but its not particularly good (it
+doesnt pick up on many words, lots of the time it can tell you something is
+wrong but doesnt give options for what it thinks it might be, doesnt auto
+correct if it has high confidence, doesnt as far as im aware support different
+styles of language like Australia vs Brittish vs US English)."*
+
+All four are true, and three of them are one cause: the bundled list is
+**ENABLE**, a Scrabble lexicon. 172,823 words, public domain, and chosen for
+coverage — of playable words. Measured against the asset we ship:
+
+| in it | not in it |
+|---|---|
+| mitochondria, photosynthesis, calculus, semester | Monday, January, Australia, any name |
+| colour, realise, organisation | favourite |
+| laptop, okay | email, internet, website, online, app, blog, wifi, dataset |
+| | don't, isn't — no contraction is in it |
+| | etc, vs, PhD, OK |
+
+So every date, every place, every person and most of this decade is underlined,
+which is what "doesn't pick up on many words" means. Note the dialect row: some
+British spellings are in and others are out, because playability is not a
+dialect. There is no dialect to choose because there is no dialect in there.
+
+**The work, in the order it pays:**
+
+1. **Replace the word list.** SCOWL (permissive, same licence shape as ENABLE)
+   publishes exactly the pieces this needs as separate files: a base list in
+   size tiers, plus `british-`, `canadian-` and `australian-words`,
+   `english-proper-names` and `english-abbreviations`. Assemble at build time,
+   union with ENABLE — strictly better coverage than either — and let Settings
+   pick the dialect, which is then a real choice rather than a label.
+2. **Tokenise contractions and possessives as one word.** `don't` is one token
+   or it is two misspellings.
+3. **Better suggestions.** Generation is edit distance 1, unranked, which is
+   why there is often nothing to offer: a transposition plus an omission is
+   distance 2, and so is every typo in a long word. Add distance 2 for short
+   words, split and join candidates (`alot`), a capitalisation-only candidate
+   once proper names are in, and order by frequency rather than by the order
+   the alphabet loop happened to generate.
+4. **Autocorrect, narrowly.** Only on a word boundary, only when there is
+   exactly one distance-1 candidate, and reversible — which is the same
+   escape-hatch question as [v1.0.2 #24](v1.0.2.md#24-auto-capitalisation),
+   and should be decided once for both.
+
+**Can we piggyback on the operating system?** Partly, and not the part that
+would help most.
+
+  * **Windows 8+** has one: `ISpellCheckerFactory` / `ISpellChecker` (COM),
+    per-BCP-47-locale, with suggestions, a user dictionary and autocorrect
+    pairs. Which dialects a machine actually has is a per-machine question
+    answered by `get_SupportedLanguages`, and is tied to installed language
+    features — so en-AU may simply not be there. That needs measuring on a
+    real machine before it is designed around.
+  * **macOS** has the best of them: `NSSpellChecker`, multi-locale, with
+    `guesses`, `correction` and language auto-detection.
+  * **Linux** has nothing system-wide. The convention is enchant brokering
+    hunspell against the distribution's dictionaries, which is LGPL code and
+    mixed-licence dictionary data — a question [ADR-0005](../adr/) has an
+    opinion about.
+  * **iOS and Android** have `UITextChecker` and `SpellCheckerSession`, which
+    is what Flutter's own `DefaultSpellCheckService` wraps, and why
+    `spell/spell_checker.dart` exists at all.
+
+So a platform provider is two native plugins for two of five platforms, and it
+buys a result that differs per machine: a word underlined on the laptop and
+clean on the desktop, with no way to reproduce either in CI. The call: keep our
+own checker as the default and the only one tested, fix the list — which is
+where the complaint actually comes from — and leave a platform provider as an
+opt-in behind a `SpellService` seam if anyone still wants it afterwards.
+
+### 1.13 One stroke per block costs 4.7x on an ink-heavy page · **M**
+
+A stroke is its own block since issue #20 — the owner, twice, on inferred
+grouping — and a block is the unit of storage as well as the unit of
+selection. Measured, 200 strokes of 40 points on one page, written as one
+block and as 200:
+
+| | one block | 200 blocks | |
+|---|---|---|---|
+| blob bytes | 25,812 | 41,729 | +62%, the per-blob header and brush table |
+| page JSON | 412 | 81,369 | **197x** — about 405 B of envelope per stroke |
+| total | 26 KB | 123 KB | 4.7x |
+
+The envelope is the cost: an id, a geometry that `_refitInkBounds` derives
+from the strokes anyway, an `updatedAt`, and a 71-character blob reference,
+once per stroke. It is also rewritten on every save of that page.
+
+**The fix is not to go back to guessing.** It is that selection granularity
+and storage granularity are two different questions, and OneNote answers them
+separately: strokes are individually selectable *inside* one stroke
+collection. Here that means `selectedIds` learning to name a stroke, which
+touches everything that acts on a selection — move, delete, recolour, copy,
+the alignment guides — and the lasso, which already splices strokes between
+blocks and would become the thing that does not need to.
+
+Until then: a notebook of a hundred dense handwritten pages pays about 10 MB
+more than it did. Worth knowing, not worth a heuristic. The lasso is the
+pressure valve — gathering a word into one block is also a storage win.
 
 ---
 
