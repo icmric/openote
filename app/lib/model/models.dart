@@ -172,6 +172,32 @@ class PaperSize {
       all.firstWhere((p) => p.name == n, orElse: () => a4);
 }
 
+/// **How tall a picture is, before anything has measured it.**
+///
+/// A PDF slide is written by `pdf_import.dart` with a width and no height:
+/// the height is whatever the page turns out to be, and the importer has no
+/// business guessing it. Everything that needs a slide's rectangle therefore
+/// falls back to the size the block reported after it was laid out — and that
+/// is written silently, during layout, without a rebuild. So the frame that
+/// decides where the pictures are is the frame BEFORE any of them has said.
+///
+/// Reported: *"Auto pen colour doesnt work on images/pdfs either, still
+/// coming up as white on a white pdf background."* Quite so — the fallback of
+/// last resort is sixty pixels, so every slide was reckoned to be a sixty-
+/// pixel strip and ink below it was ink on the page.
+///
+/// The picture's own proportions answer it without waiting for anybody:
+/// `naturalW`/`naturalH` are stored the moment a picture is added, and the
+/// view lays the picture out at exactly that aspect. Null when they are
+/// missing — an old block, or a picture that has never loaded — and the
+/// caller falls back as before.
+double? aspectHeight(Block b) {
+  final nw = (b.content['naturalW'] as num?)?.toDouble();
+  final nh = (b.content['naturalH'] as num?)?.toDouble();
+  if (nw == null || nh == null || nw <= 0 || nh <= 0 || b.w <= 0) return null;
+  return b.w * nh / nw;
+}
+
 class PageProps {
   PageProps({
     this.background = 'blank',

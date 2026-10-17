@@ -823,13 +823,9 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Select-mode pointer model ───────────────────────────────────────────
 
   /// The rectangle a block occupies, for selection, erasing and hit-testing.
-  ///
-  /// [aspectHeight] before the measured height because a picture's own
-  /// proportions are known the moment it is added, while the measurement
-  /// arrives a frame after layout — so a slide was reckoned to be a sixty-
-  /// pixel strip for exactly as long as it took anybody to click on it.
-  Rect _blockRect(Block b) => Rect.fromLTWH(b.x, b.y, b.w,
-      b.h ?? aspectHeight(b) ?? app.renderSizes[b.id]?.height ?? 60);
+  /// [AppState.blockRect] holds the formula, because the alignment guides and
+  /// the auto-colour rule need the same answer.
+  Rect _blockRect(Block b) => app.blockRect(b);
 
   /// **The rect to CULL against, which is not the rect to hit-test against.**
   ///
@@ -873,13 +869,6 @@ class _PageCanvasState extends State<PageCanvas> {
   /// stays legible on a dark page, which was the reported failure.
   ///
   /// A PDF is a `file` block carrying the mime type, not a type of its own.
-  List<Rect> get _documentRects => [
-        for (final b in app.blocks)
-          if (b.type == BlockType.image ||
-              (b.type == BlockType.file &&
-                  b.content['mime'] == 'application/pdf'))
-            _blockRect(b),
-      ];
 
   /// Whether the topmost thing under [pagePt] is a background layer.
   ///
@@ -1495,7 +1484,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                         : OnoteColors.graphite900,
                                     // …except where the page is not what is
                                     // underneath. See [InkPainter.overDocument].
-                                    documentRects: _documentRects,
+                                    documentRects: app.documentRects,
                                     overDocument: OnoteColors.graphite900),
                               ),
                             ),

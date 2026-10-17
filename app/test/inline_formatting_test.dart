@@ -193,6 +193,57 @@ void main() {
     });
   });
 
+  group('text colour, through the toolbar', () {
+    test('COLOURING A COLOURED WORD REPLACES THE COLOUR', () {
+      if (!haveSqlite) return;
+      edit('say «hello» there');
+      app.applyTextColor('FF0000');
+      expect(c.text, 'say {{#FF0000 hello}} there');
+
+      app.applyTextColor('0000FF');
+      expect(c.text, 'say {{#0000FF hello}} there',
+          reason: 'not a second wrapper inside the first');
+      expect(c.text.substring(c.selection.start, c.selection.end), 'hello');
+    });
+
+    test('AND "AUTO" IS THE WAY BACK TO NO COLOUR', () {
+      if (!haveSqlite) return;
+      edit('say «hello» there');
+      app.applyTextColor('FF0000');
+      app.applyTextColor('auto');
+      expect(c.text, 'say hello there');
+      expect(app.lastColor, 'auto',
+          reason: 'and the button under the pointer now says so');
+    });
+
+    test('the flick hotkey colours, then clears', () {
+      if (!haveSqlite) return;
+      app.lastColor = 'FF0000';
+      edit('say «hello» there');
+      app.toggleTextColor();
+      expect(c.text, 'say {{#FF0000 hello}} there');
+      app.toggleTextColor();
+      expect(c.text, 'say hello there');
+    });
+
+    test('a code block is left alone', () {
+      if (!haveSqlite) return;
+      // `{{#…}}` in somebody's source is not a colour. The same guard
+      // `wrapSelection` carries.
+      final code = Block(
+          type: BlockType.code, x: 0, y: 0, content: {'text': 'a = b * c'});
+      app.addBlock(code, recordUndo: false);
+      final cc = TextEditingController(text: 'a = b * c');
+      app.setActiveEditor(cc, code, 'text');
+      cc.selection = const TextSelection(baseOffset: 0, extentOffset: 9);
+
+      app.applyTextColor('FF0000');
+
+      expect(cc.text, 'a = b * c');
+      app.setActiveEditor(c, block, 'text');
+    });
+  });
+
   group('a selection is trimmed to what it actually formats', () {
     test('trailing spaces stay OUTSIDE the markers', () {
       if (!haveSqlite) return;

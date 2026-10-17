@@ -765,10 +765,18 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           isSelected: mark != null && active.contains(mark),
           onPressed: canFormat ? fn : null,
         );
+    // **`auto` is not a colour**, so the bar under the button shows what the
+    // text will actually come out as, the same way the pen's own swatch does
+    // (see [currentInkColor]). Painting it as the near-black it usually
+    // becomes would advertise black while the text came out light.
     final lcv = int.tryParse(app.lastColor, radix: 16) ?? 0;
-    final curColor = app.lastColor.length == 8
-        ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
-        : Color(0xFF000000 | lcv);
+    final curColor = app.lastColor == 'auto'
+        ? (Theme.of(context).brightness == Brightness.dark
+            ? OnoteColors.moon100
+            : OnoteColors.graphite700)
+        : app.lastColor.length == 8
+            ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
+            : Color(0xFF000000 | lcv);
     return Row(children: [
       // Undo and redo used to lead this row, which meant they were missing
       // from every other tab. They are in the tab row above now.
@@ -845,7 +853,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         onTap: canFormat
             ? () async {
                 final hex = await showOnoteColorPicker(context, app,
-                    initial: app.lastColor);
+                    initial: app.lastColor, allowAuto: true);
                 if (hex != null) app.applyTextColor(hex);
               }
             : null,

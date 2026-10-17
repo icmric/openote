@@ -51,6 +51,7 @@ import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../editor/inline_table.dart' show tableColumnWidths;
 import '../editor/list_editing.dart';
+import '../markdown/colour_spans.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
@@ -4650,7 +4651,7 @@ class AppState extends ChangeNotifier
   ///
   /// The gap is the same 12px the align guides settle to, so a block put here
   /// looks placed rather than dropped.
-  Offset belowBlock(Block b) => Offset(b.x, _rectOf(b).bottom + 12);
+  Offset belowBlock(Block b) => Offset(b.x, blockRect(b).bottom + 12);
 
   /// The block a new one should be placed under, or null to fall back to the
   /// middle of the view. Never names a block on another page: [blockById]
@@ -5543,7 +5544,7 @@ class AppState extends ChangeNotifier
     if (moving == null) return;
     final others = [
       for (final b in blocks)
-        if (!selectedIds.contains(b.id)) _rectOf(b)
+        if (!selectedIds.contains(b.id)) blockRect(b)
     ];
     final r = findAlignment(moving, others, threshold: 7.0 / scale);
     alignGuides = r.guides;
@@ -5562,13 +5563,55 @@ class AppState extends ChangeNotifier
     alignGuides = const [];
   }
 
-  Rect _rectOf(Block b) =>
-      Rect.fromLTWH(b.x, b.y, b.w, b.h ?? renderSizes[b.id]?.height ?? 60);
+  /// **The rectangle a block occupies**, for selection, hit-testing, the
+  /// alignment guides and deciding what is on top of what.
+  ///
+  /// [aspectHeight] before the measured height because a picture's own
+  /// proportions are known the moment it is added, while the measurement
+  /// arrives a frame after layout — so a slide was reckoned to be a
+  /// sixty-pixel strip for exactly as long as it took anybody to click on it.
+  ///
+  /// One copy, because there were two: the canvas had this formula and the
+  /// alignment guides had it without the aspect fallback, which is the same
+  /// sixty-pixel bug in a place nobody had reported it from yet.
+  Rect blockRect(Block b) => Rect.fromLTWH(b.x, b.y, b.w,
+      b.h ?? aspectHeight(b) ?? renderSizes[b.id]?.height ?? 60);
+
+  /// Page-space rectangles of everything that brings its own background — an
+  /// imported picture, a PDF page.
+  List<Rect> get documentRects => [
+        for (final b in blocks)
+          if (b.type == BlockType.image ||
+              (b.type == BlockType.file &&
+                  b.content['mime'] == 'application/pdf'))
+            blockRect(b),
+      ];
+
+  /// **Whether [b] sits on top of one of those**, so that what is `auto`
+  /// about it should contrast with the document rather than with the page.
+  ///
+  /// The rule and its reasoning belong to `InkPainter.overDocument`, which
+  /// has asked it per stroke since the report that *"automatic white ink is
+  /// also invisible on white documents in dark mode"*. Text asks it too now:
+  /// *"when typing on a PDF, auto text colour should work like auto ink
+  /// colour where it adjusts between black and white based on the PDF."*
+  ///
+  /// The block's CENTRE decides, as a stroke's midpoint does: a box mostly on
+  /// the slide reads as being on the slide, and half a box changing colour
+  /// would be worse than either answer.
+  bool overDocument(Block b) {
+    if (b.type == BlockType.image || b.type == BlockType.file) return false;
+    final at = blockRect(b).center;
+    for (final r in documentRects) {
+      if (r.contains(at)) return true;
+    }
+    return false;
+  }
 
   Rect? _unionRect(Set<String> ids) {
     Rect? out;
     for (final b in blocks.where((b) => ids.contains(b.id))) {
-      final r = _rectOf(b);
+      final r = blockRect(b);
       out = out == null ? r : out.expandToInclude(r);
     }
     return out;
@@ -5818,100 +5861,72 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  static final _colorOpenRe =
-      RegExp(r'\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) $');
-  // Matches a whole wrapper as the entire selection: {{#hex inner}}.
-  static final _colorWholeRe = RegExp(
-      r'^\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\}\}$',
-      dotAll: true);
-
+  /// **Colour the selection**, or clear it back to the default with `'auto'`.
+  ///
+  /// `'auto'` is the sentinel the pen already uses ([penInk]): not a colour,
+  /// but "whatever contrasts with what it is drawn on". It is what the
+  /// picker's Automatic entry returns, because *"its not imedietley clear how
+  /// to set it to the auto colour"* — there was no way at all.
+  ///
+  /// The rewrite itself is in `markdown/colour_spans.dart`, which reads the
+  /// line as a colour per character rather than matching cases. That is what
+  /// makes re-colouring part of a coloured sentence replace the colour
+  /// instead of nesting a second wrapper inside the first — which the
+  /// grammar cannot express, so the markers appeared on the page.
   void applyTextColor(String hex) {
     final ae = activeEditor;
     if (ae == null) return;
     lastColor = hex;
+    // `{{#…}}` in a code cell is not a colour, it is somebody's source. The
+    // same guard [wrapSelection] carries, for the same reason.
+    if (ae.block.type != BlockType.text) {
+      notifyListeners();
+      return;
+    }
     final c = ae.controller;
     final sel = c.selection;
     if (!sel.isValid || sel.isCollapsed) {
       notifyListeners();
       return;
     }
-    final t = c.text;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
-
-    // Re-colour, don't nest (user report): if the selection is already the
-    // inner content of an existing {{#hex …}} wrapper, or the selection spans
-    // a whole wrapper, replace the existing colour in place.
-
-    // Case A: selection is the INNER content of an existing wrapper —
-    //   …{{#oldhex |selected|}}…  → swap oldhex for the new hex.
-    final openBefore = _colorOpenRe.firstMatch(t.substring(0, s));
-    if (openBefore != null &&
-        e + 2 <= t.length &&
-        t.substring(e, e + 2) == '}}') {
-      pushUndo();
-      final openLen = openBefore.group(0)!.length;
-      const newOpenPrefix = '{{#';
-      final newOpen = '$newOpenPrefix$hex ';
-      c.text = t.replaceRange(s - openLen, s, newOpen);
-      final shift = newOpen.length - openLen;
-      c.selection =
-          TextSelection(baseOffset: s + shift, extentOffset: e + shift);
-      _commitActiveEditor();
+    final edit = recolourSelection(
+      c.text,
+      math.min(sel.baseOffset, sel.extentOffset),
+      math.max(sel.baseOffset, sel.extentOffset),
+      hex == 'auto' ? null : hex.replaceFirst('#', ''),
+    );
+    if (edit == null) {
       notifyListeners();
       return;
     }
-
-    // Case B: the selection spans an ENTIRE wrapper — {{#oldhex inner}} —
-    // e.g. selecting the coloured word including its markers. Rewrite it.
-    final whole = _colorWholeRe.firstMatch(t.substring(s, e));
-    if (whole != null) {
-      pushUndo();
-      final inner = whole.group(2)!;
-      c.text = t.replaceRange(s, e, '{{#$hex $inner}}');
-      final openLen = hex.length + 4; // '{{#' + hex + ' '
-      c.selection = TextSelection(
-          baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
-      _commitActiveEditor();
-      notifyListeners();
-      return;
-    }
-
-    // Case C: fresh selection — wrap it.
     pushUndo();
-    final selText = t.substring(s, e);
-    c.text = t.replaceRange(s, e, '{{#$hex $selText}}');
-    final openLen = hex.length + 4; // '{{#' + hex + ' '
-    c.selection = TextSelection(
-        baseOffset: s + openLen, extentOffset: s + openLen + selText.length);
+    c.value = TextEditingValue(
+      text: edit.text,
+      selection:
+          TextSelection(baseOffset: edit.base, extentOffset: edit.extent),
+      composing: TextRange.empty,
+    );
     _commitActiveEditor();
     notifyListeners();
   }
 
-  /// The "flick" hotkey: colour the selection with the last colour, or strip
-  /// the colour if it's already coloured (back to default).
-  void toggleTextColor() {
+  /// The colour every character of the selection already carries, or null.
+  /// Null also means "they disagree", which is what stops the toggle below
+  /// clearing a selection that spans two colours.
+  String? get _selectionColor {
     final ae = activeEditor;
-    if (ae == null) return;
-    final c = ae.controller;
-    final sel = c.selection;
-    if (!sel.isValid || sel.isCollapsed) return;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
-    final t = c.text;
-    final m = _colorOpenRe.firstMatch(t.substring(0, s));
-    if (m != null && e + 2 <= t.length && t.substring(e, e + 2) == '}}') {
-      pushUndo();
-      final openLen = m.group(0)!.length;
-      c.text = t.replaceRange(e, e + 2, '').replaceRange(s - openLen, s, '');
-      c.selection =
-          TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
-      _commitActiveEditor();
-      notifyListeners();
-    } else {
-      applyTextColor(lastColor);
-    }
+    if (ae == null) return null;
+    final sel = ae.controller.selection;
+    if (!sel.isValid || sel.isCollapsed) return null;
+    return colourOfSelection(ae.controller.text,
+        math.min(sel.baseOffset, sel.extentOffset),
+        math.max(sel.baseOffset, sel.extentOffset));
   }
+
+  /// The "flick" hotkey: colour the selection with the last colour, or take
+  /// the colour off it if it already has one.
+  void toggleTextColor() =>
+      applyTextColor(_selectionColor != null ? 'auto' : lastColor);
 
   // ── Text-box font family (box-level) ───────────────────────────────────
 

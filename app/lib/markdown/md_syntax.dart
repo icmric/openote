@@ -198,6 +198,12 @@ const String _mathPadded =
     r'(\$ ([^\$\n]*\\[a-zA-Z]+[^\$\n]*) \$)';
 const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
+
+/// The colour span on its own, for the commands that **rewrite** colour runs
+/// rather than render them — see `markdown/colour_spans.dart`. The same
+/// pattern as the branch above, so a change to the syntax reaches both.
+/// Groups: 1 the whole span, 2 the hex digits, 3 the text inside.
+final RegExp mdColourSpanRe = RegExp(_colour);
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
 
 /// **An inline atom: a thing that is not text, living in a sentence.**

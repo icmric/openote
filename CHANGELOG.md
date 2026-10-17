@@ -14,6 +14,22 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   in.
 - **Code and equations stay literal**, so the asterisks inside a code span are
   still asterisks.
+- **Colouring text that is already coloured replaces the colour.** It used to
+  tuck the new colour inside the old one, which cannot be written down — so
+  the markup appeared on the page in the old colour. Colouring part of a
+  coloured sentence now splits the run, and colouring across two of them
+  gives one.
+- **There is a way back to the default colour.** The picker opens with
+  **Automatic** at the top: dark text on a light page, light on a dark one.
+  The colour button's own bar shows what Automatic will actually come out as,
+  rather than the near-black it usually becomes.
+- **Default text on a slide is dark, in either theme.** A PDF or a picture
+  brings its own background, so text on top of one contrasts with the
+  document rather than with the page — the rule the pen has followed since
+  automatic ink turned out to be white on a white scan. A colour you chose is
+  never overridden.
+- Colouring inside a code block no longer writes colour markup into somebody's
+  source.
 
 ### Added — the handwriting format is written down
 
