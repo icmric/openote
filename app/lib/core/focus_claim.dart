@@ -34,6 +34,8 @@
 /// directly.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 /// Whether [claimant] may take the keyboard without interrupting anybody.
@@ -54,7 +56,39 @@ import 'package:flutter/widgets.dart';
 /// it — a field in some other block, being typed into — and taking it off
 /// them is the bug this exists to stop.
 bool keyboardIsGoingSpare(FocusNode claimant) {
+  final asked = _asked;
+  if (asked != null &&
+      asked != claimant &&
+      !claimant.ancestors.contains(asked)) {
+    return false;
+  }
   final holder = FocusManager.instance.primaryFocus;
   if (holder == null || holder is FocusScopeNode) return true;
   return claimant.ancestors.contains(holder);
+}
+
+/// A node that has asked for the keyboard but does not hold it yet.
+///
+/// Cleared in a microtask, so it only ever describes the synchronous run of
+/// callbacks it was set in — which is exactly as long as the gap lasts.
+FocusNode? _asked;
+
+/// Take the keyboard on purpose, where [keyboardIsGoingSpare] can see it.
+///
+/// [FocusNode.requestFocus] does not take effect where it is called: the
+/// manager marks the node and applies the change in a microtask. Post-frame
+/// callbacks all run before that microtask, so a standing claim that asks
+/// `primaryFocus` who holds the keyboard is told "nobody" — and asks for it
+/// too. Two requests in one frame are settled by their order, and the
+/// standing claim is registered from a `build`, so it is always second.
+///
+/// That is issue #19's second report: *"if the caret is in a regular text box
+/// and I click on the title, the title will grow a little bit (as if it were
+/// entering edit mode) yet the caret stays where it was before, then clicking
+/// again will move it in."* The title's field opened, asked, and the
+/// paragraph it had opened over took the keyboard straight back.
+void claimKeyboard(FocusNode node) {
+  if (_asked == null) scheduleMicrotask(() => _asked = null);
+  _asked = node;
+  node.requestFocus();
 }

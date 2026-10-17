@@ -16,6 +16,8 @@
 // Issue #19, and v1.0.2 bug 6.
 import 'dart:io';
 
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -163,5 +165,41 @@ void main() {
     expect(focusedFieldText(), 'a paragraph',
         reason: 'and it is what holds the keyboard');
     app.cancelPendingSave();
+  });
+
+  testWidgets('THE TITLE TAKES THE CARET ON THE FIRST CLICK, NOT THE SECOND',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // **A desktop build is the one with the defect.** `EditableText`'s
+    // default tap-outside handler unfocuses on Windows, macOS and Linux and
+    // does nothing on Android, and a widget test is Android unless it says
+    // otherwise — so the race below cannot happen under the default.
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    await pumpShell(t);
+
+    await t.tap(find.byWidgetPredicate(
+        (w) => w is BlockView && w.block.id == paraId));
+    await t.pumpAndSettle();
+    expect(focusedFieldText(), 'a paragraph', reason: 'the caret starts here');
+
+    await t.tap(titleBand('Untitled page'));
+    await t.pumpAndSettle();
+    await t.pump();
+
+    // Issue #19, second report: *"if the caret is in a regular text box and
+    // I click on the title, the title will grow a little bit (as if it were
+    // entering edit mode) yet the caret stays where it was before, then
+    // clicking again will move it in."*
+    expect(app.titleEditing, isTrue, reason: 'the band opened its field');
+    final titleField = find.descendant(
+        of: find.byType(PageTitleView), matching: find.byType(EditableText));
+    expect(titleField, findsOneWidget, reason: 'the field is there to type in');
+    expect(t.widget<EditableText>(titleField).focusNode.hasPrimaryFocus, isTrue,
+        reason: 'and it is the thing the next character reaches');
+    expect(app.editingBlockId, isNull, reason: 'the paragraph is closed');
+    app.cancelPendingSave();
+    // Reset inside the body: the framework checks the foundation debug flags
+    // before any `addTearDown` runs.
+    debugDefaultTargetPlatformOverride = null;
   });
 }
