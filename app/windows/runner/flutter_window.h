@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "pen_buttons.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -28,6 +29,10 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Reads the pen's buttons out of the messages on their way past, because
+  // the engine does not. See pen_buttons.h.
+  std::unique_ptr<PenButtons> pen_buttons_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

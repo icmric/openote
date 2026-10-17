@@ -82,13 +82,28 @@ bool penGestureErases({
 /// - [stylusActive] means a stylus was seen recently (not necessarily now):
 ///   a palm rests between strokes as well as during them, so the window has to
 ///   outlive the gap.
+/// - [penEverSeen] means one has been used on this machine **at all**, which
+///   is the question that actually matters and the one a grace window only
+///   approximated. Reported: *"it sometimes will still use finger input when
+///   im drawing with the pen as drawing, it should never use regular touch to
+///   draw when a pen has been used, and unless explicitly set it should always
+///   under any circumstance treat touch inputs as navigational."* Two seconds
+///   after the last stylus event is not "when a pen has been used": a hand
+///   rests on the page for longer than that between words.
+///
+///   It does not take ink away from anybody. A touch-only tablet has never
+///   seen a pen, so a finger still draws there, which is the whole of INK-1.
+///   Somebody who writes with a pen on a machine that also has a touchscreen
+///   gets what they asked for: a finger that navigates. `always` overrides it,
+///   which is what explicitly set means.
 bool touchShouldDraw({
   required TouchDrawing mode,
   required int activeTouches,
   required bool stylusActive,
+  bool penEverSeen = false,
 }) {
   if (mode == TouchDrawing.never) return false;
   if (activeTouches > 1) return false;
   if (mode == TouchDrawing.always) return true;
-  return !stylusActive;
+  return !penEverSeen && !stylusActive;
 }

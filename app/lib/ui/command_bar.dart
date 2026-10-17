@@ -15,6 +15,7 @@ import '../markdown/md_syntax.dart';
 import '../math/evaluate.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
+import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
 import '../state/app_state.dart';
@@ -205,6 +206,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.canUndo,
         app.canRedo,
         app.lastColor,
+        app.penButton,
         app.penInk,
         app.highlighterInk,
         // Derived from the two above and the tool, but it is what the swatch
@@ -1292,6 +1294,32 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                   DropdownMenuItem(value: v, child: Text(v.label(l))),
               ],
               onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
+            ),
+          ),
+        ]),
+      ),
+      const SizedBox(width: 4),
+      // **What the pen's side button does.** Exposed for the same reason the
+      // touch setting is: the answer is not readable. Windows hands over "a
+      // barrel button is down" and nothing about what the student told their
+      // pen driver it was for — and a pen with two side buttons reports both
+      // through the one flag, so even the OS cannot tell them apart.
+      Tooltip(
+        message: l.barPenButton,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.edit_attributes_outlined,
+              size: 16, color: context.surfaces.textSecondary),
+          const SizedBox(width: 4),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<PenButtonAction>(
+              value: app.penButton,
+              isDense: true,
+              style: TextStyle(fontSize: 11, color: scheme.onSurface),
+              items: [
+                for (final v in PenButtonAction.values)
+                  DropdownMenuItem(value: v, child: Text(v.label(l))),
+              ],
+              onChanged: (v) => v == null ? null : app.setPenButton(v),
             ),
           ),
         ]),

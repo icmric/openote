@@ -51,6 +51,7 @@ import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../editor/inline_table.dart' show tableColumnWidths;
 import '../editor/list_editing.dart';
+import '../core/pen_buttons.dart';
 import '../markdown/colour_spans.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
@@ -94,9 +95,10 @@ enum EraserMode {
 
 /// Whether a finger draws when an ink tool is selected (INK-1 / INK-4).
 enum TouchDrawing {
-  /// Draw with touch, unless a stylus is in use — then touch pans so a resting
-  /// palm can't mark the page. The default: it gives pen users OneNote's palm
-  /// rejection while leaving ink reachable on a touch-only tablet.
+  /// Draw with touch only on a machine where **no pen has ever been used**.
+  /// The default: a touch-only tablet can still ink (INK-1), and anybody who
+  /// has ever picked up a pen here gets a finger that navigates instead of a
+  /// palm that draws.
   auto,
 
   /// Always draw with touch, even with a stylus present.
@@ -5452,6 +5454,30 @@ class AppState extends ChangeNotifier
   /// pan unconditionally, which meant ink was unreachable on a touch-only
   /// tablet — palm rejection implemented as "fingers never draw" rather than
   /// "fingers don't draw *while a pen is in use*".
+  /// **Whether a pen has ever been used on this machine.**
+  ///
+  /// Persisted, because it is a question about the hardware rather than the
+  /// minute: *"it should never use regular touch to draw when a pen has been
+  /// used."* See [touchShouldDraw], which used to ask whether one had been
+  /// seen in the last two seconds — shorter than the pause between two words.
+  bool penSeenHere = false;
+
+  /// Said once, the first time a stylus reports itself.
+  void notePenSeen() {
+    if (penSeenHere) return;
+    penSeenHere = true;
+    _repo.setSetting('penSeenHere', true);
+    notifyListeners();
+  }
+
+  /// What a press of the pen's side button does. See [PenButtons].
+  PenButtonAction penButton = PenButtonAction.eraser;
+  void setPenButton(PenButtonAction v) {
+    penButton = v;
+    _repo.setSetting('penButton', v.name);
+    notifyListeners();
+  }
+
   TouchDrawing touchDrawing = TouchDrawing.auto;
 
   void setTouchDrawing(TouchDrawing v) {
@@ -5851,7 +5877,25 @@ class AppState extends ChangeNotifier
 
   // ── Text colour (inline {{#RRGGBB text}}) ──────────────────────────────
 
-  String lastColor = 'C63838'; // last-used ink colour; default red
+  /// **The two colours Ctrl+Shift+C flicks between**, most recent first.
+  ///
+  /// The owner: *"ctrl + shift + c does flick it back to the last colour,
+  /// however pressing it again doesnt then do the other colour. The usecase
+  /// for that shortcut was being able to flick between colours when writing
+  /// some text where i want to set the colour of a couple words, but not
+  /// every word."*
+  ///
+  /// So the shortcut swaps rather than toggling colour against no-colour. It
+  /// reads what the selection already has and applies the OTHER one, which
+  /// alternates however many times it is pressed. `'auto'` is one of the two
+  /// — and it is [prevColor]'s starting value, so out of the box the flick is
+  /// between the last colour and the default, which is the "a couple of words,
+  /// not every word" case.
+  String lastColor = 'C63838'; // the chosen text colour; default red
+
+  /// The one before [lastColor]. Only [applyTextColor] moves it, so flicking
+  /// does not reorder the pair under the student's fingers.
+  String prevColor = 'auto';
   final List<String> customColors = []; // recent/custom, persisted
   void rememberCustomColor(String hex) {
     customColors.remove(hex);
@@ -5873,10 +5917,16 @@ class AppState extends ChangeNotifier
   /// makes re-colouring part of a coloured sentence replace the colour
   /// instead of nesting a second wrapper inside the first — which the
   /// grammar cannot express, so the markers appeared on the page.
-  void applyTextColor(String hex) {
+  void applyTextColor(String hex, {bool remember = true}) {
     final ae = activeEditor;
     if (ae == null) return;
-    lastColor = hex;
+    // A flick is not a choice: it leaves the pair exactly as it is, so the
+    // toolbar goes on showing the colour somebody picked and pressing the
+    // chord again comes back here with the same two to swap between.
+    if (remember) {
+      if (!_sameColour(hex, lastColor)) prevColor = lastColor;
+      lastColor = hex;
+    }
     // `{{#…}}` in a code cell is not a colour, it is somebody's source. The
     // same guard [wrapSelection] carries, for the same reason.
     if (ae.block.type != BlockType.text) {
@@ -5923,10 +5973,20 @@ class AppState extends ChangeNotifier
         math.max(sel.baseOffset, sel.extentOffset));
   }
 
-  /// The "flick" hotkey: colour the selection with the last colour, or take
-  /// the colour off it if it already has one.
-  void toggleTextColor() =>
-      applyTextColor(_selectionColor != null ? 'auto' : lastColor);
+  /// Two colours differing only in case or a leading `#` are one colour.
+  static bool _sameColour(String a, String b) =>
+      a.replaceFirst('#', '').toLowerCase() ==
+      b.replaceFirst('#', '').toLowerCase();
+
+  /// The "flick" hotkey: swap the selection between the last two colours.
+  ///
+  /// Not a toggle against no-colour, which only ever did one of the two
+  /// things somebody flicking wants. See [lastColor].
+  void toggleTextColor() {
+    final current = _selectionColor ?? 'auto';
+    applyTextColor(_sameColour(current, lastColor) ? prevColor : lastColor,
+        remember: false);
+  }
 
   // ── Text-box font family (box-level) ───────────────────────────────────
 
@@ -7038,6 +7098,11 @@ class AppState extends ChangeNotifier
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
     if (rec is List) _recents.addAll(rec.cast<String>());
+    penSeenHere = _repo.getSetting('penSeenHere') == true;
+    final pb = _repo.getSetting('penButton') as String?;
+    if (pb != null) {
+      penButton = PenButtonAction.values.asNameMap()[pb] ?? penButton;
+    }
     final td = _repo.getSetting('touchDrawing') as String?;
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;

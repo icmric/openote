@@ -344,6 +344,28 @@ class LIt extends L {
   String get commonCancel => 'Annulla';
 
   @override
+  String get commonCopy => 'Copia';
+
+  @override
+  String get settingsPenTest => 'Test di penna e tocco';
+
+  @override
+  String get settingsPenTestHint =>
+      'Mostra ciò che penna, dito e pulsanti segnalano davvero';
+
+  @override
+  String get penButtonEraser => 'Gomma';
+
+  @override
+  String get penButtonSelect => 'Seleziona';
+
+  @override
+  String get penButtonNothing => 'Niente';
+
+  @override
+  String get barPenButton => 'Cosa fa il pulsante laterale della penna';
+
+  @override
   String get commonClose => 'Chiudi';
 
   @override

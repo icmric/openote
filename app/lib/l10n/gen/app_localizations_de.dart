@@ -343,6 +343,28 @@ class LDe extends L {
   String get commonCancel => 'Abbrechen';
 
   @override
+  String get commonCopy => 'Kopieren';
+
+  @override
+  String get settingsPenTest => 'Stift- und Berührungstest';
+
+  @override
+  String get settingsPenTestHint =>
+      'Zeigt, was Stift, Finger und Tasten tatsächlich melden';
+
+  @override
+  String get penButtonEraser => 'Radierer';
+
+  @override
+  String get penButtonSelect => 'Auswählen';
+
+  @override
+  String get penButtonNothing => 'Nichts';
+
+  @override
+  String get barPenButton => 'Funktion der Stiftseitentaste';
+
+  @override
   String get commonClose => 'Schließen';
 
   @override

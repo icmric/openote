@@ -334,6 +334,27 @@ class LZh extends L {
   String get commonCancel => '取消';
 
   @override
+  String get commonCopy => '复制';
+
+  @override
+  String get settingsPenTest => '触控笔与触摸测试';
+
+  @override
+  String get settingsPenTestHint => '查看触控笔、手指和按键实际报告的内容';
+
+  @override
+  String get penButtonEraser => '橡皮擦';
+
+  @override
+  String get penButtonSelect => '选择';
+
+  @override
+  String get penButtonNothing => '无';
+
+  @override
+  String get barPenButton => '触控笔侧键的功能';
+
+  @override
   String get commonClose => '关闭';
 
   @override

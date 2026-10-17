@@ -341,6 +341,28 @@ class LEn extends L {
   String get commonCancel => 'Cancel';
 
   @override
+  String get commonCopy => 'Copy';
+
+  @override
+  String get settingsPenTest => 'Pen and touch test';
+
+  @override
+  String get settingsPenTestHint =>
+      'See what your pen, finger and buttons actually report';
+
+  @override
+  String get penButtonEraser => 'Eraser';
+
+  @override
+  String get penButtonSelect => 'Select';
+
+  @override
+  String get penButtonNothing => 'Nothing';
+
+  @override
+  String get barPenButton => 'What the pen’s side button does';
+
+  @override
   String get commonClose => 'Close';
 
   @override

@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -186,12 +187,15 @@ class _PageCanvasState extends State<PageCanvas> {
         mode: app.touchDrawing,
         activeTouches: _touches.length,
         stylusActive: _stylusActive,
+        penEverSeen: app.penSeenHere,
       );
 
   void _noteStylus(PointerEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
       _lastStylus = PageCanvas.clock();
+      // Remembered for good, not for two seconds. See [AppState.penSeenHere].
+      app.notePenSeen();
     }
   }
 
@@ -327,6 +331,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    PenButtons.bits.removeListener(_penBitsChanged);
     _wetTick.dispose();
     super.dispose();
   }
@@ -334,6 +339,7 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void initState() {
     super.initState();
+    PenButtons.bits.addListener(_penBitsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
       // Restore this page's remembered view if the user actually adjusted it
@@ -353,6 +359,41 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
+  /// **The pen's buttons, as the runner read them off the window messages.**
+  ///
+  /// Flutter's Windows embedder never looks at a pen's flags, so this is the
+  /// only route a barrel press has into the app — see `core/pen_buttons.dart`
+  /// for the whole of why. It feeds exactly the state the hover path already
+  /// maintained from the button BITS, so everything downstream (the cursor,
+  /// the tool indicator, erase-while-held) keeps working as written.
+  void _penBitsChanged() {
+    final bits = PenButtons.bits.value;
+    // A pen flag can only have come from a pen, in range: better evidence
+    // than the grace window, and it is what [AppState.penSeenHere] wants.
+    if (bits != 0) {
+      _lastStylus = PageCanvas.clock();
+      app.notePenSeen();
+    }
+    final erase = PenButtons.erases(bits, app.penButton);
+    if (erase != _penButtonHeld) {
+      setState(() => _penButtonHeld = erase);
+      app.setPenErasing(erase);
+    }
+    final select = PenButtons.selects(bits, app.penButton);
+    if (select && _toolBeforePenSelect == null) {
+      _toolBeforePenSelect = app.tool;
+      app.setTool(Tool.select, automatic: true);
+    } else if (!select && _toolBeforePenSelect != null) {
+      final back = _toolBeforePenSelect!;
+      _toolBeforePenSelect = null;
+      app.setTool(back, automatic: true);
+    }
+  }
+
+  /// The tool to go back to when the pen's side button is let go, where it is
+  /// set to Select. Null when it is not being held.
+  Tool? _toolBeforePenSelect;
+
   void _inkDown(PointerDownEvent e) {
     app.claimedPointers.remove(e.pointer); // keep the claim set tidy
     // The pen's own erase signals, per gesture: the tail end, or the barrel
@@ -363,10 +404,13 @@ class _PageCanvasState extends State<PageCanvas> {
     // pressed before the pen landed or as it landed. `_penButtonHeld` carries
     // the former, which is how somebody actually uses it: press, then touch.
     _gestureErase = penGestureErases(
-        kind: e.kind,
-        buttons: e.buttons,
-        heldWhileHovering: _penErasing,
-        penInRange: _stylusActive);
+            kind: e.kind,
+            buttons: e.buttons,
+            heldWhileHovering: _penErasing,
+            penInRange: _stylusActive) ||
+        // ...or the runner read the flag off the message, which on Windows is
+        // the only place it exists. See [_penBitsChanged].
+        PenButtons.erases(PenButtons.bits.value, app.penButton);
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
     if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
@@ -1530,13 +1574,21 @@ class _PageCanvasState extends State<PageCanvas> {
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: _OverlayPainter(
+                      painter: OverlayPainter(
                         controller: controller,
                         marquee: _mode == _DragMode.marquee
                             ? Rect.fromPoints(_marqueeStartPage, _marqueeEndPage)
                             : null,
                         inkSelections: selectedInkRects,
-                        lasso: _lasso,
+                        // **A COPY, and that is the whole of the fix.** The
+                        // loop is built up point by point in one list, and a
+                        // painter handed that list compares it with itself in
+                        // `shouldRepaint` — same instance, same length, so
+                        // nothing had changed and nothing repainted. The loop
+                        // only appeared when the gesture ended and something
+                        // else rebuilt the canvas. Reported: *"the lasso works
+                        // however doesnt show the outline as it gets drawn."*
+                        lasso: _lasso == null ? null : List.of(_lasso!),
                         color: Theme.of(context).colorScheme.primary,
                         halo: context.surfaces.canvas,
                       ),
@@ -1995,8 +2047,12 @@ class _DragGridPainter extends CustomPainter {
 }
 
 /// Marquee rectangle + dashed outlines for selected ink blocks.
-class _OverlayPainter extends CustomPainter {
-  _OverlayPainter({
+///
+/// Public only so a test can read [debugPaints]: whether the loop somebody is
+/// drawing appears under their pointer is not a thing a widget test can see,
+/// and counting repaints is.
+class OverlayPainter extends CustomPainter {
+  OverlayPainter({
     required this.controller,
     required this.marquee,
     required this.inkSelections,
@@ -2004,6 +2060,12 @@ class _OverlayPainter extends CustomPainter {
     required this.color,
     required this.halo,
   });
+
+  /// How many times an overlay has painted, for the test that proves the lasso
+  /// is drawn as it is drawn rather than at the end. See CONTRIBUTING: count
+  /// the work, never the clock.
+  @visibleForTesting
+  static int debugPaints = 0;
   final CanvasController controller;
   final Rect? marquee;
   final List<Rect> inkSelections;
@@ -2016,6 +2078,7 @@ class _OverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    debugPaints++;
     final lassoPts = lasso;
     if (lassoPts != null && lassoPts.length > 1) {
       final path = Path()
@@ -2095,7 +2158,7 @@ class _OverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _OverlayPainter old) =>
+  bool shouldRepaint(covariant OverlayPainter old) =>
       old.marquee != marquee ||
       old.inkSelections.length != inkSelections.length ||
       old.lasso != lasso ||

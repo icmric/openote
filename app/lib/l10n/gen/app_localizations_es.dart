@@ -345,6 +345,28 @@ class LEs extends L {
   String get commonCancel => 'Cancelar';
 
   @override
+  String get commonCopy => 'Copiar';
+
+  @override
+  String get settingsPenTest => 'Prueba de lápiz y táctil';
+
+  @override
+  String get settingsPenTestHint =>
+      'Muestra lo que informan realmente el lápiz, el dedo y los botones';
+
+  @override
+  String get penButtonEraser => 'Borrador';
+
+  @override
+  String get penButtonSelect => 'Seleccionar';
+
+  @override
+  String get penButtonNothing => 'Nada';
+
+  @override
+  String get barPenButton => 'Qué hace el botón lateral del lápiz';
+
+  @override
   String get commonClose => 'Cerrar';
 
   @override

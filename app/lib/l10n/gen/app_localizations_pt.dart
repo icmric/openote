@@ -343,6 +343,28 @@ class LPt extends L {
   String get commonCancel => 'Cancelar';
 
   @override
+  String get commonCopy => 'Copiar';
+
+  @override
+  String get settingsPenTest => 'Teste de caneta e toque';
+
+  @override
+  String get settingsPenTestHint =>
+      'Mostra o que a caneta, o dedo e os botões realmente informam';
+
+  @override
+  String get penButtonEraser => 'Borracha';
+
+  @override
+  String get penButtonSelect => 'Selecionar';
+
+  @override
+  String get penButtonNothing => 'Nada';
+
+  @override
+  String get barPenButton => 'O que faz o botão lateral da caneta';
+
+  @override
   String get commonClose => 'Fechar';
 
   @override

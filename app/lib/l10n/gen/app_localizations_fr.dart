@@ -344,6 +344,28 @@ class LFr extends L {
   String get commonCancel => 'Annuler';
 
   @override
+  String get commonCopy => 'Copier';
+
+  @override
+  String get settingsPenTest => 'Test du stylet et du tactile';
+
+  @override
+  String get settingsPenTestHint =>
+      'Affiche ce que le stylet, le doigt et les boutons signalent réellement';
+
+  @override
+  String get penButtonEraser => 'Gomme';
+
+  @override
+  String get penButtonSelect => 'Sélectionner';
+
+  @override
+  String get penButtonNothing => 'Rien';
+
+  @override
+  String get barPenButton => 'Rôle du bouton latéral du stylet';
+
+  @override
   String get commonClose => 'Fermer';
 
   @override

@@ -128,6 +128,37 @@ void main() {
             'over one of them must not pick up the other');
   });
 
+  testWidgets('THE LOOP IS DRAWN WHILE IT IS BEING DRAWN', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await openPage(t);
+    app.setTool(Tool.lasso);
+    await t.pump();
+
+    final before = OverlayPainter.debugPaints;
+    final g = await t.startGesture(const Offset(180, 180),
+        kind: PointerDeviceKind.mouse);
+    for (final p in const [
+      Offset(240, 180),
+      Offset(300, 220),
+      Offset(240, 260),
+    ]) {
+      await g.moveTo(p);
+      await t.pump();
+    }
+    final during = OverlayPainter.debugPaints - before;
+    await g.up();
+    await t.pump();
+
+    // *"The lasso works however doesnt show the outline as it gets drawn."*
+    // The canvas handed the painter the very list it was adding points to, so
+    // `shouldRepaint` compared it with itself: nothing had changed, nothing
+    // repainted, and the loop appeared only once the gesture ended and
+    // something else rebuilt the canvas.
+    expect(during, greaterThanOrEqualTo(3),
+        reason: 'one repaint per point of the loop, not one at the end');
+    app.cancelPendingSave();
+  });
+
   testWidgets('THE LASSO IS HOW STROKES BECOME ONE OBJECT', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await openPage(t);

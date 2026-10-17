@@ -468,6 +468,20 @@
   "@commonCancel": {
     "description": "Button: dismiss a dialog without acting."
   },
+  "commonCopy": "Copy",
+  "@commonCopy": {"description": "Button: copy something to the clipboard."},
+  "settingsPenTest": "Pen and touch test",
+  "@settingsPenTest": {"description": "Settings row: opens a dialog showing what the pen and touchscreen report."},
+  "settingsPenTestHint": "See what your pen, finger and buttons actually report",
+  "@settingsPenTestHint": {"description": "Hint under the pen and touch test row in Settings."},
+  "penButtonEraser": "Eraser",
+  "@penButtonEraser": {"description": "Option: the pen side button acts as the eraser."},
+  "penButtonSelect": "Select",
+  "@penButtonSelect": {"description": "Option: the pen side button switches to the selection tool."},
+  "penButtonNothing": "Nothing",
+  "@penButtonNothing": {"description": "Option: the pen side button does nothing."},
+  "barPenButton": "What the pen’s side button does",
+  "@barPenButton": {"description": "Tooltip on the Draw tab for the pen side-button action chooser."},
   "commonClose": "Close",
   "@commonClose": {
     "description": "Button that dismisses a dialog."

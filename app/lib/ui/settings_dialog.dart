@@ -9,6 +9,7 @@ import '../update/app_update.dart';
 import 'mcp_dialog.dart';
 import 'onboarding.dart';
 import 'onote_dialog.dart';
+import 'pen_test_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sync_dialog.dart';
 import 'update_dialog.dart';
@@ -232,6 +233,14 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               _door(Icons.keyboard_outlined, l.settingsShortcuts,
                   l.settingsShortcutsHint,
                   () => showShortcutOverlay(context)),
+              // **The instrument for the pen-buttons report.** It has come
+              // back three times from two people on hardware nobody here
+              // owns, and each answer has been a guess about what Windows
+              // sends. This is in Settings rather than on the Draw tab
+              // because it is for the one conversation where it is needed,
+              // not for the toolbar.
+              _door(Icons.draw_outlined, l.settingsPenTest,
+                  l.settingsPenTestHint, () => showPenTestDialog(context)),
               _section(l.settingsAbout),
               _row(
                 l.settingsVersion(kAppVersion),

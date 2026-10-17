@@ -46,6 +46,21 @@ sixteen-core machine and does not fit. Those carry
 kind: intermittent, one platform, one test at a time, reported as
 "TimeoutException after 0:00:30" with nothing in it about git.
 
+**Never hand a `CustomPainter` a collection you go on mutating.** Its
+`shouldRepaint` is then comparing an object with itself, so it returns false
+and nothing repaints — which is how the lasso's outline came to appear only
+once the gesture had ended. Pass a copy, or carry a `Listenable` the painter
+repaints on. The symptom is invisible to a widget test that only asks what the
+tree contains, so count the paints: a `static int debugPaints` incremented in
+`paint()` is what pins it (`OverlayPainter`).
+
+**And when an input device does not behave, read the embedder before theorising
+about it.** The engine's source ships inside the SDK —
+`<flutter>/engine/src/flutter/shell/platform/windows/flutter_window.cc` is the
+Windows one — and it is the difference between "the pen's barrel button is not
+reaching us" and three rounds of guessing at bit masks. `grep -rn "PEN_FLAG"`
+over that directory answered a report that had been open for months.
+
 **A widget test is on Android unless it says otherwise**, and a good deal of
 framework behaviour turns on that. `EditableText` unfocuses on a tap outside
 on Windows, macOS and Linux and deliberately does not on Android and iOS — so

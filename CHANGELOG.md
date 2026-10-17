@@ -4,6 +4,30 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — the pen, the lasso and the flick
+
+- **Your pen's side button works.** It never could: Flutter reads a pen's
+  pressure and rotation from Windows and never looks at its buttons, reporting
+  every pen touch as a plain left-click — so the barrel press did not reach
+  Openote at all, whatever Openote did with it. It is read directly now. The
+  Draw tab chooses what it does: eraser (as before), Select, or nothing. The
+  tail of the pen always erases, because that end of a pen is an eraser.
+  - A pen with two side buttons reports both the same way, so they cannot be
+    told apart — not by us and not by Windows.
+- **Settings › Pen and touch test** shows exactly what your pen, your finger
+  and your buttons report, and what the app makes of it. It is there so a
+  report about input can be answered with evidence instead of a guess.
+- **A finger stops drawing once a pen has been used on the machine.** It used
+  to stop only for two seconds after the last stylus event, which is shorter
+  than the pause between two written words — so a resting hand drew. A
+  touch-only tablet still inks with a finger, and "Always" still means always.
+- **The lasso draws its loop as you draw it.** The outline only appeared once
+  the gesture ended.
+- **Ctrl+Shift+C swaps the last two colours** instead of toggling one colour
+  against none, so you can flick between two while writing. Out of the box the
+  pair is your colour and Automatic, which is the "a couple of words, not
+  every word" case.
+
 ### Added — bold and a colour on the same word
 
 - **Two kinds of formatting can be combined.** Colouring a word that was

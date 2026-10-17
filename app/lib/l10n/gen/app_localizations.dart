@@ -677,6 +677,48 @@ abstract class L {
   /// **'Cancel'**
   String get commonCancel;
 
+  /// Button: copy something to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get commonCopy;
+
+  /// Settings row: opens a dialog showing what the pen and touchscreen report.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen and touch test'**
+  String get settingsPenTest;
+
+  /// Hint under the pen and touch test row in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'See what your pen, finger and buttons actually report'**
+  String get settingsPenTestHint;
+
+  /// Option: the pen side button acts as the eraser.
+  ///
+  /// In en, this message translates to:
+  /// **'Eraser'**
+  String get penButtonEraser;
+
+  /// Option: the pen side button switches to the selection tool.
+  ///
+  /// In en, this message translates to:
+  /// **'Select'**
+  String get penButtonSelect;
+
+  /// Option: the pen side button does nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing'**
+  String get penButtonNothing;
+
+  /// Tooltip on the Draw tab for the pen side-button action chooser.
+  ///
+  /// In en, this message translates to:
+  /// **'What the pen’s side button does'**
+  String get barPenButton;
+
   /// Button that dismisses a dialog.
   ///
   /// In en, this message translates to:
