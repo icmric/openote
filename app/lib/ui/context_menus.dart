@@ -273,8 +273,21 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // than a state — and the slides now land on the user's own page.
       _item(
           'lock',
-          b.content['locked'] == true ? Icons.lock_open_outlined : Icons.lock_outline,
-          b.content['locked'] == true ? 'Unlock' : 'Lock in place'),
+          b.locked ? Icons.lock_open_outlined : Icons.lock_outline,
+          b.locked ? 'Unlock' : 'Lock in place'),
+      // **And the other thirty-nine pages of it.** A deck imported a page at
+      // a time is one object in the student's head, so unlocking it one slide
+      // at a time is forty right-clicks: *"if they want to make changes to
+      // every page that would quickly become annoying if they have to right
+      // click and unlock each page individually."* They are linked by the
+      // content hash they already share, so this needs nothing stored.
+      if (b.content['pdf'] is String)
+        _item(
+            'lock-all',
+            b.locked ? Icons.lock_open_outlined : Icons.lock_outline,
+            b.locked
+                ? 'Unlock every page of this PDF'
+                : 'Lock every page of this PDF'),
       // The box itself gets attributes, starting with a fill. The picker
       // returns RRGGBBAA, so transparency comes with it — a translucent
       // highlight over a diagram is half of why anyone tints a box.
@@ -315,12 +328,25 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
   switch (action) {
     case 'lock':
       app.pushUndo();
-      if (b.content['locked'] == true) {
+      if (b.locked) {
         b.content.remove('locked');
       } else {
         b.content['locked'] = true;
       }
       app.updateBlock(b);
+    case 'lock-all':
+      app.pushUndo();
+      final want = !b.locked;
+      final n = app.setPdfLocked(b.content['pdf'] as String, locked: want);
+      // Said out loud because most of what it changed is on pages nobody is
+      // looking at — and because undo only covers this one (see
+      // [AppState.setPdfLocked]).
+      if (context.mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+            content: Text(want
+                ? 'Locked $n ${n == 1 ? 'slide' : 'slides'} in place'
+                : 'Unlocked $n ${n == 1 ? 'slide' : 'slides'}')));
+      }
     case 'bg':
       if (context.mounted) {
         final hex = await showOnoteColorPicker(context, app,

@@ -9746,6 +9746,61 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Lock or unlock every slide that came out of the same PDF, wherever in
+  /// the notebook it landed. Returns how many changed.
+  ///
+  /// An import gives each slide a page of its own, so "unlock this one" is
+  /// forty right-clicks on a forty-page deck: *"if they want to make changes
+  /// to every page that would quickly become annoying if they have to right
+  /// click and unlock each page individually."* (Issue #20.)
+  ///
+  /// Every slide of one import already carries the same `content['pdf']`
+  /// hash, so that is the link — no new field, and it works on decks imported
+  /// before this existed.
+  ///
+  /// **Undo covers the page being looked at and no other**, because a
+  /// snapshot is per page. The way back is the same menu item, whose label
+  /// has flipped to say so.
+  int setPdfLocked(String pdfRef, {required bool locked}) {
+    final nb = notebookId;
+    if (nb == null || pdfRef.isEmpty) return 0;
+    var changed = 0;
+    // The page in front of the student is held in memory and may have edits
+    // that are not on disk yet, so it is changed there and left to the
+    // ordinary save.
+    for (final b in blocks) {
+      if (_relock(b, pdfRef, locked)) changed++;
+    }
+    for (final id in _repo.pageIdsContaining(nb, pdfRef)) {
+      if (id == pageId) continue; // done above, from memory
+      final data = _repo.readPage(nb, id);
+      var touched = false;
+      for (final b in data.blocks) {
+        if (_relock(b, pdfRef, locked)) {
+          touched = true;
+          changed++;
+        }
+      }
+      if (touched) importPage(nb, id, data.blocks, data.props);
+    }
+    if (changed > 0) {
+      markDirty();
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  static bool _relock(Block b, String pdfRef, bool locked) {
+    if (b.content['pdf'] != pdfRef || b.locked == locked) return false;
+    if (locked) {
+      b.content['locked'] = true;
+    } else {
+      b.content.remove('locked');
+    }
+    b.updatedAt = nowMs();
+    return true;
+  }
+
   void removeBlock(String id, {bool recordUndo = true}) {
     if (recordUndo) pushUndo();
     blocks.removeWhere((b) => b.id == id);

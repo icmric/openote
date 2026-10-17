@@ -265,6 +265,48 @@ void main() {
       app.cancelPendingSave();
     });
 
+    test('UNLOCKING A SLIDE UNLOCKS THE DECK IT ARRIVED IN', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // What the importer writes: one page per slide, every slide carrying
+      // the same content hash for the PDF they came out of. Hand-built here
+      // because a real import needs pdfium, which not every machine has;
+      // `pdf_as_pdf_test` is what proves the importer writes it this way.
+      const ref = 'sha256:deadbeef';
+      slide.content['pdf'] = ref;
+      final nb = app.notebookId!;
+      final other = app.importNode(
+          nb,
+          TreeNode(
+              kind: NodeKind.page, title: '2', position: 'a000000000000002'));
+      app.importPage(
+          nb,
+          other.id,
+          [
+            Block(
+                type: BlockType.image,
+                x: 0,
+                y: 0,
+                w: 800,
+                content: {'pdf': ref, 'locked': true})
+              ..h = 1000
+          ],
+          PageProps());
+
+      expect(app.setPdfLocked(ref, locked: false), 2);
+
+      expect(slide.locked, isFalse, reason: 'the one in front of them');
+      expect(app.readPage(other.id).blocks.single.locked, isFalse,
+          reason: 'and the one they would have had to go and find — forty of '
+              'them on a forty-page deck');
+
+      // The way back is the same item, whose label has flipped: an undo
+      // snapshot only covers the page it was taken on.
+      expect(app.setPdfLocked(ref, locked: true), 2);
+      expect(app.readPage(other.id).blocks.single.locked, isTrue);
+      expect(slide.locked, isTrue);
+      app.cancelPendingSave();
+    });
+
     test('ink whose blob never arrived moves without taking the drag down', () {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // The working list is missing entirely, which is what a block in the
