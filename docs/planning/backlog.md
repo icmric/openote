@@ -34,8 +34,7 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 10 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
 | 11 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
 | 12 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 13 | Strokes selectable inside one block | M | One stroke per block made selection honest and page JSON 197x bigger on a dense page. Measured. §1.13 |
-| 14 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
+| 13 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
 
 ---
 
@@ -164,6 +163,11 @@ still appends to the shared folder after both devices' auto-sync is off.** That 
 worth finding on its own terms, because a write nobody expects into a replicated
 folder is interesting whether or not a test is watching.
 
+Seen again on 2026-10-17, in a full-suite run, with the same two byte figures —
+1489 → 1936 — and passing alone on the same commit immediately afterwards. The
+numbers being identical across months of unrelated changes says the write is one
+specific op, which is the thread to pull: find which one and the cause falls out.
+
 ### 1.10 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
@@ -262,35 +266,6 @@ clean on the desktop, with no way to reproduce either in CI. The call: keep our
 own checker as the default and the only one tested, fix the list — which is
 where the complaint actually comes from — and leave a platform provider as an
 opt-in behind a `SpellService` seam if anyone still wants it afterwards.
-
-### 1.13 One stroke per block costs 4.7x on an ink-heavy page · **M**
-
-A stroke is its own block since issue #20 — the owner, twice, on inferred
-grouping — and a block is the unit of storage as well as the unit of
-selection. Measured, 200 strokes of 40 points on one page, written as one
-block and as 200:
-
-| | one block | 200 blocks | |
-|---|---|---|---|
-| blob bytes | 25,812 | 41,729 | +62%, the per-blob header and brush table |
-| page JSON | 412 | 81,369 | **197x** — about 405 B of envelope per stroke |
-| total | 26 KB | 123 KB | 4.7x |
-
-The envelope is the cost: an id, a geometry that `_refitInkBounds` derives
-from the strokes anyway, an `updatedAt`, and a 71-character blob reference,
-once per stroke. It is also rewritten on every save of that page.
-
-**The fix is not to go back to guessing.** It is that selection granularity
-and storage granularity are two different questions, and OneNote answers them
-separately: strokes are individually selectable *inside* one stroke
-collection. Here that means `selectedIds` learning to name a stroke, which
-touches everything that acts on a selection — move, delete, recolour, copy,
-the alignment guides — and the lasso, which already splices strokes between
-blocks and would become the thing that does not need to.
-
-Until then: a notebook of a hundred dense handwritten pages pays about 10 MB
-more than it did. Worth knowing, not worth a heuristic. The lasso is the
-pressure valve — gathering a word into one block is also a storage win.
 
 ---
 

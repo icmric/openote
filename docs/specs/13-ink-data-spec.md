@@ -56,15 +56,34 @@ carries no timing, so `0` and an empty `t` is what an import states.
   Lineage is not recorded: a `splitFrom` field was specified here and never
   built, because nothing has needed to trace a fragment back to what it came
   from.
-- Strokes share one `ink` block when they were written **close together in
-  both senses** — within a short gap (default 2 s) and near the block's own
-  bounds (default about a line of handwriting). Time alone groups a note made
-  at the top of a page with one made at the bottom, and a block is the unit of
-  selection, so that reads as one object that cannot be taken apart. One block
-  per page-sized drawing also destroys culling granularity; a writer SHOULD
-  start a new block beyond 512 strokes.
-- The **lasso** re-homes strokes into a block of their own, which is how a
-  block that has grown gets split.
+- **A stroke is its own object (normative).** Nothing infers which strokes
+  belong together. Two rules were tried and both swept separate marks into one
+  object — a short time gap, then a time gap and a distance — and a block is
+  the unit of selection, so the result read as one thing that could not be
+  taken apart. A writer MUST NOT group strokes by timing or proximity.
+- The **lasso** is how strokes become one object: it re-homes what it caught
+  into a block of its own and hands it over selected. That block is a
+  **group**, and nothing may take it apart again except the student.
+- **Selection granularity is not storage granularity (normative).** A block is
+  an expensive way to say "one stroke": 380 bytes of envelope per block, of
+  which 80 are fields that are null or zero for every stroke ever drawn. So
+  loose strokes — everything that is not a group — are stored in **one block
+  per page carrying `"loose": true`**, and a reader MUST present each of its
+  strokes as a separately selectable object. Measured: 200 strokes of 40
+  points cost 26 KB this way and 123 KB as 200 blocks, for the same 200
+  objects on the canvas.
+  - A loose block's strokes keep their stored order, which is the order they
+    are painted in.
+  - The split is **derived, not stored**: an implementation that needs stable
+    per-stroke identity between loads can name them from the block's own id.
+    Openote uses `<block id>~<index>`.
+  - A block with several strokes and no `loose` flag is a group; a block with
+    one stroke and no flag is a single stroke, which is the same thing.
+  - Both directions degrade gracefully. A reader that ignores `loose` shows
+    one object where it should show several; a reader that never writes it
+    costs envelope and loses nothing.
+- One block per page-sized drawing destroys culling granularity, so a writer
+  SHOULD start a new block beyond 512 strokes.
 
 ### 2.2 What is actually stored: a blob reference
 

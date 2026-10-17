@@ -96,6 +96,11 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **A selection of handwriting is still drawn as one box**, not one per
   stroke — which is what it looked like when a word was one piece, and the
   selection is one thing you are about to move.
+- **And it costs no more space than it used to.** Separate strokes are stored
+  together and come back apart, so a page of handwriting takes the same room
+  it took when a whole word was one piece — measured, 200 strokes went from
+  26 KB to 123 KB when each became its own object, and they are back to 26 KB.
+  A group made with the lasso is stored as the one object it is.
 - **An imported picture keeps its real format.** Everything brought in from
   OneNote was labelled a PNG whatever it was, so exporting that notebook to a
   folder wrote JPEGs with a `.png` name. The format is read from the bytes,
