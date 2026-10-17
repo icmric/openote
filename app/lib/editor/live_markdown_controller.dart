@@ -376,8 +376,16 @@ class LiveMarkdownController extends TextEditingController {
       final p = _prefixRe.firstMatch(line);
       if (p != null) from = p.end;
     }
-    final sub = line.substring(from);
-    final regionStart = lineStart + from;
+    _inlineRuns(line.substring(from), lineStart + from, out, 0);
+  }
+
+  /// The runs inside one region of a line, and inside those.
+  ///
+  /// Recursive for the same reason the renderer is: a colour wrapped around a
+  /// bold word hides markers at two depths, and the caret has to be told
+  /// about all of them or it steps into characters nobody can see.
+  static void _inlineRuns(
+      String sub, int regionStart, List<_MdRun> out, int depth) {
     for (final m in _inlineRe.allMatches(sub)) {
       final c = classifyInline(m);
       // An inline equation is drawn as ONE object, so everything after the
@@ -447,6 +455,10 @@ class LiveMarkdownController extends TextEditingController {
         closeLen: c.closeLen,
         kind: MdRunKind.marker,
       ));
+      if (nestsInside(c.kind) && depth < kMaxInlineNesting) {
+        _inlineRuns(sub.substring(m.start + c.openLen, m.end - c.closeLen),
+            regionStart + m.start + c.openLen, out, depth + 1);
+      }
     }
   }
 
@@ -1529,8 +1541,8 @@ class LiveMarkdownController extends TextEditingController {
     _inline(line, lineStart, base, out);
   }
 
-  void _inline(
-      String sub, int regionStart, TextStyle cBase, List<InlineSpan> out) {
+  void _inline(String sub, int regionStart, TextStyle cBase,
+      List<InlineSpan> out, [int depth = 0]) {
     var last = 0;
     for (final m in _inlineRe.allMatches(sub)) {
       if (m.start > last) {
@@ -1770,10 +1782,23 @@ class LiveMarkdownController extends TextEditingController {
       // Backspace).
       final markStyle = _hidden(cBase);
       final full = sub.substring(m.start, m.end);
+      final innerText = full.substring(openLen, full.length - closeLen);
       // open marker + inner + close marker — substrings guarantee coverage.
       out.add(TextSpan(text: full.substring(0, openLen), style: markStyle));
-      out.add(TextSpan(
-          text: full.substring(openLen, full.length - closeLen), style: inner));
+      // **And whatever is inside it is styled too.** `{{#C63838 **word**}}`
+      // and `**{{#C63838 word}}**` are one request written two ways, and the
+      // scanner is one flat pass: whichever marker won at the outer position
+      // took the style and the inner one sat there as characters. Recursion
+      // over the text between the markers is all it needs — the inner run's
+      // own style is built from `inner`, so the two compose, and it still
+      // emits substrings of the buffer in order, which is what the coverage
+      // check above proves on every keystroke.
+      if (nestsInside(c.kind) && depth < kMaxInlineNesting) {
+        _inline(innerText, regionStart + m.start + openLen, inner, out,
+            depth + 1);
+      } else {
+        out.add(TextSpan(text: innerText, style: inner));
+      }
       out.add(TextSpan(
           text: full.substring(full.length - closeLen), style: markStyle));
       last = m.end;

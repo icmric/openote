@@ -697,10 +697,36 @@ TextStyle subSupStyle(TextStyle base, {required bool sup, required bool dark}) {
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink,
     Color? Function(String latex)? mathLinkTint,
-    InlineAtomHost? atomHost]) {
+    InlineAtomHost? atomHost,
+    int depth = 0]) {
   final spans = <InlineSpan>[];
   final pattern = mdInlineRe;
   var last = 0;
+
+  /// A styled run, with whatever is inside it styled too.
+  ///
+  /// `{{#C63838 **word**}}` and `**{{#C63838 word}}**` are one request
+  /// written two ways, and both used to come out as a half-styled word with
+  /// literal markers around it: the scanner is one flat pass, so whichever
+  /// marker won at the outer position took the style and the inner one stayed
+  /// as characters. Recursing over the text inside the markers is the whole
+  /// of it — `TextSpan` already composes a child's style onto its parent's,
+  /// which is what "two styles on one word" means.
+  InlineSpan run(MdMatch c, TextStyle style) {
+    final inner = c.inner;
+    if (!nestsInside(c.kind) || depth >= kMaxInlineNesting) {
+      return TextSpan(text: inner, style: style);
+    }
+    final kids = inlineSpans(inner, base.merge(style), dark, onWikiLink,
+        mathLinkTint, atomHost, depth + 1);
+    // Nothing inside it, which is nearly every run: one span rather than a
+    // span holding a span.
+    final only = kids.length == 1 ? kids.first : null;
+    if (only is TextSpan && only.text == inner && only.style == null) {
+      return TextSpan(text: inner, style: style);
+    }
+    return TextSpan(style: style, children: kids);
+  }
   for (final m in pattern.allMatches(text)) {
     if (m.start > last) {
       spans.add(TextSpan(text: text.substring(last, m.start)));
@@ -754,9 +780,9 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
       case MdInline.colour:
         final hx = c.target!;
         final v = int.parse(hx, radix: 16);
-        spans.add(TextSpan(
-          text: c.inner,
-          style: TextStyle(
+        spans.add(run(
+          c,
+          TextStyle(
               color: hx.length == 8
                   ? Color(((v & 0xFF) << 24) | (v >> 8))
                   : Color(0xFF000000 | v)),
@@ -825,26 +851,23 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           spans.add(TextSpan(text: raw.substring(url.length)));
         }
       case MdInline.underline:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(decoration: TextDecoration.underline)));
+        spans.add(run(
+            c, const TextStyle(decoration: TextDecoration.underline)));
       case MdInline.boldItalic:
         // `***both***`. Without this branch the `**` alternative claimed it
         // as `***both**`, which rendered bold with a stray asterisk — the
         // reported import bug, and reachable by pressing Ctrl+B then Ctrl+I.
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(
+        spans.add(run(
+            c,
+            const TextStyle(
                 fontWeight: FontWeight.w600, fontStyle: FontStyle.italic)));
       case MdInline.bold:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(fontWeight: FontWeight.w600)));
+        spans.add(run(c, const TextStyle(fontWeight: FontWeight.w600)));
       case MdInline.italic:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(fontStyle: FontStyle.italic)));
+        spans.add(run(c, const TextStyle(fontStyle: FontStyle.italic)));
       case MdInline.code:
+        // Flat, and not an oversight: a code span's contents are literal, so
+        // `` `**x**` `` is two asterisks either side of an x.
         spans.add(TextSpan(
           text: c.inner,
           style: TextStyle(
@@ -856,9 +879,13 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           ),
         ));
       case MdInline.strike:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: const TextStyle(decoration: TextDecoration.lineThrough)));
+        spans.add(run(
+            c, const TextStyle(decoration: TextDecoration.lineThrough)));
+      // **Flat, both of them.** A raised glyph is drawn as a shadow with the
+      // glyph itself transparent (see [subSupStyle]), so a nested style that
+      // set its own colour would paint the character twice, in two places. A
+      // subscript INSIDE something else is unaffected: `**H~2~O**` reaches
+      // here with bold already in [base].
       case MdInline.subscript:
         spans.add(TextSpan(
             text: c.inner, style: subSupStyle(base, sup: false, dark: dark)));
@@ -866,9 +893,9 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
         spans.add(TextSpan(
             text: c.inner, style: subSupStyle(base, sup: true, dark: dark)));
       case MdInline.highlight:
-        spans.add(TextSpan(
-            text: c.inner,
-            style: TextStyle(
+        spans.add(run(
+            c,
+            TextStyle(
                 backgroundColor: dark
                     ? OnoteColors.brass700.withValues(alpha: .45)
                     : const Color(0xFFF7E27A))));

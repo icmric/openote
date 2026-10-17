@@ -55,6 +55,41 @@ enum MdInline {
   superscript,
 }
 
+/// Whether a run of this kind holds ordinary text that can be styled again.
+///
+/// Both renderers ask, so neither can start descending into something the
+/// other treats as literal — the drift this library exists to prevent.
+///
+///  * code and every maths form are literal by definition;
+///  * a subscript shifts its ink with a shadow and leaves the glyph itself
+///    transparent ([subSupStyle] in markdown/md_render.dart), so a nested
+///    colour would paint the character twice, in two places. One INSIDE
+///    something else is unaffected: `**H~2~O**` arrives with bold already on;
+///  * a link shows its label and hides its address, which is a rewrite of a
+///    different kind, and an atom is not text at all.
+bool nestsInside(MdInline k) => switch (k) {
+      MdInline.bold ||
+      MdInline.italic ||
+      MdInline.boldItalic ||
+      MdInline.underline ||
+      MdInline.strike ||
+      MdInline.highlight ||
+      MdInline.colour =>
+        true,
+      _ => false,
+    };
+
+/// How deep inline styling may nest before the renderers stop descending.
+///
+/// `{{#C63838 **_both_**}}` is three. Past that is nobody's note, and a cap
+/// is what stops a crafted line costing a rescan per character — each level
+/// re-scans only the text inside its own markers, so the work is bounded by
+/// `length x depth`.
+///
+/// [MdInline.code] and the maths forms never descend whatever this says:
+/// their contents are literal by definition.
+const int kMaxInlineNesting = 6;
+
 /// One classified match: what it is, and where its markers are.
 ///
 /// [openLen]/[closeLen] let the live editor emit `marker + inner + marker` as
