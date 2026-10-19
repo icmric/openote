@@ -207,6 +207,11 @@ void main() {
     app.markOnboardingSeen();
     await mount(tester, app, showSettingsDialog);
 
+    // **Scrolled to**, because this page is a `ListView` and two hardware
+    // preferences moved onto it — the row is there, below the fold, and a
+    // lazy list does not build what it cannot show.
+    await tester.scrollUntilVisible(find.text('Welcome tour'), 120);
+    await tester.pumpAndSettle();
     expect(find.text('Welcome tour'), findsOneWidget,
         reason: 'a door back in is what makes "Skip" a fair offer');
     // By its own icon: Settings stacks several identical "Open…" buttons,

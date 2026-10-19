@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
@@ -106,6 +108,24 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   /// beside them was saying it twice. What is left is the title, the sentence
   /// under it, and a chevron — the shape everybody already reads as "this
   /// leads somewhere".
+  /// A settings row's dropdown. One shape for all of them, so a page of
+  /// preferences does not have three ways of offering a choice.
+  Widget _choice<T>(List<T> values, T current, void Function(T) set,
+          String Function(T) label) =>
+      DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: current,
+          isDense: true,
+          style: TextStyle(
+              fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+          items: [
+            for (final v in values)
+              DropdownMenuItem(value: v, child: Text(label(v))),
+          ],
+          onChanged: (v) => v == null ? null : set(v),
+        ),
+      );
+
   Widget _door(IconData icon, String label, String hint, VoidCallback open) =>
       InkWell(
         mouseCursor: WidgetStateMouseCursor.clickable,
@@ -213,6 +233,24 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               _section(l.settingsWriting),
               _row(l.settingsSpellCheck,
                   _toggle(app.spellCheckEnabled, app.setSpellCheck)),
+              // **Moved off the Draw tab.** The owner: *"i think that option
+              // should be in settings rather than that bar. The whole drawing
+              // menu has sprawled out a lot."* Both of these are hardware
+              // preferences somebody sets once and never looks at again,
+              // which is what this page is for — the Draw row is for the
+              // things you change while you are drawing.
+              _row(l.barPenButton, _choice<PenButtonAction>(
+                PenButtonAction.values,
+                app.penButton,
+                app.setPenButton,
+                (v) => v.label(l),
+              )),
+              _row(l.barTouchDrawing, _choice<TouchDrawing>(
+                TouchDrawing.values,
+                app.touchDrawing,
+                app.setTouchDrawing,
+                (v) => v.label(l),
+              )),
               _section(l.settingsConnections),
               _door(Icons.sync, l.settingsSync, l.settingsSyncHint,
                   () => showSyncDialog(context, app)),

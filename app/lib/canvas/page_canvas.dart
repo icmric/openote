@@ -88,6 +88,14 @@ enum _DragMode { none, pending, marquee, moveSelection, pan }
 ///
 /// A block with no area — a zero-width ink block, a picture that has not
 /// loaded — falls back to a touch, because there is no proportion to take.
+/// **How far the eraser reaches**, in screen pixels at any zoom.
+///
+/// One constant rather than a literal in `_eraseAt`, because the ring drawn
+/// under the pointer has to be the same size as the thing it is advertising:
+/// *"id like to have a faint outline of the eraser when its being used so
+/// that people can see the AoE"*. A ring that lied would be worse than none.
+const double kEraserRadius = 12.0;
+
 bool marqueeCatches(Rect marquee, Rect block) {
   final area = block.width * block.height;
   if (area <= 0) return marquee.overlaps(block);
@@ -132,6 +140,26 @@ class _PageCanvasState extends State<PageCanvas> {
   /// everywhere touch exists, and marquee stays reachable with a pen or a
   /// mouse. A finger TAP still does everything a click does.
   PointerDeviceKind _downKind = PointerDeviceKind.mouse;
+
+  /// **Where to draw the eraser's ring**, or null when there is nothing to
+  /// rub out with. Fed from every pointer the ink layer sees; read by
+  /// [OverlayPainter], which repaints on it without rebuilding the canvas.
+  final ValueNotifier<Offset?> _eraserAt = ValueNotifier(null);
+
+  /// True when a press right now would rub something out: the eraser tool, or
+  /// a pen signal saying so.
+  /// `app.penErasing` rather than the private flag beside it: that is the one
+  /// the toolbar and the cursor already read, it is set from both routes into
+  /// a pen button, and one source of truth about "the button means erase" is
+  /// enough.
+  bool get _erasingNow =>
+      app.tool == Tool.eraser || app.penErasing || _gestureErase;
+
+  /// Remember where the eraser is, for the ring. Null hides it.
+  void _noteEraser(Offset? atLocal) {
+    final next = _erasingNow ? atLocal : null;
+    if (_eraserAt.value != next) _eraserAt.value = next;
+  }
 
   /// Whether this gesture began over a background layer the canvas took the
   /// drag back from. See [_selectDown].
@@ -262,16 +290,34 @@ class _PageCanvasState extends State<PageCanvas> {
     // A pen event is authoritative both ways; anything else may only ADD the
     // signal. Otherwise a promoted mouse move carrying no buttons would
     // cancel the button the pen itself had just reported.
-    final held = _erasingButtons(e);
-    if (held ? !_penButtonHeld : (isPen && _penButtonHeld)) {
-      setState(() => _penButtonHeld = held);
-      app.setPenErasing(_penErasing);
+    // **Where the runner is reporting, it is the only authority.**
+    //
+    // This used to read the button state off the event and let a pen event
+    // clear it as well as set it, which was right when the bits came from the
+    // event. On Windows they never do: the engine reports every pen event with
+    // no buttons at all, and those arrive at stylus rate — so a hover a
+    // millisecond after the channel said "barrel down" said "nothing is held"
+    // and took it straight back.
+    //
+    // Which is both reports. *"The lasso doesnt seem to work, when set it just
+    // draws every time"* — the tool was borrowed and returned before the pen
+    // could land. *"When set to the eraser it rubs it out most times but not
+    // every time"* — the same race, won by whichever arrived last.
+    //
+    // An event-derived "nothing is held" is not evidence of anything on a
+    // platform that cannot report a pen button, so it is not allowed to be.
+    if (!PenButtons.heard) {
+      final held = _erasingButtons(e);
+      if (held ? !_penButtonHeld : (isPen && _penButtonHeld)) {
+        setState(() => _penButtonHeld = held);
+        app.setPenErasing(_penErasing);
+      }
+      // The same signal where the button borrows a tool instead. A pen event
+      // is authoritative both ways here; anything else may only ADD the
+      // signal, for the same reason the erase half does.
+      final borrowed = _borrowedTool(e);
+      if (borrowed != null || isPen) _applyPenTool(borrowed);
     }
-    // The same signal where the button borrows a tool instead. A pen event
-    // is authoritative both ways; anything else may only ADD the signal, for
-    // the same reason the erase half does.
-    final borrowed = _borrowedTool(e);
-    if (borrowed != null || isPen) _applyPenTool(borrowed);
     if (isPen) {
       if (approaching && app.tool == Tool.select) {
         app.setTool(Tool.pen, automatic: true);
@@ -364,6 +410,7 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void dispose() {
     PenButtons.bits.removeListener(_penBitsChanged);
+    _eraserAt.dispose();
     _wetTick.dispose();
     super.dispose();
   }
@@ -668,7 +715,7 @@ class _PageCanvasState extends State<PageCanvas> {
       app.pushUndo();
       _eraseUndoPushed = true;
     }
-    final radius = 12.0 / controller.scale;
+    final radius = kEraserRadius / controller.scale;
     final r2 = radius * radius;
     // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
     // removes any stroke the eraser touches whole — OneNote's default, and the
@@ -1650,6 +1697,7 @@ class _PageCanvasState extends State<PageCanvas> {
                         // else rebuilt the canvas. Reported: *"the lasso works
                         // however doesnt show the outline as it gets drawn."*
                         lasso: _lasso == null ? null : List.of(_lasso!),
+                        eraserAt: _eraserAt,
                         color: Theme.of(context).colorScheme.primary,
                         halo: context.surfaces.canvas,
                       ),
@@ -1694,11 +1742,16 @@ class _PageCanvasState extends State<PageCanvas> {
       // tool is selected. See `app.touchDrawing` for the user override.
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
+        // The ring follows a hovering pen or mouse, not only a press: an
+        // eraser you can see the reach of BEFORE it touches is the point of
+        // drawing it at all.
+        onPointerHover: (e) => _noteEraser(e.localPosition),
         onPointerDown: (e) {
           // The scroll bar claims its pointers; the pen must not draw a
           // stroke behind it.
           if (app.claimedPointers.remove(e.pointer)) return;
           _noteStylus(e);
+          _noteEraser(e.localPosition);
           if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);
             return;
@@ -1721,6 +1774,7 @@ class _PageCanvasState extends State<PageCanvas> {
         },
         onPointerMove: (e) {
           _noteStylus(e);
+          _noteEraser(e.localPosition);
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -1733,10 +1787,14 @@ class _PageCanvasState extends State<PageCanvas> {
           } else {
             _inkUp(e);
           }
+          // A pen leaves the page and takes the ring with it; a mouse keeps
+          // hovering and keeps it.
+          if (e.kind != PointerDeviceKind.mouse) _noteEraser(null);
         },
         onPointerCancel: (e) {
           _touches.remove(e.pointer);
           _gestureErase = false;
+          _noteEraser(null);
           _cancelWetStroke();
         },
         child: canvas,
@@ -1900,7 +1958,10 @@ class _PageCanvasState extends State<PageCanvas> {
     return Listener(
       onPointerSignal: _onScroll,
       // Hover is how a pen announces its approach; see _stylusProximity.
-      onPointerHover: _stylusProximity,
+      onPointerHover: (e) {
+        _stylusProximity(e);
+        _noteEraser(e.localPosition);
+      },
       // **Trackpad pan/pinch, claim-checked exactly like a mouse drag.**
       //
       // Reported: scrolling and zooming inside a graph moved the PAGE
@@ -1941,6 +2002,10 @@ class _PageCanvasState extends State<PageCanvas> {
         if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
       },
       child: MouseRegion(
+        // The ring goes with the pointer that owns it. A `Listener` has no
+        // exit event; the region that sets the cursor is the one that knows
+        // when the pointer has left.
+        onExit: (_) => _noteEraser(null),
         cursor: switch (app.tool) {
           // The button held means erase, whatever tool is selected.
           _ when _penErasing => SystemMouseCursors.cell,
@@ -2120,7 +2185,8 @@ class OverlayPainter extends CustomPainter {
     required this.lasso,
     required this.color,
     required this.halo,
-  });
+    required this.eraserAt,
+  }) : super(repaint: eraserAt);
 
   /// How many times an overlay has painted, for the test that proves the lasso
   /// is drawn as it is drawn rather than at the end. See CONTRIBUTING: count
@@ -2137,9 +2203,44 @@ class OverlayPainter extends CustomPainter {
   /// colour, so it is white on a light page and near-black on a dark one.
   final Color halo;
 
+  /// **Where the eraser is, in screen space, while it can rub something out.**
+  ///
+  /// A notifier rather than a value, and handed to `super.repaint`, because it
+  /// changes once per pointer sample: a `setState` at that rate would rebuild
+  /// the canvas a hundred times a second to move a circle. Same trick the wet
+  /// stroke uses.
+  final ValueNotifier<Offset?> eraserAt;
+
   @override
   void paint(Canvas canvas, Size size) {
     debugPaints++;
+    final rub = eraserAt.value;
+    if (rub != null) {
+      // Faint, and a ring rather than a disc: it has to say where the edge is
+      // without hiding the ink it is about to take. The radius does not scale
+      // with zoom because the eraser does not either — `_eraseAt` divides by
+      // the scale, which is the same thing said the other way round.
+      canvas.drawCircle(
+          rub,
+          kEraserRadius,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = color.withValues(alpha: .07));
+      canvas.drawCircle(
+          rub,
+          kEraserRadius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5
+            ..color = halo.withValues(alpha: .8));
+      canvas.drawCircle(
+          rub,
+          kEraserRadius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = color.withValues(alpha: .75));
+    }
     final lassoPts = lasso;
     if (lassoPts != null && lassoPts.length > 1) {
       final path = Path()
@@ -2220,6 +2321,7 @@ class OverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant OverlayPainter old) =>
+      old.eraserAt != eraserAt ||
       old.marquee != marquee ||
       old.inkSelections.length != inkSelections.length ||
       old.lasso != lasso ||

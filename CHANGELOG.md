@@ -34,6 +34,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed — the pen, the lasso and the flick
 
+- **The eraser shows how far it reaches.** A faint ring follows the pointer
+  whenever a press would rub something out — including a hovering pen, so you
+  can see what the next touch will take before it takes it.
+- **The pen's buttons stopped being a coin toss.** The lasso setting did
+  nothing and the eraser one worked "most times but not every time": the
+  engine reports every pen event with no buttons at all on Windows, and those
+  arrive at stylus rate, so each one undid what the button had just said a
+  millisecond earlier.
+- **The Draw tab is shorter.** Pen size is one control with the presets and
+  the exact slider behind it, and the two hardware preferences — what the
+  pen's side button does, and whether a finger draws — are in Settings, where
+  you go looking for a setting. What is left on the row is what you change
+  while you are drawing.
 - **Each pen button does what you told Windows it was for.** A button your
   pen driver maps to the eraser erases — Windows reports that one as "the pen
   is inverted", which is its own way of saying eraser, so there is nothing to

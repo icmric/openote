@@ -15,7 +15,6 @@ import '../markdown/md_syntax.dart';
 import '../math/evaluate.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
-import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
 import '../state/app_state.dart';
@@ -33,6 +32,7 @@ import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'pen_size_button.dart';
 import '../canvas/ink_shapes.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
@@ -1222,18 +1222,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
-        ...[
-          for (final v in kPenSizes) _penDot(context, app, v, l),
-          // The slider is still here for anybody who wants 3.5 — behind a
-          // button, which is where a control most people never touch belongs.
-          IconButton(
-            icon: const Icon(Icons.tune, size: 16),
-            tooltip: l.barPenSizeExact,
-            isSelected: !kPenSizes.contains(app.penSize),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _showExactPenSize(context, app),
-          ),
-        ],
+        // **One control, not six.** The owner: *"Pen size doesnt change
+        // regularly so that can be hiden behind a single menu."* The presets
+        // and the exact slider are both in it, and the button itself draws
+        // the size it would put down, so the row still says what the pen is
+        // set to without spending five buttons saying it.
+        PenSizeButton(
+          app: app,
+          sizes: kPenSizes,
+          label: _penSizeLabel,
+          onExact: (c) => _showExactPenSize(c, app),
+        ),
       // What is left really is about ONE tool, and says nothing at all when
       // that tool is not the one in hand.
       if (app.tool == Tool.eraser) ...[
@@ -1272,58 +1271,13 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       // constraint is a hard layout assertion, not a soft one. The Draw row
       // therefore failed to lay out *at all*: no pen, no highlighter, no
       // eraser, nothing clickable. Push things apart with a fixed gap.
-      const SizedBox(width: 12),
-      // Touch drawing (INK-1). Exposed because the right answer depends on
-      // hardware we can't detect reliably: "Auto" suits a pen-and-touch
-      // convertible, "Always" a touch-only tablet, "Never" anyone who rests a
-      // hand on the glass while thinking.
-      const _Div(),
-      Tooltip(
-        message: l.barTouchDrawing,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.touch_app_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 4),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<TouchDrawing>(
-              value: app.touchDrawing,
-              isDense: true,
-              style: TextStyle(fontSize: 11, color: scheme.onSurface),
-              items: [
-                for (final v in TouchDrawing.values)
-                  DropdownMenuItem(value: v, child: Text(v.label(l))),
-              ],
-              onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
-            ),
-          ),
-        ]),
-      ),
-      const SizedBox(width: 4),
-      // **What the pen's side button does.** Exposed for the same reason the
-      // touch setting is: the answer is not readable. Windows hands over "a
-      // barrel button is down" and nothing about what the student told their
-      // pen driver it was for — and a pen with two side buttons reports both
-      // through the one flag, so even the OS cannot tell them apart.
-      Tooltip(
-        message: l.barPenButton,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.edit_attributes_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 4),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<PenButtonAction>(
-              value: app.penButton,
-              isDense: true,
-              style: TextStyle(fontSize: 11, color: scheme.onSurface),
-              items: [
-                for (final v in PenButtonAction.values)
-                  DropdownMenuItem(value: v, child: Text(v.label(l))),
-              ],
-              onChanged: (v) => v == null ? null : app.setPenButton(v),
-            ),
-          ),
-        ]),
-      ),
+      // **The hardware preferences are in Settings.** The owner: *"i think
+      // that option should be in settings rather than that bar. The whole
+      // drawing menu has sprawled out a lot."* What is left on this row is
+      // what somebody changes WHILE drawing — the tool, the colour, the size,
+      // the shape, how the eraser behaves. What the pen's side button does
+      // and whether a finger draws are set once, so they live where you go
+      // looking for a setting.
       const SizedBox(width: 4),
     ]);
   }
@@ -2154,41 +2108,6 @@ class _SubjectBadge extends StatelessWidget {
 const List<double> kPenSizes = [1, 2.5, 5, 8];
 
 /// One thickness, drawn at that thickness.
-Widget _penDot(BuildContext context, AppState app, double v, L l) {
-  final scheme = Theme.of(context).colorScheme;
-  final on = app.penSize == v;
-  // Clamped so the thinnest is still a target you can hit: the DOT grows with
-  // the value, the button it sits in does not.
-  final d = (v * 2.2).clamp(4.0, 18.0);
-  return Tooltip(
-    message: l.barPenSize(_penSizeLabel(v)),
-    child: InkWell(
-      mouseCursor: WidgetStateMouseCursor.clickable,
-      borderRadius: BorderRadius.circular(99),
-      onTap: () {
-        app.penSize = v;
-        app.refresh();
-      },
-      child: Container(
-        width: 26,
-        height: 26,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: on ? scheme.primary.withValues(alpha: .14) : null,
-        ),
-        child: Container(
-          width: d,
-          height: d,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: on ? scheme.primary : context.surfaces.textSecondary,
-          ),
-        ),
-      ),
-    ),
-  );
-}
 
 /// `2.5`, but `5` rather than `5.0` — a thickness reads as a number, not as a
 /// float.

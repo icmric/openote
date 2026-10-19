@@ -225,6 +225,51 @@ void main() {
       await settleSettings(t);
     });
 
+    testWidgets('A HOVER WITH NO BUTTONS DOES NOT UNDO THE CHANNEL',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The one that made the feature look broken from the outside. Windows'
+      // engine reports every pen event with no buttons at all, and hover
+      // arrives at stylus rate — so a hover a millisecond after the channel
+      // said "barrel down" said "nothing is held" and took it back. *"The
+      // lasso doesnt seem to work, when set it just draws every time."*
+      await openPage(t);
+      app.setTool(Tool.pen);
+      await t.pump();
+
+      await send(PenButton.barrel);
+      await t.pump();
+      expect(app.tool, Tool.lasso);
+
+      // Exactly what the engine sends for a hovering pen on Windows.
+      await t.sendEventToBinding(const PointerHoverEvent(
+        kind: PointerDeviceKind.stylus,
+        pointer: 11,
+        position: Offset(400, 300),
+      ));
+      await t.pump();
+
+      expect(app.tool, Tool.lasso,
+          reason: 'an event that cannot carry a button is not evidence that '
+              'none is held');
+
+      // And the eraser half of the same race.
+      await send(0);
+      app.setPenButton(PenButtonAction.eraser);
+      await send(PenButton.barrel);
+      await t.pump();
+      expect(app.penErasing, isTrue);
+      await t.sendEventToBinding(const PointerHoverEvent(
+        kind: PointerDeviceKind.stylus,
+        pointer: 11,
+        position: Offset(401, 300),
+      ));
+      await t.pump();
+      expect(app.penErasing, isTrue,
+          reason: '"rubs it out most times but not every time" was this');
+      await settleSettings(t);
+    });
+
     testWidgets('A PEN CARRIED OFF MID-PRESS DOES NOT STAY LASSOING',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
