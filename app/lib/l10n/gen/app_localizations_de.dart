@@ -21,6 +21,9 @@ class LDe extends L {
   String get atomUpdateToView => 'Openote aktualisieren, um es anzuzeigen';
 
   @override
+  String get barBackToEquation => 'Zurück zu den Gleichungswerkzeugen';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -70,9 +73,6 @@ class LDe extends L {
 
   @override
   String get barEraserWhole => 'Entfernt jeden Strich, den du berührst';
-
-  @override
-  String get barBackToEquation => 'Zurück zu den Gleichungswerkzeugen';
 
   @override
   String get barEscWhenDone => 'Esc, wenn du fertig bist';
@@ -151,14 +151,6 @@ class LDe extends L {
   String get barInkMoreColours => 'Weitere Farben…';
 
   @override
-  String barPenSize(String size) {
-    return 'Stiftgröße $size';
-  }
-
-  @override
-  String get barPenSizeExact => 'Genaue Größe…';
-
-  @override
   String get barInkPickColour => 'Farbe von der Seite aufnehmen';
 
   @override
@@ -193,6 +185,14 @@ class LDe extends L {
   @override
   String get barPenProximity =>
       'Den Stift an die Seite halten schaltet auf Tinte um.\nWählst du ein anderes Werkzeug, während der Stift in der Nähe\nist, bleibt es, bis der Stift weggeht und wiederkommt. Das\nhintere Ende des Stifts (oder seine Taste) radiert.';
+
+  @override
+  String barPenSize(String size) {
+    return 'Stiftgröße $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Genaue Größe…';
 
   @override
   String get barPlanner => 'Planer';
@@ -319,10 +319,6 @@ class LDe extends L {
   String get barToolText => 'Text  (T)';
 
   @override
-  String get barTouchDrawing =>
-      'Mit dem Finger zeichnen.\nAuto: Der Finger zeichnet, bis du den Stift nimmst; danach schiebt der Finger die Seite, damit der Handballen nichts hinterlässt.\nZwei Finger schieben und zoomen immer.';
-
-  @override
   String get barUnderline => 'Unterstrichen  (Strg+U)';
 
   @override
@@ -344,38 +340,19 @@ class LDe extends L {
       'Gruppierung aufheben  (Strg+Umschalt+G)';
 
   @override
+  String get commandNotInDemo => 'Nicht in der Web-Demo';
+
+  @override
   String get commonBack => 'Zurück';
 
   @override
   String get commonCancel => 'Abbrechen';
 
   @override
-  String get commonCopy => 'Kopieren';
-
-  @override
-  String get settingsPenTest => 'Stift- und Berührungstest';
-
-  @override
-  String get settingsPenTestHint =>
-      'Zeigt, was Stift, Finger und Tasten tatsächlich melden';
-
-  @override
-  String get penButtonLasso => 'Lasso';
-
-  @override
-  String get penButtonEraser => 'Radierer';
-
-  @override
-  String get penButtonSelect => 'Auswählen';
-
-  @override
-  String get penButtonNothing => 'Nichts';
-
-  @override
-  String get barPenButton => 'Funktion der Stiftseitentaste';
-
-  @override
   String get commonClose => 'Schließen';
+
+  @override
+  String get commonCopy => 'Kopieren';
 
   @override
   String get commonDelete => 'Löschen';
@@ -570,9 +547,6 @@ class LDe extends L {
   String get insertLinkToPage => 'Mit einer Seite verknüpfen';
 
   @override
-  String get linkEdit => 'Link bearbeiten…';
-
-  @override
   String get insertPageLink => 'Seitenlink';
 
   @override
@@ -646,6 +620,9 @@ class LDe extends L {
   String get insertVideoTip => 'Eine Vorlesungsaufnahme oder irgendein Weblink';
 
   @override
+  String get linkEdit => 'Link bearbeiten…';
+
+  @override
   String mathSemanticLabel(String latex) {
     return 'Formel: $latex';
   }
@@ -679,12 +656,6 @@ class LDe extends L {
   String get navCollapse => 'Navigator einklappen  (Strg+\\)';
 
   @override
-  String get navHideSections => 'Abschnittsliste ausblenden';
-
-  @override
-  String get navShowSections => 'Abschnittsliste einblenden';
-
-  @override
   String get navColour => 'Farbe';
 
   @override
@@ -708,6 +679,11 @@ class LDe extends L {
   String get navDeletePermanently => 'Endgültig löschen';
 
   @override
+  String navDeletedGroup(String title) {
+    return 'Gruppe „$title“ gelöscht';
+  }
+
+  @override
   String navDeletedPage(String title) {
     return 'Seite „$title“ gelöscht';
   }
@@ -716,14 +692,6 @@ class LDe extends L {
   String navDeletedSection(String title) {
     return 'Abschnitt „$title“ gelöscht';
   }
-
-  @override
-  String navDeletedGroup(String title) {
-    return 'Gruppe „$title“ gelöscht';
-  }
-
-  @override
-  String get navUndo => 'Rückgängig';
 
   @override
   String navDeletesInDays(int days) {
@@ -746,6 +714,9 @@ class LDe extends L {
 
   @override
   String get navExpand => 'Navigator ausklappen  (Strg+\\)';
+
+  @override
+  String get navHideSections => 'Abschnittsliste ausblenden';
 
   @override
   String get navHome => 'Start';
@@ -915,12 +886,18 @@ class LDe extends L {
   String get navSection => 'Abschnitt';
 
   @override
+  String get navShowSections => 'Abschnittsliste einblenden';
+
+  @override
   String get navTemplateNameHint => 'Name der Vorlage';
 
   @override
   String navTemplateSaved(String name) {
     return 'Vorlage „$name“ gespeichert';
   }
+
+  @override
+  String get navUndo => 'Rückgängig';
 
   @override
   String get navUntitled => 'Ohne Titel';
@@ -1375,6 +1352,18 @@ class LDe extends L {
       'Ein Notizbuch auswählen, und es kommt direkt herüber — nichts vorher exportieren. Funktioniert auf jedem Computer.';
 
   @override
+  String get penButtonEraser => 'Radierer';
+
+  @override
+  String get penButtonLasso => 'Lasso';
+
+  @override
+  String get penButtonNothing => 'Nichts';
+
+  @override
+  String get penButtonSelect => 'Auswählen';
+
+  @override
   String get settingsAbout => 'Über';
 
   @override
@@ -1386,7 +1375,7 @@ class LDe extends L {
 
   @override
   String get settingsAiOn =>
-      'Ein — KI-Assistenten auf diesem Rechner dürfen deine Notizen lesen.';
+      'Ein — KI auf diesem Rechner darf deine Notizen lesen.';
 
   @override
   String get settingsAppearance => 'Darstellung';
@@ -1396,6 +1385,9 @@ class LDe extends L {
 
   @override
   String get settingsConnections => 'Verbindungen';
+
+  @override
+  String get settingsDiagnostics => 'Diagnose';
 
   @override
   String get settingsHelp => 'Hilfe';
@@ -1411,18 +1403,26 @@ class LDe extends L {
       'Wie man eine Sprache hinzufügt oder verbessert';
 
   @override
-  String get settingsLanguageHelp =>
-      'Openote wird von den Menschen übersetzt, die es benutzen. Fehlt Ihre Sprache oder ist sie falsch, ist es eine einzige Datei.';
+  String get settingsPenAndTouch => 'Stift und Touch';
 
   @override
-  String get settingsPenProximity => 'Stift in der Nähe schaltet auf Tinte um';
+  String get settingsPenButton => 'Die Seitentaste des Stifts';
+
+  @override
+  String get settingsPenButtonHint =>
+      'Gedrückt halten, um dieses Werkzeug kurz zu nutzen.';
+
+  @override
+  String get settingsPenTest => 'Stift- und Berührungstest';
+
+  @override
+  String get settingsPenTestHint => 'Was dein Stift und seine Tasten melden.';
 
   @override
   String get settingsShortcuts => 'Tastenkürzel';
 
   @override
-  String get settingsShortcutsHint =>
-      'Für alles gibt es eine Taste — die ganze Liste.  (Strg+/)';
+  String get settingsShortcutsHint => 'Strg+/';
 
   @override
   String get settingsSpellCheck => 'Rechtschreibprüfung';
@@ -1432,7 +1432,7 @@ class LDe extends L {
 
   @override
   String get settingsSyncHint =>
-      'Dieses Notizbuch sichern und teilen — GitHub oder ein Ordner.';
+      'Dieses Notizbuch auf GitHub oder in einen Ordner sichern.';
 
   @override
   String get settingsTheme => 'Design';
@@ -1450,6 +1450,13 @@ class LDe extends L {
   String get settingsTitle => 'Einstellungen';
 
   @override
+  String get settingsTouchDrawing => 'Mit dem Finger zeichnen';
+
+  @override
+  String get settingsTouchDrawingHint =>
+      'Zwei Finger verschieben und zoomen immer.';
+
+  @override
   String settingsUpToDate(String version) {
     return 'Alles aktuell ($version ist die neueste Version).';
   }
@@ -1464,7 +1471,7 @@ class LDe extends L {
 
   @override
   String get settingsWelcomeTourHint =>
-      'Die Drei-Minuten-Fassung: die Leinwand, Formeln und Handschrift, und wo deine Notizen liegen.';
+      'Drei Minuten darüber, wie die Leinwand funktioniert.';
 
   @override
   String get settingsWhatsNew => 'Neuerungen';
@@ -1484,6 +1491,9 @@ class LDe extends L {
 
   @override
   String get shellCreateFirstPage => 'Leg deine erste Seite an';
+
+  @override
+  String get shellDemoNothingSaved => 'Demo — nichts wird gespeichert';
 
   @override
   String get shellEmptyBody =>
@@ -1581,12 +1591,6 @@ class LDe extends L {
 
   @override
   String get shellSavedOnDevice => 'Auf diesem Gerät gespeichert';
-
-  @override
-  String get shellDemoNothingSaved => 'Demo — nichts wird gespeichert';
-
-  @override
-  String get commandNotInDemo => 'Nicht in der Web-Demo';
 
   @override
   String get shellSaving => 'Wird gespeichert…';

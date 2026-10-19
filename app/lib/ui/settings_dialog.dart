@@ -99,13 +99,47 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     }
   }
 
-  Widget _row(String label, Widget control) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(children: [
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+  /// One setting: what it is, what it does if that is not obvious, and the
+  /// control.
+  ///
+  /// **The hint is optional and most rows do not want one.** The owner, of the
+  /// first version of this dialog: *"the items within it now feel quite messy
+  /// due to the length and redundancy in some situations of the descriptions,
+  /// many of them are long and add nearly nothing."* Quite so, and the test a
+  /// line has to pass to be here is that it says something the label and the
+  /// control between them do not. "Spell check / On" needs no sentence under
+  /// it; "Draw with your finger / Auto (pen takes over)" does, because two
+  /// fingers mean something else again and nothing on the row says so.
+  Widget _row(String label, Widget control, {String? hint}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 13)),
+                if (hint != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, right: 8),
+                    child: Text(hint,
+                        style: const TextStyle(
+                            fontSize: 11, color: OnoteColors.graphite400)),
+                  ),
+              ],
+            ),
+          ),
           control,
         ]),
       );
+
+  /// A group within a group, for the settings that are related to each other
+  /// and not to the rest of the page: *"We can also have sub headings in each
+  /// menu within settings if there are multiple related but distinct
+  /// groups."*
+  ///
+  /// Quieter than the rail's own entries — it is a label inside the page, not
+  /// a place you can go.
+  Widget _subhead(String text) => _Subhead(text);
 
   /// An on/off preference, shown the same way as the Theme row above it — a
   /// highlighted segment, not a switch. One visual language for "this is
@@ -182,14 +216,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         ),
       );
 
-  /// A note under the row it belongs to.
-  Widget _note(String text) => Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 2),
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 11, color: OnoteColors.graphite400)),
-      );
-
   /// A link out of the app, left-aligned under its group.
   Widget _link(String label, String url) => Align(
         alignment: Alignment.centerLeft,
@@ -255,6 +281,26 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     );
   }
 
+  /// **A hairline between one setting and the next**, which is the other half
+  /// of the mess: *"Please also make it a bit clearer where one setting ends
+  /// and the next starts."* A row with a sentence under it and a row with no
+  /// sentence read as one run of text otherwise, and the control on the right
+  /// is no help in saying which line it belongs to.
+  ///
+  /// Not around a subheading, which is already a boundary — two of them
+  /// together would be a line under a line.
+  List<Widget> _ruled(List<Widget> items) {
+    final out = <Widget>[];
+    for (var i = 0; i < items.length; i++) {
+      if (i > 0 && items[i] is! _Subhead && items[i - 1] is! _Subhead) {
+        out.add(Divider(
+            height: 1, thickness: 1, color: context.surfaces.border));
+      }
+      out.add(items[i]);
+    }
+    return out;
+  }
+
   List<Widget> _page(_Group g, L l) => switch (g) {
         _Group.appearance => [
             _row(
@@ -304,21 +350,24 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ),
               ),
             ),
-            _note(l.settingsLanguageHelp),
+            // No sentence about who translates Openote: the link under it is
+            // that sentence, and said it second.
             _link(l.settingsLanguageContribute,
                 'https://github.com/icmric/openote/blob/master/CONTRIBUTING.md#ways-to-help-right-now'),
           ],
         _Group.writing => [
             _row(l.settingsSpellCheck,
                 _toggle(app.spellCheckEnabled, app.setSpellCheck)),
-            // **Moved off the Draw tab.** The owner: *"i think that option
-            // should be in settings rather than that bar. The whole drawing
-            // menu has sprawled out a lot."* Both of these are hardware
-            // preferences somebody sets once and never looks at again, which
-            // is what this page is for — the Draw row is for the things you
-            // change while you are drawing.
+            // **Moved off the Draw tab, and under a heading of their own.**
+            // The owner: *"i think that option should be in settings rather
+            // than that bar."* Both are hardware preferences somebody sets
+            // once and never looks at again, which is what this page is for —
+            // and they are about the pen and the screen rather than about
+            // writing, which is what the subhead is for.
+            _subhead(l.settingsPenAndTouch),
             _row(
-                l.barPenButton,
+                l.settingsPenButton,
+                hint: l.settingsPenButtonHint,
                 _choice<PenButtonAction>(
                   PenButtonAction.values,
                   app.penButton,
@@ -326,7 +375,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   (v) => v.label(l),
                 )),
             _row(
-                l.barTouchDrawing,
+                l.settingsTouchDrawing,
+                hint: l.settingsTouchDrawingHint,
                 _choice<TouchDrawing>(
                   TouchDrawing.values,
                   app.touchDrawing,
@@ -357,7 +407,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             // three times from two people on hardware nobody here owns, and
             // each answer has been a guess about what Windows sends. In
             // Settings rather than on the Draw tab because it is for the one
-            // conversation where it is needed, not for the toolbar.
+            // conversation where it is needed, not for the toolbar — and
+            // under its own heading because it is not something to read.
+            _subhead(l.settingsDiagnostics),
             _door(Icons.draw_outlined, l.settingsPenTest, l.settingsPenTestHint,
                 () => showPenTestDialog(context)),
           ],
@@ -426,7 +478,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     // offset.
                     key: ValueKey(_group),
                     padding: EdgeInsets.zero,
-                    children: _page(_group, l),
+                    children: _ruled(_page(_group, l)),
                   ),
                 ),
               ],
@@ -441,4 +493,27 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       },
     );
   }
+}
+
+/// A heading for a run of settings inside one group. Its own type, so
+/// [_SettingsDialogState._ruled] can tell it from a setting and not draw a
+/// line against it.
+class _Subhead extends StatelessWidget {
+  const _Subhead(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 2),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: .4,
+            color: context.surfaces.textSecondary,
+          ),
+        ),
+      );
 }

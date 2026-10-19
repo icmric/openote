@@ -9,6 +9,7 @@
 // you can see all of them at once, only one group's rows are on screen, and
 // the dialog does not change size as you move down the rail — a dialog that
 // grew and shrank would move the rail out from under the pointer.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -71,6 +72,47 @@ void main() {
     'About',
   ];
 
+  // **The descriptions, as a bound rather than as a judgement.** The owner:
+  // *"the items within it now feel quite messy due to the length and
+  // redundancy in some situations of the descriptions, many of them are long
+  // and add nearly nothing."* Whether a sentence earns its place is a reading
+  // and cannot be asserted — but the two mechanical ways this page got messy
+  // can be, and both of them had happened: a tooltip pressed into service as
+  // a row label, three lines long, and hints growing into paragraphs.
+  group('the words', () {
+    Map<String, String> messages(String loc) {
+      final j = jsonDecode(
+              File('lib/l10n/app_$loc.arb').readAsStringSync()) as Map;
+      return {
+        for (final e in j.entries)
+          if (!e.key.toString().startsWith('@'))
+            e.key.toString(): e.value as String
+      };
+    }
+
+    test('NO SETTING IS A PARAGRAPH, IN ANY LANGUAGE', () {
+      for (final loc in ['en', 'de', 'es', 'fr', 'it', 'pt', 'zh']) {
+        messages(loc).forEach((key, value) {
+          if (!key.startsWith('settings')) return;
+          expect(value, isNot(contains('\n')),
+              reason: '$loc · $key is several lines: a settings row is a '
+                  'label, a line under it and a control, and a label that '
+                  'wraps three times is the mess this is here to stop');
+        });
+      }
+    });
+
+    test('and no hint runs past a line', () {
+      messages('en').forEach((key, value) {
+        if (!key.startsWith('settings') || !key.endsWith('Hint')) return;
+        expect(value.length, lessThanOrEqualTo(60),
+            reason: '$key is ${value.length} characters. A hint says the one '
+                'thing the label and the control do not; past a line it is '
+                'prose, and prose here is what made the page hard to read');
+      });
+    });
+  });
+
   testWidgets('EVERY GROUP IS NAMED, AND ONE OF THEM IS OPEN', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await open(t, await newApp(t));
@@ -110,6 +152,24 @@ void main() {
       await t.pumpAndSettle();
       expect(t.getSize(find.byType(AlertDialog)), was, reason: 'opening $g');
     }
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('A GROUP WITH TWO KINDS OF SETTING IN IT SAYS SO', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await open(t, await newApp(t));
+    await t.tap(find.text('Writing and drawing'));
+    await t.pumpAndSettle();
+
+    expect(find.text('Pen and touch'), findsOneWidget,
+        reason: 'the two hardware rows are not about writing');
+    expect(find.text('Spell check'), findsOneWidget);
+    expect(find.text('Draw with your finger'), findsOneWidget);
+    // **One rule, both halves.** A line goes between two settings, and never
+    // against a subheading — which is already a boundary, so a line there
+    // would be a line under a line. On this page that leaves exactly one: the
+    // two rows under the subheading.
+    expect(find.byType(Divider), findsOneWidget);
     expect(t.takeException(), isNull);
   });
 
