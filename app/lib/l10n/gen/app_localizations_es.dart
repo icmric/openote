@@ -339,6 +339,12 @@ class LEs extends L {
   String get canvasDeleteSelection => 'Eliminar  (Supr)';
 
   @override
+  String get canvasGroupSelection => 'Agrupar  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Desagrupar  (Ctrl+Mayús+G)';
+
+  @override
   String get commonBack => 'Atrás';
 
   @override
@@ -365,12 +371,6 @@ class LEs extends L {
 
   @override
   String get barPenButton => 'Qué hace el botón lateral del lápiz';
-
-  @override
-  String get menuGroup => 'Agrupar';
-
-  @override
-  String get menuUngroup => 'Desagrupar';
 
   @override
   String get commonClose => 'Cerrar';

@@ -460,6 +460,14 @@
   "@canvasDeleteSelection": {
     "description": "Tooltip on the button that appears above a selection. Keep the key name in brackets as the local keyboard spells it."
   },
+  "canvasGroupSelection": "Group  (Ctrl+G)",
+  "@canvasGroupSelection": {
+    "description": "Tooltip on the Group button above a selection. Keep the shortcut in brackets as the local keyboard spells it."
+  },
+  "canvasUngroupSelection": "Ungroup  (Ctrl+Shift+G)",
+  "@canvasUngroupSelection": {
+    "description": "Tooltip on the Ungroup button above a selection. Keep the shortcut in brackets as the local keyboard spells it."
+  },
   "commonBack": "Back",
   "@commonBack": {
     "description": "Button: return to the previous step of a multi-step flow."
@@ -482,10 +490,6 @@
   "@penButtonNothing": {"description": "Option: the pen side button does nothing."},
   "barPenButton": "What the pen’s side button does",
   "@barPenButton": {"description": "Tooltip on the Draw tab for the pen side-button action chooser."},
-  "menuGroup": "Group",
-  "@menuGroup": {"description": "Right-click menu: group the selected blocks so selecting one selects all."},
-  "menuUngroup": "Ungroup",
-  "@menuUngroup": {"description": "Right-click menu: take the group apart again."},
   "commonClose": "Close",
   "@commonClose": {
     "description": "Button that dismisses a dialog."

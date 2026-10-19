@@ -328,6 +328,12 @@ class LZh extends L {
   String get canvasDeleteSelection => '删除  (Del)';
 
   @override
+  String get canvasGroupSelection => '组合  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => '取消组合  (Ctrl+Shift+G)';
+
+  @override
   String get commonBack => '上一步';
 
   @override
@@ -353,12 +359,6 @@ class LZh extends L {
 
   @override
   String get barPenButton => '触控笔侧键的功能';
-
-  @override
-  String get menuGroup => '组合';
-
-  @override
-  String get menuUngroup => '取消组合';
 
   @override
   String get commonClose => '关闭';

@@ -334,6 +334,7 @@ class Block {
     this.rotation = 0,
     this.placement = 'free',
     this.frameId,
+    this.groupId,
     Map<String, dynamic>? content,
     List<String>? absorbedIds,
     this.access,
@@ -362,6 +363,30 @@ class Block {
   double rotation;
   String placement; // 'free' | 'snapped'
   String? frameId;
+
+  /// Which group this block belongs to, or null. Blocks sharing a non-null
+  /// `groupId` are **one thing to pick up**: selecting any member selects all
+  /// of them, so they move, copy and delete together.
+  ///
+  /// A stroke is its own block, so a written word is already several of them
+  /// and the lasso is the only thing that gathers them — this is what makes
+  /// that gathering outlive the selection. The owner, on strokes: *"unless
+  /// they are grouped together, which from what i can see hasnt actually been
+  /// implemented yet"*.
+  ///
+  /// **Flat, and a plain id rather than a block.** Membership is the whole of
+  /// what a group is: it has no bounds, no label and no place in the paint
+  /// order, which is what separates it from [BlockType.frame] (a visible
+  /// region that happens to contain things). A group block would need bounds
+  /// nobody authored, and an older build that moved or dropped it would change
+  /// what the group meant; an envelope field it does not know is rescued into
+  /// [unknownFields] and written back untouched, so membership survives a
+  /// round-trip through a release that has never heard of it.
+  ///
+  /// Nesting is deliberately not modelled. One id per block says a block is in
+  /// at most one group, which is the rule that keeps "select the group" a
+  /// lookup rather than a tree walk.
+  String? groupId;
   Map<String, dynamic> content;
   final List<String> absorbedIds;
   Map<String, dynamic>? access; // reserved (SYNC-9); v1 writes null
@@ -386,27 +411,6 @@ class Block {
   final int createdAt;
   int updatedAt;
 
-  /// **The group this block belongs to**, or null.
-  ///
-  /// A group is a *relationship*, not a container: every block keeps its own
-  /// geometry, its own type and its own place in the page, and all the group
-  /// asserts is that selecting one selects the rest. So it is one string on
-  /// each member and nothing else — no new block type, no nesting, no
-  /// coordinate space — which is what makes it non-destructive and reversible
-  /// in the sense the owner asked for: *"It should be non descructive and
-  /// reversable."*
-  ///
-  /// A field on the member rather than a list on the page, deliberately. A
-  /// block copied to another page carries its group id with it and becomes a
-  /// group of one there, which selects itself and is indistinguishable from
-  /// not being grouped; a page-level list would have had to be found and
-  /// edited by every route that moves a block, and a missed one would silently
-  /// bind two unrelated blocks together.
-  String? get group {
-    final v = content['group'];
-    return v is String && v.isNotEmpty ? v : null;
-  }
-
   /// A background layer: it cannot be moved or resized, and nothing that
   /// picks blocks up picks it up.
   ///
@@ -421,7 +425,7 @@ class Block {
 
   static const _known = {
     'id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'placement', 'frameId',
-    'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',
+    'groupId', 'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',
   };
 
   Map<String, dynamic> toJson() => {
@@ -433,6 +437,13 @@ class Block {
         'z': z,
         'placement': placement,
         'frameId': frameId,
+        // Written only when it says something. An unconditional `"groupId":
+        // null` would change the JSON of every block ever written, so the next
+        // save of an untouched notebook would rewrite all of it and hand the
+        // op log a diff per block — the same reason the paged page keys are
+        // conditional (Data Model Spec §3.1). An ungrouped page stays
+        // byte-identical to what every earlier release wrote.
+        if (groupId != null) 'groupId': groupId,
         'absorbedIds': absorbedIds,
         'access': access,
         'createdAt': createdAt,
@@ -453,6 +464,7 @@ class Block {
         rotation: (j['rotation'] as num?)?.toDouble() ?? 0,
         placement: j['placement'] as String? ?? 'free',
         frameId: j['frameId'] as String?,
+        groupId: j['groupId'] as String?,
         content: (j['content'] as Map?)?.cast<String, dynamic>() ?? {},
         absorbedIds: (j['absorbedIds'] as List?)?.cast<String>() ?? [],
         access: (j['access'] as Map?)?.cast<String, dynamic>(),

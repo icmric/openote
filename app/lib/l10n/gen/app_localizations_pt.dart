@@ -337,6 +337,12 @@ class LPt extends L {
   String get canvasDeleteSelection => 'Eliminar  (Del)';
 
   @override
+  String get canvasGroupSelection => 'Agrupar  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Desagrupar  (Ctrl+Shift+G)';
+
+  @override
   String get commonBack => 'Voltar';
 
   @override
@@ -363,12 +369,6 @@ class LPt extends L {
 
   @override
   String get barPenButton => 'O que faz o botão lateral da caneta';
-
-  @override
-  String get menuGroup => 'Agrupar';
-
-  @override
-  String get menuUngroup => 'Desagrupar';
 
   @override
   String get commonClose => 'Fechar';

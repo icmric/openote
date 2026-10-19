@@ -335,6 +335,12 @@ class LEn extends L {
   String get canvasDeleteSelection => 'Delete  (Del)';
 
   @override
+  String get canvasGroupSelection => 'Group  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Ungroup  (Ctrl+Shift+G)';
+
+  @override
   String get commonBack => 'Back';
 
   @override
@@ -361,12 +367,6 @@ class LEn extends L {
 
   @override
   String get barPenButton => 'What the pen’s side button does';
-
-  @override
-  String get menuGroup => 'Group';
-
-  @override
-  String get menuUngroup => 'Ungroup';
 
   @override
   String get commonClose => 'Close';

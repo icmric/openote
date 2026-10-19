@@ -6,14 +6,22 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Added — group anything with anything
 
-- **Select several things, right-click, Group.** A text box, a graph, a
-  picture, some handwriting, any combination — selecting one of them then
-  selects all of them. Right-click any member for **Ungroup**.
+- **Select several things and group them**: Ctrl+G, the right-click menu, or
+  the button above the selection. A text box, a graph, a picture, some
+  handwriting, any combination — selecting one of them then selects all of
+  them, and they move, copy, cut and delete as a unit. Ctrl+Shift+G takes a
+  group apart again.
 - **Nothing moves either way.** A group is a relationship, not a container:
   every block keeps its own geometry, its own type and its own place on the
   page, so grouping and ungrouping are both free and an undo puts it back.
 - **A grouped box can still be typed in**: the first click takes the group,
-  and a second click on the same box goes into it.
+  and the next reaches the box under the pointer.
+- **A copy is its own group**, never a new member of the one it came from —
+  otherwise dragging the original would walk the copies across the page with
+  it. Paste part of a group and you get a group of just that part; a group
+  left with one member stops being a group.
+- **A notebook with no groups in it is written byte for byte as before**, so
+  this costs nothing until it is used.
 
 ### Changed — the lasso selects, and stops rearranging
 
@@ -47,6 +55,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   against none, so you can flick between two while writing. Out of the box the
   pair is your colour and Automatic, which is the "a couple of words, not
   every word" case.
+
+### Added — things on the canvas stay joined
+
+- **Group and ungroup.** A stroke is its own block, so a written word is
+  several of them and the lasso was the only thing that gathered them — for
+  exactly as long as the selection lasted. Joined blocks are now one thing to
+  pick up: clicking any member selects all of them, and they move, copy, cut
+  and delete together. Ctrl+G joins, Ctrl+Shift+G takes apart, and both are in
+  the right-click menu and on the button above a selection, because neither
+  chord is on a tablet held in one hand with a pen in the other.
+  - A grouped text box is still typeable: the first click picks the group up,
+    the second opens the box under the pointer.
+  - A copy never joins the group it was copied from, and a group left with one
+    member is no longer a group.
+  - Membership is an envelope field (`groupId`, Data Model Spec §3.2), so an
+    older release carries it through untouched rather than destroying it — it
+    just will not move the other members for you.
 
 ### Added — bold and a colour on the same word
 

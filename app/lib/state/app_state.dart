@@ -6928,11 +6928,22 @@ class AppState extends ChangeNotifier
     // to prevent). The format is the copy, the way it is the API.
     final newIds = <String>[];
     final oldToNew = <String, String>{};
+    // One map for the whole paste, so blocks that shared a group still share
+    // one afterwards.
+    final oldToNewGroup = <String, String>{};
     for (final src in list) {
       final fresh = Block.fromJson({
         ...jsonDecode(jsonEncode(src.toJson())) as Map<String, dynamic>,
         'id': newId(),
       });
+      // A `groupId` is a link WITHIN the pasted selection, so rule 3 remaps it
+      // rather than carrying it: the copies become their own group. Carried
+      // verbatim — which is what cloning through `toJson` does by default —
+      // they would join the group they were copied from, and the next drag of
+      // the original would walk the copies across the page with it. Copy part
+      // of a group and the paste is a group of just that part.
+      final g = fresh.groupId;
+      if (g != null) fresh.groupId = oldToNewGroup.putIfAbsent(g, newId);
       fresh.x = at?.dx ?? src.x + 28;
       fresh.y = at?.dy ?? src.y + 28;
       if (fresh.type == BlockType.ink) {
@@ -6950,6 +6961,9 @@ class AppState extends ChangeNotifier
       oldToNew[src.id] = fresh.id;
     }
     _relinkGraphs(oldToNew);
+    // Pasting one member of a group gives it a fresh id nothing else shares,
+    // which is a group of one — not a group.
+    _tidyGroups();
     selectMany(newIds);
     markDirty();
   }
@@ -9887,6 +9901,7 @@ class AppState extends ChangeNotifier
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
     if (editingBlockId == id) editingBlockId = null;
+    _tidyGroups();
     markDirty();
     notifyListeners();
   }
@@ -9898,6 +9913,7 @@ class AppState extends ChangeNotifier
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
+    _tidyGroups();
     markDirty();
     notifyListeners();
   }
@@ -9915,6 +9931,9 @@ class AppState extends ChangeNotifier
       w: src.w,
       h: src.h,
       placement: src.placement,
+      // No `groupId`, and deliberately: the copy is a new thing, not another
+      // member of what it was copied from. Joining the original's group would
+      // make the next drag of that group carry the duplicate off with it.
       content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
     );
     if (fresh.type == BlockType.ink) {
@@ -9937,6 +9956,115 @@ class AppState extends ChangeNotifier
     select(fresh.id);
   }
 
+  // ── Groups (CANVAS-7) ───────────────────────────────────────────────────
+  //
+  // A group is a membership relation and nothing else: no bounds, no label,
+  // no place in the paint order (see [Block.groupId]). Everything that acts
+  // on a selection — the drag, Delete, copy, cut — already works off
+  // [selectedIds], so the whole feature is one rule applied in one place:
+  // **a selection is closed over groups.** Nothing downstream needs to know
+  // groups exist.
+
+  /// Every block sharing [id]'s group, [id] included — just `{id}` when it is
+  /// in no group, which is the common case and costs a single lookup.
+  Set<String> groupMembers(String id) {
+    final g = blocks.where((b) => b.id == id).firstOrNull?.groupId;
+    if (g == null) return {id};
+    return {
+      for (final b in blocks)
+        if (b.groupId == g) b.id
+    };
+  }
+
+  /// [ids] grown to whole groups. Partial selection of a group is the one
+  /// state that must not exist: it would let a drag carry half of something
+  /// that was joined precisely so it would move as one.
+  Set<String> _groupClosure(Iterable<String> ids) {
+    final want = ids.toSet();
+    final groups = {
+      for (final b in blocks)
+        if (b.groupId != null && want.contains(b.id)) b.groupId!
+    };
+    if (groups.isEmpty) return want; // nothing grouped — the usual answer
+    for (final b in blocks) {
+      if (groups.contains(b.groupId)) want.add(b.id);
+    }
+    return want;
+  }
+
+  /// The selected blocks a group could be made from. A locked block is left
+  /// out: it is the page behind the notes rather than a thing on it, and a
+  /// member that refuses to move is a group that cannot be dragged.
+  List<Block> _groupableSelection() => [
+        for (final b in blocks)
+          if (selectedIds.contains(b.id) && !b.locked) b
+      ];
+
+  /// Is there a group to be made out of what is selected?
+  ///
+  /// False once the selection is exactly one whole group, because the answer
+  /// then is Ungroup — and because selection is group-closed, "every member
+  /// shares one id" is the same statement as "this is that group entire".
+  bool get canGroup {
+    final members = _groupableSelection();
+    if (members.length < 2) return false;
+    final g = members.first.groupId;
+    return g == null || members.any((b) => b.groupId != g);
+  }
+
+  bool get canUngroup =>
+      blocks.any((b) => selectedIds.contains(b.id) && b.groupId != null);
+
+  /// Join the selection into one group.
+  ///
+  /// A selection spanning two existing groups **merges** them rather than
+  /// nesting one inside the other: one id per block is what keeps "select the
+  /// group" a lookup instead of a tree walk, and a merge is what somebody who
+  /// drew a box round both of them was asking for.
+  void groupSelected() {
+    if (!canGroup) return;
+    pushUndo();
+    final g = newId();
+    for (final b in _groupableSelection()) {
+      b.groupId = g;
+      b.updatedAt = nowMs();
+    }
+    markDirty();
+    notifyListeners();
+  }
+
+  void ungroupSelected() {
+    if (!canUngroup) return;
+    pushUndo();
+    for (final b in blocks) {
+      if (!selectedIds.contains(b.id) || b.groupId == null) continue;
+      b.groupId = null;
+      b.updatedAt = nowMs();
+    }
+    markDirty();
+    notifyListeners();
+  }
+
+  /// Drop a `groupId` only one block still carries.
+  ///
+  /// A group is a relation between blocks, so a lone survivor is not in one.
+  /// Left alone it would be a block that answers "select the group" with
+  /// itself and offers Ungroup for a thing nothing is grouped with. Called
+  /// wherever blocks leave the page.
+  void _tidyGroups() {
+    final count = <String, int>{};
+    for (final b in blocks) {
+      final g = b.groupId;
+      if (g != null) count[g] = (count[g] ?? 0) + 1;
+    }
+    for (final b in blocks) {
+      if (b.groupId != null && count[b.groupId] == 1) {
+        b.groupId = null;
+        b.updatedAt = nowMs();
+      }
+    }
+  }
+
   void select(String? id, {bool edit = false, bool additive = false}) {
     // The caret token is for the selection being made RIGHT NOW. Expiring it
     // here rather than trusting one widget type to consume it means a click
@@ -9948,38 +10076,29 @@ class AppState extends ChangeNotifier
       selectedBlockId = null;
       editingBlockId = null;
     } else if (additive) {
-      if (!selectedIds.add(id)) selectedIds.remove(id);
-      if (selectedIds.contains(id)) _addGroupOf(id);
+      // Shift-click toggles the whole group. Taking a group out of a
+      // selection one member at a time would leave exactly the partial
+      // selection [_groupClosure] exists to prevent.
+      final g = groupMembers(id);
+      if (selectedIds.containsAll(g)) {
+        selectedIds.removeAll(g);
+      } else {
+        selectedIds.addAll(g);
+      }
       selectedBlockId = selectedIds.contains(id) ? id : selectedIds.firstOrNull;
       editingBlockId = null;
     } else {
-      // **A grouped block hands the selection to its group.** The owner:
-      // *"This basically makes them behave as if ive gone through and
-      // selected them all even if ive only selected one."*
-      //
-      // Unless it was already selected — that is the second click, and it
-      // means "into this one", which is how every other app with grouping
-      // behaves and the only way a grouped text box could ever be typed in.
-      final takeGroup = blockById(id)?.group != null &&
-          !selectedIds.contains(id) &&
-          !(selectedIds.length == 1 && selectedIds.first == id);
       selectedIds
         ..clear()
-        ..add(id);
+        ..addAll(groupMembers(id));
+      // The block that was clicked stays the primary one, not whichever
+      // member happens to come first: the object row and the inspector speak
+      // for the thing under the pointer.
       selectedBlockId = id;
-      if (takeGroup) {
-        _addGroupOf(id);
-        // The first click on a group selects the group and nothing more. A
-        // caret token left lying around would land on the next box opened by
-        // any other route.
-        editingBlockId = null;
-        pendingCaretGlobal = null;
-      } else {
-        editingBlockId = edit ? id : null;
-        // Remembered here rather than where the caret lands, because this is
-        // the one call every route into a block goes through.
-        if (edit) lastEditedBlockId = id;
-      }
+      editingBlockId = edit ? id : null;
+      // Remembered here rather than where the caret lands, because this is
+      // the one call every route into a block goes through.
+      if (edit) lastEditedBlockId = id;
     }
     notifyListeners();
   }
@@ -9987,80 +10106,12 @@ class AppState extends ChangeNotifier
   void selectMany(Iterable<String> ids) {
     selectedIds
       ..clear()
-      ..addAll(ids);
-    // A marquee or a lasso that caught one member of a group has caught the
-    // group — that being the whole of what a group asserts.
-    for (final id in ids.toList()) {
-      _addGroupOf(id);
-    }
+      // A marquee that catches half a group takes all of it: the box was
+      // drawn round things, and a group is one of them.
+      ..addAll(_groupClosure(ids));
     selectedBlockId = selectedIds.firstOrNull;
     editingBlockId = null;
     notifyListeners();
-  }
-
-  /// Whether everything selected is already one group, and nothing else —
-  /// in which case there is nothing for "Group" to do.
-  bool get selectionIsOneGroup {
-    if (selectedIds.length < 2) return false;
-    String? seen;
-    for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
-      final g = b.group;
-      if (g == null || (seen != null && g != seen)) return false;
-      seen = g;
-    }
-    return seen != null &&
-        blocks.where((b) => b.group == seen).length == selectedIds.length;
-  }
-
-  /// Add every other member of [id]'s group to the selection.
-  void _addGroupOf(String id) {
-    final g = blockById(id)?.group;
-    if (g == null) return;
-    for (final b in blocks) {
-      if (b.group == g) selectedIds.add(b.id);
-    }
-  }
-
-  /// **Group the selection**, so that selecting one of them selects all.
-  ///
-  /// Nothing moves and nothing is rewritten: a group is one string on each
-  /// member (see [Block.group]). Returns false when there is nothing to do.
-  ///
-  /// Blocks that were already in other groups are absorbed into this one,
-  /// which is what selecting them and saying "group" means — and it keeps
-  /// groups flat, so there is no tree to reason about or to draw.
-  bool groupSelected() {
-    final members = blocks.where((b) => selectedIds.contains(b.id)).toList();
-    if (members.length < 2) return false;
-    pushUndo();
-    final id = newId();
-    for (final b in members) {
-      b.content['group'] = id;
-      b.updatedAt = nowMs();
-    }
-    markDirty();
-    notifyListeners();
-    return true;
-  }
-
-  /// Take apart every group the selection touches, leaving each block exactly
-  /// where it is. Returns false when none of them was grouped.
-  bool ungroupSelected() {
-    final groups = <String>{
-      for (final b in blocks)
-        if (selectedIds.contains(b.id) && b.group != null) b.group!
-    };
-    if (groups.isEmpty) return false;
-    pushUndo();
-    for (final b in blocks) {
-      if (b.group != null && groups.contains(b.group)) {
-        b.content.remove('group');
-        b.updatedAt = nowMs();
-      }
-    }
-    markDirty();
-    notifyListeners();
-    return true;
   }
 
   /// Move every selected block by a page-space delta (ink blocks translate

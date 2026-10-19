@@ -338,6 +338,12 @@ class LIt extends L {
   String get canvasDeleteSelection => 'Elimina  (Canc)';
 
   @override
+  String get canvasGroupSelection => 'Raggruppa  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Separa  (Ctrl+Maiusc+G)';
+
+  @override
   String get commonBack => 'Indietro';
 
   @override
@@ -364,12 +370,6 @@ class LIt extends L {
 
   @override
   String get barPenButton => 'Cosa fa il pulsante laterale della penna';
-
-  @override
-  String get menuGroup => 'Raggruppa';
-
-  @override
-  String get menuUngroup => 'Dividi';
 
   @override
   String get commonClose => 'Chiudi';
