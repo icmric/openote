@@ -367,22 +367,22 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             _subhead(l.settingsPenAndTouch),
             _row(
                 l.settingsPenButton,
-                hint: l.settingsPenButtonHint,
                 _choice<PenButtonAction>(
                   PenButtonAction.values,
                   app.penButton,
                   app.setPenButton,
                   (v) => v.label(l),
-                )),
+                ),
+                hint: l.settingsPenButtonHint),
             _row(
                 l.settingsTouchDrawing,
-                hint: l.settingsTouchDrawingHint,
                 _choice<TouchDrawing>(
                   TouchDrawing.values,
                   app.touchDrawing,
                   app.setTouchDrawing,
                   (v) => v.label(l),
-                )),
+                ),
+                hint: l.settingsTouchDrawingHint),
           ],
         _Group.connections => [
             _door(Icons.sync, l.settingsSync, l.settingsSyncHint,
