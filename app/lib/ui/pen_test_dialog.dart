@@ -47,6 +47,7 @@ class _Seen {
       : kind = e.kind,
         buttons = e.buttons,
         pressure = e.pressure,
+        pressureMax = e.pressureMax,
         tilt = e.tilt,
         distance = e.distance,
         device = e.device,
@@ -56,6 +57,7 @@ class _Seen {
   final PointerDeviceKind kind;
   final int buttons;
   final double pressure;
+  final double pressureMax;
   final double tilt;
   final double distance;
   final int device;
@@ -79,7 +81,11 @@ class _Seen {
   @override
   String toString() => '${phase.padRight(6)} ${kind.name.padRight(14)} '
       'buttons=0x${buttons.toRadixString(16)} ($bits) '
-      'p=${pressure.toStringAsFixed(2)} tilt=${tilt.toStringAsFixed(2)} '
+      // **Out of what**: Windows reports a pen's pressure as 0..1024 and the
+      // engine passes the range through beside it, so a bare "674" reads as
+      // a bug when it is a perfectly ordinary two-thirds.
+      'p=${pressure.toStringAsFixed(0)}/${pressureMax.toStringAsFixed(0)} '
+      'tilt=${tilt.toStringAsFixed(2)} '
       'dist=${distance.toStringAsFixed(2)} dev=$device'
       '${synthesized ? ' synthesized' : ''}';
 }
@@ -99,6 +105,9 @@ class _PenTestDialogState extends State<_PenTestDialog> {
     // rebuild this when a button is pressed while the pen hovers — which is
     // exactly the case somebody opens this dialog to look at.
     PenButtons.bits.addListener(_refresh);
+    // Ask the native side whether it is there at all, which is the first
+    // thing anybody opening this needs to know.
+    PenButtons.probe().then((_) => _refresh());
   }
 
   @override
@@ -118,9 +127,21 @@ class _PenTestDialogState extends State<_PenTestDialog> {
 
   static const _keep = 60;
 
+  /// **Events that carried a button, kept where they cannot scroll away.**
+  ///
+  /// The first real readout from a pen lost its button presses to the
+  /// sixty-event cap — the cumulative summary survived and said `0x1`, which
+  /// is what made the session useful, but the detail of the one moment
+  /// anybody opens this for was gone. So that moment gets a list of its own.
+  final _pressed = <_Seen>[];
+
   void _note(String phase, PointerEvent e) {
     setState(() {
-      _seen.insert(0, _Seen(phase, e));
+      final seen = _Seen(phase, e);
+      if (e.buttons & ~kPrimaryButton != 0 && _pressed.length < 20) {
+        _pressed.insert(0, seen);
+      }
+      _seen.insert(0, seen);
       if (_seen.length > _keep) _seen.removeLast();
       _kinds.add(e.kind);
       _buttonBits |= e.buttons;
@@ -154,11 +175,17 @@ class _PenTestDialogState extends State<_PenTestDialog> {
   /// completely different causes with one symptom: the native hook is not in
   /// this build, or it is and the pen reports nothing through it. A
   /// diagnostic that cannot tell those apart saves nobody a round trip.
-  String get _runnerLine => PenButtons.heard
-      ? 'runner: reporting, currently '
-          '0x${PenButtons.bits.value.toRadixString(16)}'
-      : 'runner: nothing yet — press a pen button; if this never changes, '
-          'this build does not have the hook in it';
+  String get _runnerLine {
+    final where = switch (PenButtons.attached) {
+      true => 'hooked onto the view',
+      false => 'NOT IN THIS BUILD — rebuild the Windows runner',
+      null => 'no hook on this platform (only Windows needs one)',
+    };
+    final heard = PenButtons.heard
+        ? 'reporting 0x${PenButtons.bits.value.toRadixString(16)}'
+        : 'has not reported a button yet';
+    return 'runner: $where, $heard';
+  }
 
   String get _report => [
         'Openote pen & touch test',
@@ -167,6 +194,11 @@ class _PenTestDialogState extends State<_PenTestDialog> {
         'button bits seen: 0x${_buttonBits.toRadixString(16)}',
         'last event would: $_verdict',
         '',
+        if (_pressed.isNotEmpty) ...[
+          'WITH A BUTTON (kept, never scrolled off):',
+          ..._pressed.map((s) => s.toString()),
+          '',
+        ],
         ..._seen.map((s) => s.toString()),
       ].join('\n');
 

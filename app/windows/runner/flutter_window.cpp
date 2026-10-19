@@ -28,6 +28,11 @@ bool FlutterWindow::OnCreate() {
   pen_buttons_ =
       std::make_unique<PenButtons>(flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  // **Onto the VIEW's window, not this one.** The engine's own source says
+  // "the view owns the child window", and Win32 sends pointer messages to the
+  // window under the cursor without bubbling them to parents — so watching
+  // this window's procedure saw nothing at all. See pen_buttons.h.
+  pen_buttons_->Attach(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -54,14 +59,6 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  // **Read the pen's buttons before anybody consumes the message**, and do
-  // not consume it. The engine looks at a pen's pressure and rotation and
-  // never at its flags, so this is the only place the barrel button exists.
-  // See pen_buttons.h.
-  if (pen_buttons_) {
-    pen_buttons_->OnMessage(message, wparam);
-  }
-
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

@@ -21,6 +21,7 @@ import 'support/app.dart';
 
 void main() {
   setUp(() {
+    PenButtons.attached = null;
     // Install the channel handler the runner talks to; `main` does this in
     // the app.
     PenButtons.listen();
@@ -51,7 +52,14 @@ void main() {
     // build, or it is and the pen reports nothing through it. Those need
     // completely different answers, so the readout leads with which.
     await openIt(t);
-    expect(find.textContaining('runner: nothing yet'), findsOneWidget);
+    // No native handler in a test, so the probe comes back "not in this
+    // build" — which is the answer that matters: it is the one the owner's
+    // first readout gave, and it was true.
+    // A widget test is Android, where no hook is expected at all; on Windows
+    // the same silence means an older runner and says so instead.
+    expect(find.textContaining('no hook on this platform'), findsOneWidget);
+    expect(find.textContaining('has not reported a button yet'),
+        findsOneWidget);
 
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
@@ -62,8 +70,7 @@ void main() {
     );
     await t.pump();
 
-    expect(find.textContaining('runner: reporting, currently 0x1'),
-        findsOneWidget);
+    expect(find.textContaining('reporting 0x1'), findsOneWidget);
   });
 
   testWidgets('A BARREL PRESS FROM A PEN READS AS ERASE', (t) async {

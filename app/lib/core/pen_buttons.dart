@@ -87,6 +87,39 @@ abstract final class PenButtons {
   /// round trip.
   static bool heard = false;
 
+  /// Whether the native side answered [probe]: present in this build, and
+  /// attached to the window the pointer messages actually go to.
+  ///
+  /// Null until asked. The first attempt at this hook was on the wrong window
+  /// and reported nothing for a reason no readout could show, which is why
+  /// being able to ask is worth a method of its own.
+  static bool? attached;
+
+  /// Ask the native side whether it is there. Null on a platform that has no
+  /// hook — which is every platform but Windows, and is not a fault.
+  static Future<bool?> probe() async {
+    try {
+      final r = await channel.invokeMapMethod<String, Object?>('probe');
+      // No answer means no handler. On Windows that is an older runner — the
+      // hook is missing from the build and that is worth saying loudly. Off
+      // Windows it is simply a platform that does not need one.
+      if (r == null) {
+        return attached =
+            defaultTargetPlatform == TargetPlatform.windows ? false : null;
+      }
+      final a = r['attached'];
+      final b = r['bits'];
+      if (b is int) bits.value = b;
+      return attached = a == true;
+    } on MissingPluginException {
+      // No handler on the other end: either an older build of the runner, or
+      // a platform that never had one.
+      return attached = false;
+    } catch (_) {
+      return attached = null;
+    }
+  }
+
   /// Start listening. Called once from `main`; harmless to call twice.
   static void listen() {
     channel.setMethodCallHandler((call) async {
