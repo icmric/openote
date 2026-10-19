@@ -125,7 +125,12 @@ class _PenTestDialogState extends State<_PenTestDialog> {
   var _buttonBits = 0;
   var _penSeen = false;
 
-  static const _keep = 60;
+  /// Far more than a screenful, because hover events stream at stylus rate:
+  /// sixty of them is half a second, which is how a readout came back with
+  /// the button press already scrolled out of it. Identical consecutive lines
+  /// are collapsed to one with a count, so this is sixty seconds of evidence
+  /// rather than sixty events of it.
+  static const _keep = 400;
 
   /// **Events that carried a button, kept where they cannot scroll away.**
   ///
@@ -185,6 +190,25 @@ class _PenTestDialogState extends State<_PenTestDialog> {
         ? 'reporting 0x${PenButtons.bits.value.toRadixString(16)}'
         : 'has not reported a button yet';
     return 'runner: $where, $heard';
+  }
+
+  /// The lines, with runs of identical events collapsed to `x12`.
+  List<String> get _lines {
+    final out = <String>[];
+    var run = 0;
+    String? last;
+    for (final e in _seen) {
+      final line = e.toString();
+      if (line == last) {
+        run++;
+        continue;
+      }
+      if (last != null) out.add(run > 1 ? '$last   x$run' : last);
+      last = line;
+      run = 1;
+    }
+    if (last != null) out.add(run > 1 ? '$last   x$run' : last);
+    return out;
   }
 
   String get _report => [
@@ -268,10 +292,13 @@ class _PenTestDialogState extends State<_PenTestDialog> {
               borderRadius: BorderRadius.circular(8),
               color: context.surfaces.chrome2,
             ),
-            child: ListView.builder(
-              itemCount: _seen.length,
-              itemBuilder: (_, i) => Text(_seen[i].toString(), style: mono),
-            ),
+            child: Builder(builder: (_) {
+              final lines = _lines;
+              return ListView.builder(
+                itemCount: lines.length,
+                itemBuilder: (_, i) => Text(lines[i], style: mono),
+              );
+            }),
           )),
         ]),
       ),

@@ -42,23 +42,24 @@ void main() {
           reason: 'the default, so every existing caller keeps its meaning');
     });
 
-    test('SELECT TAKES THE SAME PRESS AND DOES NOT ERASE', () {
-      expect(
-          penGestureSelects(
-              kind: pen, buttons: barrel, side: PenButtonAction.select),
-          isTrue);
+    test('A BORROWED TOOL TAKES THE SAME PRESS AND DOES NOT ERASE', () {
+      // Which tool it borrows is `PenButtons.toolFor`; what this has to get
+      // right is that the press is SEEN and that it is not also an erase.
+      expect(penGestureHoldsButton(kind: pen, buttons: barrel), isTrue);
       expect(
           penGestureErases(
-              kind: pen, buttons: barrel, side: PenButtonAction.select),
+              kind: pen, buttons: barrel, side: PenButtonAction.lasso),
           isFalse);
     });
 
     test('and nothing means neither', () {
-      for (final f in [penGestureErases, penGestureSelects]) {
-        expect(
-            f(kind: pen, buttons: barrel, side: PenButtonAction.nothing),
-            isFalse);
-      }
+      expect(
+          penGestureErases(
+              kind: pen, buttons: barrel, side: PenButtonAction.nothing),
+          isFalse);
+      expect(
+          PenButtons.toolFor(PenButton.barrel, PenButtonAction.nothing),
+          isNull);
     });
 
     test('but the TAIL erases whatever the side button is set to', () {
@@ -70,12 +71,6 @@ void main() {
                 side: side),
             isTrue,
             reason: 'that end of a pen is an eraser');
-        expect(
-            penGestureSelects(
-                kind: PointerDeviceKind.invertedStylus,
-                buttons: barrel,
-                side: side),
-            isFalse);
       }
     });
   });

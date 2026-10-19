@@ -236,6 +236,14 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = false);
       app.setPenErasing(false);
     }
+    // **And the same for a tool it had borrowed.** The erase case above was
+    // found by review; this one was found by that review's own test going red
+    // when the barrel's default became the lasso. Same shape, same cause —
+    // there is no event left to say the button was let go — and without it a
+    // pen carried off mid-press leaves the canvas lassoing for ever.
+    if (_toolBeforePenSelect != null && !isPen && !_stylusActive) {
+      _applyPenTool(null);
+    }
     // A hover from anything else matters for two reasons: Windows promotes a
     // barrel press to a mouse right-button, so the button can arrive as a
     // `mouse` event at the pen's own position (see [penGestureErases]); and a
@@ -259,11 +267,11 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = held);
       app.setPenErasing(_penErasing);
     }
-    // The same signal where the button is set to select instead. A pen event
+    // The same signal where the button borrows a tool instead. A pen event
     // is authoritative both ways; anything else may only ADD the signal, for
     // the same reason the erase half does.
-    final selecting = _selectingButtons(e);
-    if (selecting || isPen) _applyPenSelect(selecting);
+    final borrowed = _borrowedTool(e);
+    if (borrowed != null || isPen) _applyPenTool(borrowed);
     if (isPen) {
       if (approaching && app.tool == Tool.select) {
         app.setTool(Tool.pen, automatic: true);
@@ -292,15 +300,18 @@ class _PageCanvasState extends State<PageCanvas> {
       penInRange: _stylusActive,
       side: app.penButton);
 
-  /// And whether it means "select", which is the same signal with the setting
-  /// the other way round. On Linux this is the only route it has: GTK reports
-  /// the pen and the real button number, so the barrel arrives here rather
-  /// than through the runner's channel.
-  bool _selectingButtons(PointerEvent e) => penGestureSelects(
-      kind: e.kind,
-      buttons: e.buttons,
-      penInRange: _stylusActive,
-      side: app.penButton);
+  /// And the tool it borrows, if any — the same signal with the setting on
+  /// something other than the eraser. On Linux this is the only route it has:
+  /// GTK reports the pen and the real button number, so the barrel arrives
+  /// here rather than through the runner's channel.
+  Tool? _borrowedTool(PointerEvent e) => penGestureHoldsButton(
+            kind: e.kind,
+            buttons: e.buttons,
+            penInRange: _stylusActive,
+          ) &&
+          e.kind != PointerDeviceKind.invertedStylus
+      ? PenButtons.toolFor(PenButton.barrel, app.penButton)
+      : null;
 
   /// True while the pen's button is down, whether or not it is touching.
   ///
@@ -400,18 +411,18 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = erase);
       app.setPenErasing(erase);
     }
-    _applyPenSelect(PenButtons.selects(bits, app.penButton));
+    _applyPenTool(PenButtons.toolFor(bits, app.penButton));
   }
 
-  /// Hold the side button and the Select tool is borrowed; let go and the
-  /// tool that was in hand comes back. Both routes into this — the runner's
-  /// channel on Windows, the ordinary button bits on Linux — come through
-  /// here, so the behaviour cannot differ between them.
-  void _applyPenSelect(bool selecting) {
-    if (selecting && _toolBeforePenSelect == null) {
+  /// Hold the side button and [borrow] is borrowed; let go and the tool that
+  /// was in hand comes back. Both routes into this — the runner's channel on
+  /// Windows, the ordinary button bits on Linux — come through here, so the
+  /// behaviour cannot differ between them.
+  void _applyPenTool(Tool? borrow) {
+    if (borrow != null && _toolBeforePenSelect == null) {
       _toolBeforePenSelect = app.tool;
-      app.setTool(Tool.select, automatic: true);
-    } else if (!selecting && _toolBeforePenSelect != null) {
+      app.setTool(borrow, automatic: true);
+    } else if (borrow == null && _toolBeforePenSelect != null) {
       final back = _toolBeforePenSelect!;
       _toolBeforePenSelect = null;
       app.setTool(back, automatic: true);

@@ -361,6 +361,9 @@ class LEs extends L {
       'Muestra lo que informan realmente el lápiz, el dedo y los botones';
 
   @override
+  String get penButtonLasso => 'Lazo';
+
+  @override
   String get penButtonEraser => 'Borrador';
 
   @override

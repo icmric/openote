@@ -360,6 +360,9 @@ class LFr extends L {
       'Affiche ce que le stylet, le doigt et les boutons signalent réellement';
 
   @override
+  String get penButtonLasso => 'Lasso';
+
+  @override
   String get penButtonEraser => 'Gomme';
 
   @override

@@ -46,6 +46,17 @@ sixteen-core machine and does not fit. Those carry
 kind: intermittent, one platform, one test at a time, reported as
 "TimeoutException after 0:00:30" with nothing in it about git.
 
+**A fifth way a test has passed against broken code here: the assertion was
+satisfied by something else.** "A pen carried off mid-press does not stay
+lassoing" asserted the tool was `select` afterwards — and it is, because a
+mouse arriving with no pen in range puts the pen down on its own, fix or no
+fix. Deleting the fix did not fail it. The real cost of the missing fix was a
+STALE LATCH, so the test had to go one step further: choose a tool
+deliberately, then release the button, and watch the latch restore over the
+top of it. **If the mutation passes, the assertion is downstream of something
+you did not change** — look for the other thing that produces the same
+observable.
+
 **Never hand a `CustomPainter` a collection you go on mutating.** Its
 `shouldRepaint` is then comparing an object with itself, so it returns false
 and nothing repaints — which is how the lasso's outline came to appear only

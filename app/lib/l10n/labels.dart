@@ -38,6 +38,7 @@ extension TagKindLabel on TagKind {
 
 extension PenButtonActionLabel on PenButtonAction {
   String label(L l) => switch (this) {
+        PenButtonAction.lasso => l.penButtonLasso,
         PenButtonAction.eraser => l.penButtonEraser,
         PenButtonAction.select => l.penButtonSelect,
         PenButtonAction.nothing => l.penButtonNothing,

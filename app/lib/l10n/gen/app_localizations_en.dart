@@ -357,6 +357,9 @@ class LEn extends L {
       'See what your pen, finger and buttons actually report';
 
   @override
+  String get penButtonLasso => 'Lasso';
+
+  @override
   String get penButtonEraser => 'Eraser';
 
   @override

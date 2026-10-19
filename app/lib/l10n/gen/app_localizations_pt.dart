@@ -359,6 +359,9 @@ class LPt extends L {
       'Mostra o que a caneta, o dedo e os botões realmente informam';
 
   @override
+  String get penButtonLasso => 'Laço';
+
+  @override
   String get penButtonEraser => 'Borracha';
 
   @override

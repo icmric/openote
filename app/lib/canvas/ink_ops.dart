@@ -69,22 +69,6 @@ bool penGestureErases({
           penInRange: penInRange);
 }
 
-/// The same signal, where the side button has been set to select instead.
-bool penGestureSelects({
-  required PointerDeviceKind kind,
-  required int buttons,
-  bool heldWhileHovering = false,
-  bool penInRange = false,
-  PenButtonAction side = PenButtonAction.eraser,
-}) =>
-    kind != PointerDeviceKind.invertedStylus &&
-    side == PenButtonAction.select &&
-    penGestureHoldsButton(
-        kind: kind,
-        buttons: buttons,
-        heldWhileHovering: heldWhileHovering,
-        penInRange: penInRange);
-
 /// **Whether a side button is held, whatever it has been set to do.**
 ///
 /// Separated from what it MEANS because the two answers have different

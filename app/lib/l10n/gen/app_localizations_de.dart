@@ -360,6 +360,9 @@ class LDe extends L {
       'Zeigt, was Stift, Finger und Tasten tatsächlich melden';
 
   @override
+  String get penButtonLasso => 'Lasso';
+
+  @override
   String get penButtonEraser => 'Radierer';
 
   @override

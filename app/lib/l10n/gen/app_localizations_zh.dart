@@ -349,6 +349,9 @@ class LZh extends L {
   String get settingsPenTestHint => '查看触控笔、手指和按键实际报告的内容';
 
   @override
+  String get penButtonLasso => '套索';
+
+  @override
   String get penButtonEraser => '橡皮擦';
 
   @override

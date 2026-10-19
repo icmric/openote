@@ -23,6 +23,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/core/pen_buttons.dart';
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -189,6 +190,10 @@ void main() {
     // answer changes.
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await canvas(tester, 'onote_tool_stuck_');
+    // The barrel means ERASE here. Its default is the lasso now — Windows
+    // reports a driver's eraser button separately, so the two no longer share
+    // one meaning — and this test is about the stuck state, not the mapping.
+    app.setPenButton(PenButtonAction.eraser);
     // **Time is held still rather than shortened.**
     //
     // This used to set the grace to a millisecond and then wait twenty real

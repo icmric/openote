@@ -482,6 +482,8 @@
   "@settingsPenTest": {"description": "Settings row: opens a dialog showing what the pen and touchscreen report."},
   "settingsPenTestHint": "See what your pen, finger and buttons actually report",
   "@settingsPenTestHint": {"description": "Hint under the pen and touch test row in Settings."},
+  "penButtonLasso": "Lasso",
+  "@penButtonLasso": {"description": "Option: the pen side button switches to the lasso tool, as it does in OneNote."},
   "penButtonEraser": "Eraser",
   "@penButtonEraser": {"description": "Option: the pen side button acts as the eraser."},
   "penButtonSelect": "Select",

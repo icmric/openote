@@ -99,6 +99,7 @@
   "commonCopy": "Copier",
   "settingsPenTest": "Test du stylet et du tactile",
   "settingsPenTestHint": "Affiche ce que le stylet, le doigt et les boutons signalent réellement",
+  "penButtonLasso": "Lasso",
   "penButtonEraser": "Gomme",
   "penButtonSelect": "Sélectionner",
   "penButtonNothing": "Rien",

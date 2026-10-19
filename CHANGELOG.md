@@ -34,6 +34,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed — the pen, the lasso and the flick
 
+- **Each pen button does what you told Windows it was for.** A button your
+  pen driver maps to the eraser erases — Windows reports that one as "the pen
+  is inverted", which is its own way of saying eraser, so there is nothing to
+  configure. The other kind, which Windows only calls "barrel button",
+  **lassoes by default**, as it does in OneNote; the Draw tab can set it to
+  Select, Eraser or nothing instead. Before this, both ended up as the
+  eraser.
 - **Your pen's side button works.** It never could: Flutter reads a pen's
   pressure and rotation from Windows and never looks at its buttons, reporting
   every pen touch as a plain left-click — so the barrel press did not reach

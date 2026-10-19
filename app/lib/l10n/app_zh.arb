@@ -99,6 +99,7 @@
   "commonCopy": "复制",
   "settingsPenTest": "触控笔与触摸测试",
   "settingsPenTestHint": "查看触控笔、手指和按键实际报告的内容",
+  "penButtonLasso": "套索",
   "penButtonEraser": "橡皮擦",
   "penButtonSelect": "选择",
   "penButtonNothing": "无",

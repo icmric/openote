@@ -46,27 +46,46 @@ void main() {
       }
     });
 
-    test('and the side button does what it has been set to', () {
-      expect(PenButtons.erases(PenButton.barrel, PenButtonAction.eraser),
-          isTrue);
-      expect(PenButtons.erases(PenButton.barrel, PenButtonAction.select),
-          isFalse);
-      expect(PenButtons.selects(PenButton.barrel, PenButtonAction.select),
-          isTrue);
-      expect(PenButtons.selects(PenButton.barrel, PenButtonAction.eraser),
-          isFalse);
+    test('WHAT THE DRIVER CALLS THE ERASER ERASES, WHATEVER THE SETTING', () {
+      // Measured on the owner's machine: the button their pen driver maps to
+      // "eraser" reports PEN_FLAG_INVERTED while hovering. Windows models an
+      // eraser as the pen turned round, so that bit IS the system-level
+      // meaning they chose — *"id ideally like them to be what they are
+      // defined at a system level to be"* — and no setting has anything to
+      // add to it.
+      for (final side in PenButtonAction.values) {
+        expect(PenButtons.erases(PenButton.inverted, side), isTrue);
+        expect(PenButtons.toolFor(PenButton.inverted, side), isNull,
+            reason: 'and it never borrows a tool instead');
+      }
     });
 
-    test('nothing means nothing, which is the honest third option', () {
+    test('THE BARREL BORROWS THE TOOL IT IS SET TO, LASSO BY DEFAULT', () {
+      // "Barrel button" is not an action — it is Windows' name for a generic
+      // secondary press — so this is the configurable one. OneNote lassoes
+      // with it, which is why that is the default.
+      expect(PenButtons.toolFor(PenButton.barrel, PenButtonAction.lasso),
+          Tool.lasso);
+      expect(PenButtons.toolFor(PenButton.barrel, PenButtonAction.select),
+          Tool.select);
+      expect(PenButtons.toolFor(PenButton.barrel, PenButtonAction.eraser),
+          isNull, reason: 'that one erases rather than borrowing');
+      expect(PenButtons.toolFor(PenButton.barrel, PenButtonAction.nothing),
+          isNull);
+    });
+
+    test('and nothing means nothing, which is the honest fourth option', () {
       expect(PenButtons.erases(PenButton.barrel, PenButtonAction.nothing),
           isFalse);
-      expect(PenButtons.selects(PenButton.barrel, PenButtonAction.nothing),
-          isFalse);
+      expect(PenButtons.toolFor(PenButton.barrel, PenButtonAction.nothing),
+          isNull);
     });
 
     test('and no buttons held is neither', () {
       expect(PenButtons.erases(0, PenButtonAction.eraser), isFalse);
-      expect(PenButtons.selects(0, PenButtonAction.select), isFalse);
+      for (final side in PenButtonAction.values) {
+        expect(PenButtons.toolFor(0, side), isNull);
+      }
     });
   });
 
@@ -124,9 +143,10 @@ void main() {
     Future<void> settleSettings(WidgetTester t) =>
         t.pump(const Duration(milliseconds: 500));
 
-    testWidgets('A BARREL PRESS ARRIVES, AND ERASES', (t) async {
+    testWidgets('A BARREL PRESS ARRIVES, AND ERASES WHERE SET TO', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await openPage(t);
+      app.setPenButton(PenButtonAction.eraser);
       app.setTool(Tool.pen);
       await t.pump();
       expect(app.penErasing, isFalse);
@@ -146,16 +166,17 @@ void main() {
       await settleSettings(t);
     });
 
-    testWidgets('OR SELECTS, WHEN THAT IS WHAT IT IS SET TO', (t) async {
+    testWidgets('OR BORROWS THE LASSO, WHICH IS THE DEFAULT', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await openPage(t);
-      app.setPenButton(PenButtonAction.select);
       app.setTool(Tool.pen);
       await t.pump();
+      expect(app.penButton, PenButtonAction.lasso,
+          reason: 'out of the box, as in OneNote');
 
       await send(PenButton.barrel);
       await t.pump();
-      expect(app.tool, Tool.select, reason: 'held means selecting');
+      expect(app.tool, Tool.lasso, reason: 'held means lassoing');
       expect(app.penErasing, isFalse, reason: 'and not erasing');
 
       await send(0);
@@ -204,15 +225,65 @@ void main() {
       await settleSettings(t);
     });
 
-    testWidgets('the tail erases even when the side button selects',
+    testWidgets('A PEN CARRIED OFF MID-PRESS DOES NOT STAY LASSOING',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The runner reports a button only while the pen is in range, so a pen
+      // lifted away mid-press sends nothing to say it was let go. The erase
+      // half of this was found by review; this half was found by that
+      // review's own test going red when the default became the lasso.
       await openPage(t);
-      app.setPenButton(PenButtonAction.select);
+      // Time held still rather than shortened, and set BEFORE the press: the
+      // press is what records "a pen was here", so a clock installed after it
+      // records the moment on the real timeline and then reads it on the fake
+      // one, which runs backwards.
+      var now = DateTime(2026);
+      PageCanvas.clock = () => now;
+      addTearDown(() => PageCanvas.clock = DateTime.now);
       app.setTool(Tool.pen);
       await t.pump();
 
-      await send(PenButton.eraser);
+      await send(PenButton.barrel);
+      await t.pump();
+      expect(app.tool, Tool.lasso);
+
+      // The pen goes away without ever letting the button go, and a mouse
+      // arrives. Exactly past the grace, because the clock does what it is
+      // told.
+      now = now.add(PageCanvas.stylusGrace * 2);
+      await t.sendEventToBinding(const PointerHoverEvent(
+          kind: PointerDeviceKind.mouse,
+          pointer: 9,
+          position: Offset(400, 300)));
+      await t.pump();
+
+      // A mouse arriving with no pen in range puts the pen down on its own,
+      // so the tool is Select here whether or not the borrow was given back.
+      // What the borrow costs if it is NOT given back is a latch left
+      // pointing at the pen: the next release restores it and takes away
+      // whatever was chosen in between. That is the observable.
+      expect(app.tool, Tool.select);
+      app.setTool(Tool.text); // deliberately, with no pen anywhere near
+      await t.pump();
+
+      await send(0); // the button finally reported as let go
+      await t.pump();
+
+      expect(app.tool, Tool.text,
+          reason: 'a stale latch would have restored the pen over the top of '
+              'a tool the student had just chosen');
+      await settleSettings(t);
+    });
+
+    testWidgets('the eraser button erases even while the barrel lassoes',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await openPage(t);
+      app.setTool(Tool.pen);
+      await t.pump();
+
+      // 0x2 — what the owner's eraser-mapped button actually sends.
+      await send(PenButton.inverted);
       await t.pump();
 
       expect(app.penErasing, isTrue);

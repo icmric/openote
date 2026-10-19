@@ -22,6 +22,22 @@
 /// apart by anybody, us included. The tail is separate (`PEN_FLAG_ERASER` /
 /// `PEN_FLAG_INVERTED`) because that end of a pen *is* an eraser.
 ///
+/// **What this pen actually sends**, measured 2026-10-19 on the owner's
+/// machine once the hook was on the right window — the first evidence any of
+/// this has rested on:
+///
+/// | pressed | arrived |
+/// |---|---|
+/// | nothing | `0x0` |
+/// | the button the driver calls **barrel button** | `0x1`, hovering and touching |
+/// | the button the driver calls **eraser** | `0x2` (inverted), hovering only |
+///
+/// Two things follow. Windows DOES say which button is which, so the eraser
+/// half needs no setting. And the eraser button goes quiet while the pen is
+/// touching, because Windows ends the pointer and starts a new one — which is
+/// also why pressing it mid-stroke leaves a gap in the ink. `PEN_FLAG_ERASER`
+/// is read and would cover that; this pen does not send it.
+///
 /// **The three desktops, which answer differently** — read out of the engine
 /// source that ships inside the SDK, at
 /// `<flutter>/engine/src/flutter/shell/platform/`:
@@ -58,15 +74,34 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../state/app_state.dart' show Tool;
+
 /// Bits, mirroring `windows/runner/pen_buttons.h`.
 abstract final class PenButton {
   /// A side button — the barrel. One bit for however many the pen has.
+  ///
+  /// **This is the button Windows has no opinion about.** A driver that maps a
+  /// side button to "barrel button" is saying "generic secondary press", which
+  /// is why this one is the configurable half.
   static const int barrel = 1;
 
-  /// The pen is being held the other way round.
+  /// The pen is being held the other way round — and, it turns out, **what a
+  /// button mapped to "eraser" at the system level actually sends.**
+  ///
+  /// Measured on the owner's machine, which is the only evidence any of this
+  /// rests on: the button their pen driver calls the eraser reports
+  /// `PEN_FLAG_INVERTED` while the pen hovers. Windows models "eraser" as the
+  /// pen being turned round, because that is what an eraser is on a pencil.
+  /// So this bit is not a curiosity — it is the system telling us what the
+  /// student chose, in the only vocabulary Windows has.
   static const int inverted = 2;
 
   /// The tail, which the digitiser reports as an eraser in its own right.
+  ///
+  /// Documented as the in-contact counterpart of [inverted]. Not observed on
+  /// the owner's hardware: while the eraser button is held AND the pen is
+  /// touching, that pen reports no flags at all — see [erases] for what is
+  /// done about it.
   static const int eraser = 4;
 }
 
@@ -143,9 +178,25 @@ abstract final class PenButtons {
       (bits & (PenButton.eraser | PenButton.inverted)) != 0 ||
       ((bits & PenButton.barrel) != 0 && side == PenButtonAction.eraser);
 
-  /// Whether what is held should select.
-  static bool selects(int bits, PenButtonAction side) =>
-      (bits & PenButton.barrel) != 0 && side == PenButtonAction.select;
+  /// The tool the side button borrows while it is held, or null.
+  ///
+  /// **Only the barrel asks this.** A button the driver calls the eraser
+  /// arrives as [PenButton.inverted] and erases, full stop: that is the
+  /// system-level meaning the student chose and there is nothing for a
+  /// setting to add to it. The owner: *"Id ideally like them to be what they
+  /// are defined at a system level to be."*
+  ///
+  /// The barrel is the other case, because "barrel button" is not an action —
+  /// it is Windows' name for a generic secondary press. In OneNote it
+  /// lassoes, which is why that is the default here.
+  static Tool? toolFor(int bits, PenButtonAction side) {
+    if ((bits & PenButton.barrel) == 0) return null;
+    return switch (side) {
+      PenButtonAction.lasso => Tool.lasso,
+      PenButtonAction.select => Tool.select,
+      PenButtonAction.eraser || PenButtonAction.nothing => null,
+    };
+  }
 
   /// **Whether a secondary press should be swallowed rather than open a menu.**
   ///
@@ -174,6 +225,9 @@ abstract final class PenButtons {
 /// driver it was for. The default is the eraser, which is what the button did
 /// before this was a choice and what OneNote does with it.
 enum PenButtonAction {
+  /// Lasso-select, which is what the barrel does in OneNote — and so the
+  /// default here, for somebody whose hands already know it.
+  lasso,
   eraser,
   select,
   nothing;

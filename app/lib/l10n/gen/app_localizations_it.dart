@@ -360,6 +360,9 @@ class LIt extends L {
       'Mostra ciò che penna, dito e pulsanti segnalano davvero';
 
   @override
+  String get penButtonLasso => 'Lazo';
+
+  @override
   String get penButtonEraser => 'Gomma';
 
   @override

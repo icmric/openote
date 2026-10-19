@@ -99,6 +99,7 @@
   "commonCopy": "Copiar",
   "settingsPenTest": "Prueba de lápiz y táctil",
   "settingsPenTestHint": "Muestra lo que informan realmente el lápiz, el dedo y los botones",
+  "penButtonLasso": "Lazo",
   "penButtonEraser": "Borrador",
   "penButtonSelect": "Seleccionar",
   "penButtonNothing": "Nada",

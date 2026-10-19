@@ -707,6 +707,12 @@ abstract class L {
   /// **'See what your pen, finger and buttons actually report'**
   String get settingsPenTestHint;
 
+  /// Option: the pen side button switches to the lasso tool, as it does in OneNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Lasso'**
+  String get penButtonLasso;
+
   /// Option: the pen side button acts as the eraser.
   ///
   /// In en, this message translates to:

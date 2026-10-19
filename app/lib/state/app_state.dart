@@ -5471,7 +5471,10 @@ class AppState extends ChangeNotifier
   }
 
   /// What a press of the pen's side button does. See [PenButtons].
-  PenButtonAction penButton = PenButtonAction.eraser;
+  /// Defaults to the lasso, which is what the barrel does in OneNote — and
+  /// the button a driver calls the eraser erases through its own flag, so the
+  /// two no longer collide on one meaning.
+  PenButtonAction penButton = PenButtonAction.lasso;
   void setPenButton(PenButtonAction v) {
     penButton = v;
     _repo.setSetting('penButton', v.name);
