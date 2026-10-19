@@ -266,6 +266,27 @@ own checker as the default and the only one tested, fix the list — which is
 where the complaint actually comes from — and leave a platform provider as an
 opt-in behind a `SpellService` seam if anyone still wants it afterwards.
 
+### 1.13 Two settings the rail was built to hold
+
+Named by the owner while redesigning Settings — *"In time we will include more
+options such as being able to adjust the text/icon size of the UI, custom
+keybinding, and some other jazz like that"* — so they are written down here
+rather than left as the reason a layout changed.
+
+  * **The size of the interface's text and icons.** Blocked on, and not merely
+    related to, [v1.0.2 #12](v1.0.2.md): nothing in the app reads
+    `textScaler`, so every width it measures for itself is measured at 100%
+    while the widgets draw larger. A control that scaled the interface before
+    that is fixed would ship the bug on purpose. #12 first, then the control,
+    in Settings → Appearance.
+  * **Custom keybindings · M.** `ui/keyboard_map.dart` is display data — the
+    keys as a string and a sentence saying what they do — while the bindings
+    themselves are 37 `SingleActivator`s wired straight to their call sites.
+    Rebinding needs the actions to become addressable things with the map as
+    their labels, which is the same registry a command palette would need
+    ([v1.0.2 §25](v1.0.2.md#25-the-command-bar) option C). Its home is a
+    Keyboard group split out of Help, where the shortcut reference already is.
+
 ---
 
 ## 2. Structural, blocked on a decision

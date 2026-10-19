@@ -61,9 +61,13 @@ carries no timing, so `0` and an empty `t` is what an import states.
   object — a short time gap, then a time gap and a distance — and a block is
   the unit of selection, so the result read as one thing that could not be
   taken apart. A writer MUST NOT group strokes by timing or proximity.
-- The **lasso** is how strokes become one object: it re-homes what it caught
-  into a block of its own and hands it over selected. That block is a
-  **group**, and nothing may take it apart again except the student.
+- The **lasso selects and nothing else (normative).** It used to re-home what
+  it caught into a block of its own, which made a loop drawn to move a word
+  weld the word together permanently. A writer MUST NOT change storage in
+  response to a selection; the selection going away MUST leave the strokes as
+  they were. Grouping on purpose is the group command, and a block holding
+  several strokes is a **group** that nothing may take apart except the
+  student.
 - **Selection granularity is not storage granularity (normative).** A block is
   an expensive way to say "one stroke": 380 bytes of envelope per block, of
   which 80 are fields that are null or zero for every stroke ever drawn. So

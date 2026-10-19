@@ -32,8 +32,25 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   nothing else; the selection going away leaves the strokes exactly as they
   were. To make a lasting group, group it.
 
+### Changed — Settings is one group at a time
+
+- **A list of groups down the left, one group's settings on the right** —
+  Appearance, Writing and drawing, Connections, Help, About. It was one long
+  page with headings in it: the headings named the groups, but you still had
+  to scroll past every one of them to read the names.
+
 ### Fixed — the pen, the lasso and the flick
 
+- **What you lasso stays selected when you let the button go**, and the pen
+  then drags it. Releasing the side button handed the pen back, and the pen
+  coming back threw the selection away — so a loop drawn to move something
+  selected it for exactly as long as you held the button down.
+- **Anything selected can be dragged with a drawing tool in hand.** A drag
+  that starts inside the selection moves it; a press anywhere else puts it
+  down and draws, exactly as though nothing had been selected. So there is no
+  mode to leave and nothing to put back: the pen draws, and the selection is
+  dragged, and where you pressed is the whole difference. (An eraser still
+  erases, wherever it is aimed.)
 - **The eraser shows how far it reaches.** A faint ring follows the pointer
   whenever a press would rub something out — including a hovering pen, so you
   can see what the next touch will take before it takes it.

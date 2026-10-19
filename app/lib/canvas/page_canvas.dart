@@ -117,6 +117,13 @@ List<Rect> inkSelectionBox(List<Rect> selected) => selected.isEmpty
     ? const []
     : [selected.reduce((a, b) => a.expandToInclude(b))];
 
+/// How far outside the selection its dashed box is drawn, in SCREEN pixels —
+/// and therefore how far outside it a press still counts as landing on it.
+/// Shared so that what grabs is exactly what is drawn; a grab region that
+/// disagreed with its own outline by a few pixels would be a thing nobody
+/// could learn. See `_PageCanvasState._selectionTakes`.
+const double kSelectionOutline = 4;
+
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
 
@@ -1009,6 +1016,56 @@ class _PageCanvasState extends State<PageCanvas> {
     return null;
   }
 
+  /// **A live selection outranks the tool in hand.**
+  ///
+  /// The owner, on the lasso held under a pen's side button: *"Whenever
+  /// something on the page is selected (such that it is moveable, NOT when in
+  /// editing mode) then pen should act as regular touch input, moving the
+  /// selected items when dragged. I guess though ideally if some items are
+  /// selected but i start using the pen elsewhere on the page (i.e. not within
+  /// the selection zone) it should at minimum deselect the items, although
+  /// ideally also start drawing as if they wernt selected."*
+  ///
+  /// Both halves are here and they are the whole rule: inside the selection a
+  /// drag moves it, outside it the selection is gone and the press carries on
+  /// into whatever the tool does. Which is why nothing has to wrestle over the
+  /// TOOL — the pen comes back after a borrowed lasso and still draws, because
+  /// the only thing deciding is where the press landed.
+  ///
+  /// Returns true when it has taken the gesture, which the move and the up
+  /// then follow by reading [_mode].
+  ///
+  /// Three things it is deliberately not for. An eraser, which is aimed at ink
+  /// and must always rub it out — including the eraser a side button is
+  /// holding, which would otherwise shove the selection about instead. A box
+  /// being typed into, as asked. And a finger, which has a settled meaning on
+  /// this canvas already (navigate while a pen is in use, see [_touchDraws])
+  /// and would lose a pan to every selection left lying about.
+  ///
+  /// Nor does the lasso tool itself go through here: its drag means "select
+  /// these", every time, and the owner picks single strokes back out of a
+  /// selection by lassoing inside it.
+  bool _selectionTakes(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.touch) return false;
+    if (_erasingNow || app.editingBlockId != null) return false;
+    final rect = _selectionRect();
+    if (rect == null) return false;
+    final pagePt = controller.screenToPage(e.localPosition);
+    // Out by the width of its own outline, in screen pixels at this zoom, so
+    // that what grabs is what is drawn.
+    if (!rect.inflate(kSelectionOutline / controller.scale).contains(pagePt)) {
+      app.select(null);
+      return false;
+    }
+    _mode = _DragMode.moveSelection;
+    _downScreen = e.localPosition;
+    _lastScreen = e.localPosition;
+    _downKind = e.kind;
+    _moveUndoPushed = false;
+    app.setDragging(true);
+    return true;
+  }
+
   void _selectDown(PointerDownEvent e) {
     final claimed = app.claimedPointers.remove(e.pointer);
     _downScreen = e.localPosition;
@@ -1496,9 +1553,16 @@ class _PageCanvasState extends State<PageCanvas> {
                 visible.overlaps(_cullRect(b)))
               ..._strokesOf(b),
         ];
+        // **Round everything selected while a drawing tool is in hand, not
+        // only the handwriting.** A block's own chrome is suppressed under an
+        // ink tool (see `BlockView`), so this dashed box is then the only mark
+        // on the page saying what a drag inside it will pick up — and a grab
+        // region nothing draws is a trap. See [_selectionTakes].
         final selectedInkRects = inkSelectionBox([
-          for (final b in inkBlocks)
-            if (app.selectedIds.contains(b.id)) _blockRect(b),
+          for (final b in app.blocks)
+            if (app.selectedIds.contains(b.id) &&
+                (b.type == BlockType.ink || _inkTool))
+              _blockRect(b),
         ]);
         return RepaintBoundary(
           key: app.canvasKey,
@@ -1752,6 +1816,10 @@ class _PageCanvasState extends State<PageCanvas> {
           if (app.claimedPointers.remove(e.pointer)) return;
           _noteStylus(e);
           _noteEraser(e.localPosition);
+          // Something selected is something picked up, and a drag on it moves
+          // it whatever is in your hand. A press anywhere else has just put it
+          // down. See [_selectionTakes].
+          if (_selectionTakes(e)) return;
           if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);
             return;
@@ -1775,6 +1843,12 @@ class _PageCanvasState extends State<PageCanvas> {
         onPointerMove: (e) {
           _noteStylus(e);
           _noteEraser(e.localPosition);
+          // The selection took this gesture at the down event; the drag that
+          // moves it is the select-mode one, unchanged.
+          if (_mode == _DragMode.moveSelection) {
+            _selectMove(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -1782,6 +1856,10 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerUp: (e) {
+          if (_mode == _DragMode.moveSelection) {
+            _selectUp(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
           } else {
@@ -1792,6 +1870,11 @@ class _PageCanvasState extends State<PageCanvas> {
           if (e.kind != PointerDeviceKind.mouse) _noteEraser(null);
         },
         onPointerCancel: (e) {
+          if (_mode == _DragMode.moveSelection) {
+            _mode = _DragMode.none;
+            _moveUndoPushed = false;
+            app.setDragging(false);
+          }
           _touches.remove(e.pointer);
           _gestureErase = false;
           _noteEraser(null);
@@ -2292,7 +2375,7 @@ class OverlayPainter extends CustomPainter {
     for (final pr in inkSelections) {
       final r = Rect.fromPoints(controller.pageToScreen(pr.topLeft),
               controller.pageToScreen(pr.bottomRight))
-          .inflate(4);
+          .inflate(kSelectionOutline);
       _dashedRect(canvas, r, Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5

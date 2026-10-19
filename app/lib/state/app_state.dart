@@ -10186,10 +10186,27 @@ class AppState extends ChangeNotifier
   /// possible for anyone without a pen.
   bool toolWasAutomatic = false;
 
+  /// **Choosing a tool drops the selection; being handed one does not.**
+  ///
+  /// Picking up the pen from the toolbar means you are done with whatever was
+  /// selected, so it clears — that much has always been right. But the pen
+  /// hands the tool round by itself, in three places (a pen coming into
+  /// range, and a side button borrowing a tool and giving it back), and those
+  /// are the same gesture from the user's side rather than a new decision.
+  ///
+  /// It was the GIVING BACK that showed it: lasso with the side button, let
+  /// go, and the pen came back through here and threw away the selection the
+  /// lasso had just made. The owner: *"it doesnt seem to hold the selection
+  /// after releasing the button. I suspect this is because it puts it right
+  /// into draw mode again, this isnt what it should do."*
+  ///
+  /// So an automatic hand-off leaves the selection alone, and what to do with
+  /// it is decided where the next press lands — inside it moves it, outside
+  /// clears it and draws. See `PageCanvas._selectionTakes`.
   void setTool(Tool t, {bool automatic = false}) {
     tool = t;
     toolWasAutomatic = automatic && t != Tool.select;
-    if (t != Tool.select) select(null);
+    if (t != Tool.select && !automatic) select(null);
     notifyListeners();
   }
 
