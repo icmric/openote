@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/gestures.dart';
 
+import '../core/pen_buttons.dart';
 import '../state/app_state.dart';
 
 /// **Which pen buttons mean "erase".**
@@ -55,8 +56,50 @@ bool penGestureErases({
   required int buttons,
   bool heldWhileHovering = false,
   bool penInRange = false,
+  PenButtonAction side = PenButtonAction.eraser,
 }) {
+  // **The tail is unconditional**: that end of a pen IS an eraser, and no
+  // setting about the SIDE button has anything to say about it.
   if (kind == PointerDeviceKind.invertedStylus) return true;
+  return side == PenButtonAction.eraser &&
+      penGestureHoldsButton(
+          kind: kind,
+          buttons: buttons,
+          heldWhileHovering: heldWhileHovering,
+          penInRange: penInRange);
+}
+
+/// The same signal, where the side button has been set to select instead.
+bool penGestureSelects({
+  required PointerDeviceKind kind,
+  required int buttons,
+  bool heldWhileHovering = false,
+  bool penInRange = false,
+  PenButtonAction side = PenButtonAction.eraser,
+}) =>
+    kind != PointerDeviceKind.invertedStylus &&
+    side == PenButtonAction.select &&
+    penGestureHoldsButton(
+        kind: kind,
+        buttons: buttons,
+        heldWhileHovering: heldWhileHovering,
+        penInRange: penInRange);
+
+/// **Whether a side button is held, whatever it has been set to do.**
+///
+/// Separated from what it MEANS because the two answers have different
+/// owners: this one is about the hardware and the platform, and the meaning
+/// is the student's setting. It also matters that it is one function rather
+/// than two: on Linux the barrel arrives through here (GTK reports a pen as
+/// `GDK_SOURCE_PEN` and passes the real button number through), while on
+/// Windows it arrives through `PenButtons` from the runner — and both have to
+/// honour the same setting or the app means different things on two desktops.
+bool penGestureHoldsButton({
+  required PointerDeviceKind kind,
+  required int buttons,
+  bool heldWhileHovering = false,
+  bool penInRange = false,
+}) {
   final fromAPen = kind == PointerDeviceKind.stylus ||
       // Some drivers report a pen with no kind at all rather than lying about
       // it; a pen in range is what makes that believable.

@@ -30,6 +30,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../canvas/ink_ops.dart';
+import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
@@ -91,6 +92,25 @@ class _PenTestDialog extends StatefulWidget {
 }
 
 class _PenTestDialogState extends State<_PenTestDialog> {
+  @override
+  void initState() {
+    super.initState();
+    // The runner's report is not a pointer event, so nothing else would
+    // rebuild this when a button is pressed while the pen hovers — which is
+    // exactly the case somebody opens this dialog to look at.
+    PenButtons.bits.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    PenButtons.bits.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
   final _seen = <_Seen>[];
   final _kinds = <PointerDeviceKind>{};
   var _buttonBits = 0;
@@ -130,8 +150,19 @@ class _PenTestDialogState extends State<_PenTestDialog> {
     return 'mouse — whatever the current tool does';
   }
 
+  /// **The first thing to establish**, because "no buttons" has two
+  /// completely different causes with one symptom: the native hook is not in
+  /// this build, or it is and the pen reports nothing through it. A
+  /// diagnostic that cannot tell those apart saves nobody a round trip.
+  String get _runnerLine => PenButtons.heard
+      ? 'runner: reporting, currently '
+          '0x${PenButtons.bits.value.toRadixString(16)}'
+      : 'runner: nothing yet — press a pen button; if this never changes, '
+          'this build does not have the hook in it';
+
   String get _report => [
         'Openote pen & touch test',
+        _runnerLine,
         'kinds seen: ${_kinds.map((k) => k.name).join(', ')}',
         'button bits seen: 0x${_buttonBits.toRadixString(16)}',
         'last event would: $_verdict',
@@ -184,6 +215,7 @@ class _PenTestDialogState extends State<_PenTestDialog> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
+              '$_runnerLine\n'
               'kinds: ${_kinds.isEmpty ? '—' : _kinds.map((k) => k.name).join(', ')}'
               '    buttons: 0x${_buttonBits.toRadixString(16)}'
               '\nthe last event would: $_verdict',

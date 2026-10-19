@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/pen_buttons.dart';
 import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
@@ -666,7 +667,11 @@ class _BlockViewState extends State<BlockView> {
         behavior: HitTestBehavior.opaque,
         supportedDevices: devices,
         onTap: editing ? null : _tap,
-        onSecondaryTapUp: editing
+        onSecondaryTapUp: editing ||
+                // A pen's barrel button can arrive as a right-click; where it
+                // has been given a job, that is the job it does rather than
+                // opening a menu. See [PenButtons.suppressesMenu].
+                PenButtons.suppressesMenu(app.penButton)
             ? null
             : (d) => showBlockMenu(context, app, b, d.globalPosition),
         // A locked block (an imported PDF slide) is an annotation surface: it

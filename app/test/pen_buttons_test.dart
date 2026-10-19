@@ -14,6 +14,7 @@
 // without a digitiser.
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -162,6 +163,44 @@ void main() {
       expect(app.tool, Tool.pen,
           reason: 'and the pen comes back when it is let go, because a mode '
               'you have to leave by hand is a mode');
+      await settleSettings(t);
+    });
+
+    testWidgets('A HELD BARREL DOES NOT ALSO OPEN A CONTEXT MENU', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // With Windows Ink off, a driver synthesises the mouse itself and the
+      // barrel arrives as a real right-click, so the button is reported AND a
+      // menu gesture is delivered. The menu gives way, because the student
+      // has said what that button is for.
+      await openPage(t);
+      app.setTool(Tool.select);
+      await t.pump();
+
+      await send(PenButton.barrel);
+      await t.pump();
+      final g = await t.startGesture(const Offset(400, 300),
+          kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+      await g.up();
+      await t.pumpAndSettle();
+
+      expect(find.text('Paste'), findsNothing,
+          reason: 'the canvas menu would have opened on top of the erase');
+
+      // ...and with the button set to do nothing, the menu is the most useful
+      // thing a barrel press can do, which is what Windows itself does.
+      await send(0);
+      app.setPenButton(PenButtonAction.nothing);
+      await t.pump();
+      await send(PenButton.barrel);
+      await t.pump();
+      final g2 = await t.startGesture(const Offset(400, 300),
+          kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+      await g2.up();
+      await t.pumpAndSettle();
+
+      expect(find.text('Paste'), findsOneWidget);
+      await t.tapAt(const Offset(10, 10)); // dismiss it
+      await t.pumpAndSettle();
       await settleSettings(t);
     });
 

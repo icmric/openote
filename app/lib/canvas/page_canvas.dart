@@ -256,6 +256,11 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = held);
       app.setPenErasing(_penErasing);
     }
+    // The same signal where the button is set to select instead. A pen event
+    // is authoritative both ways; anything else may only ADD the signal, for
+    // the same reason the erase half does.
+    final selecting = _selectingButtons(e);
+    if (selecting || isPen) _applyPenSelect(selecting);
     if (isPen) {
       if (approaching && app.tool == Tool.select) {
         app.setTool(Tool.pen, automatic: true);
@@ -279,7 +284,20 @@ class _PageCanvasState extends State<PageCanvas> {
   /// a digitiser — which matters here more than usual, since the report came
   /// from hardware nobody working on this owns.
   bool _erasingButtons(PointerEvent e) => penGestureErases(
-      kind: e.kind, buttons: e.buttons, penInRange: _stylusActive);
+      kind: e.kind,
+      buttons: e.buttons,
+      penInRange: _stylusActive,
+      side: app.penButton);
+
+  /// And whether it means "select", which is the same signal with the setting
+  /// the other way round. On Linux this is the only route it has: GTK reports
+  /// the pen and the real button number, so the barrel arrives here rather
+  /// than through the runner's channel.
+  bool _selectingButtons(PointerEvent e) => penGestureSelects(
+      kind: e.kind,
+      buttons: e.buttons,
+      penInRange: _stylusActive,
+      side: app.penButton);
 
   /// True while the pen's button is down, whether or not it is touching.
   ///
@@ -379,11 +397,18 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = erase);
       app.setPenErasing(erase);
     }
-    final select = PenButtons.selects(bits, app.penButton);
-    if (select && _toolBeforePenSelect == null) {
+    _applyPenSelect(PenButtons.selects(bits, app.penButton));
+  }
+
+  /// Hold the side button and the Select tool is borrowed; let go and the
+  /// tool that was in hand comes back. Both routes into this — the runner's
+  /// channel on Windows, the ordinary button bits on Linux — come through
+  /// here, so the behaviour cannot differ between them.
+  void _applyPenSelect(bool selecting) {
+    if (selecting && _toolBeforePenSelect == null) {
       _toolBeforePenSelect = app.tool;
       app.setTool(Tool.select, automatic: true);
-    } else if (!select && _toolBeforePenSelect != null) {
+    } else if (!selecting && _toolBeforePenSelect != null) {
       final back = _toolBeforePenSelect!;
       _toolBeforePenSelect = null;
       app.setTool(back, automatic: true);
@@ -407,7 +432,8 @@ class _PageCanvasState extends State<PageCanvas> {
             kind: e.kind,
             buttons: e.buttons,
             heldWhileHovering: _penErasing,
-            penInRange: _stylusActive) ||
+            penInRange: _stylusActive,
+            side: app.penButton) ||
         // ...or the runner read the flag off the message, which on Windows is
         // the only place it exists. See [_penBitsChanged].
         PenButtons.erases(PenButtons.bits.value, app.penButton);
@@ -968,7 +994,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kSecondaryMouseButton) != 0) {
       _mode = _DragMode.none;
-      if (!_downOnLocked) showCanvasMenu(context, app, e.position, pagePt);
+      // ...unless this "right-click" is a pen's barrel button arriving the
+      // long way round, and the student has said what that button is for.
+      // See [PenButtons.suppressesMenu].
+      if (!_downOnLocked && !PenButtons.suppressesMenu(app.penButton)) {
+        showCanvasMenu(context, app, e.position, pagePt);
+      }
       return;
     }
     if (e.kind == PointerDeviceKind.touch) {

@@ -11,13 +11,23 @@
 // the readout is empty and that is the answer.
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/core/pen_buttons.dart';
 import 'package:openote/ui/pen_test_dialog.dart';
 
 import 'support/app.dart';
 
 void main() {
+  setUp(() {
+    // Install the channel handler the runner talks to; `main` does this in
+    // the app.
+    PenButtons.listen();
+    PenButtons.bits.value = 0;
+    PenButtons.heard = false;
+  });
+
   Future<void> openIt(WidgetTester t) async {
     await t.pumpWidget(testApp(Builder(
       builder: (context) => Scaffold(
@@ -35,6 +45,26 @@ void main() {
 
   /// The box in the middle of the dialog that captures events.
   Finder pad() => find.text('press, draw and hover here');
+
+  testWidgets('IT SAYS WHETHER THE NATIVE HOOK IS EVEN THERE', (t) async {
+    // "No buttons" has two causes with one symptom: the hook is not in this
+    // build, or it is and the pen reports nothing through it. Those need
+    // completely different answers, so the readout leads with which.
+    await openIt(t);
+    expect(find.textContaining('runner: nothing yet'), findsOneWidget);
+
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+      PenButtons.channel.name,
+      PenButtons.channel.codec
+          .encodeMethodCall(const MethodCall('buttons', PenButton.barrel)),
+      (_) {},
+    );
+    await t.pump();
+
+    expect(find.textContaining('runner: reporting, currently 0x1'),
+        findsOneWidget);
+  });
 
   testWidgets('A BARREL PRESS FROM A PEN READS AS ERASE', (t) async {
     await openIt(t);

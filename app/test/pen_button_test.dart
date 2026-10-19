@@ -21,8 +21,65 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/ink_ops.dart';
+import 'package:openote/core/pen_buttons.dart';
 
 void main() {
+  group('the setting decides what the signal means', () {
+    // The same press, three answers — and the route it arrived by must not
+    // change them. On Linux this is the route: GTK reports the pen and the
+    // real GDK button number, so a barrel press lands in `buttons` as a
+    // secondary press on a stylus. On Windows it comes through the runner's
+    // channel instead, and `PenButtons.erases`/`selects` answer the same way.
+    const pen = PointerDeviceKind.stylus;
+    const barrel = kSecondaryButton;
+
+    test('ERASER IS WHAT IT HAS ALWAYS MEANT, AND THE DEFAULT', () {
+      expect(
+          penGestureErases(
+              kind: pen, buttons: barrel, side: PenButtonAction.eraser),
+          isTrue);
+      expect(penGestureErases(kind: pen, buttons: barrel), isTrue,
+          reason: 'the default, so every existing caller keeps its meaning');
+    });
+
+    test('SELECT TAKES THE SAME PRESS AND DOES NOT ERASE', () {
+      expect(
+          penGestureSelects(
+              kind: pen, buttons: barrel, side: PenButtonAction.select),
+          isTrue);
+      expect(
+          penGestureErases(
+              kind: pen, buttons: barrel, side: PenButtonAction.select),
+          isFalse);
+    });
+
+    test('and nothing means neither', () {
+      for (final f in [penGestureErases, penGestureSelects]) {
+        expect(
+            f(kind: pen, buttons: barrel, side: PenButtonAction.nothing),
+            isFalse);
+      }
+    });
+
+    test('but the TAIL erases whatever the side button is set to', () {
+      for (final side in PenButtonAction.values) {
+        expect(
+            penGestureErases(
+                kind: PointerDeviceKind.invertedStylus,
+                buttons: 0,
+                side: side),
+            isTrue,
+            reason: 'that end of a pen is an eraser');
+        expect(
+            penGestureSelects(
+                kind: PointerDeviceKind.invertedStylus,
+                buttons: barrel,
+                side: side),
+            isFalse);
+      }
+    });
+  });
+
   bool erases(PointerDeviceKind kind, int buttons, {bool held = false}) =>
       penGestureErases(
           kind: kind, buttons: buttons, heldWhileHovering: held);
