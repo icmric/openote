@@ -57,6 +57,24 @@ top of it. **If the mutation passes, the assertion is downstream of something
 you did not change** — look for the other thing that produces the same
 observable.
 
+**A sixth way, and the quietest: the premise stopped being true.** A test
+called "a pen cannot be in hand with something selected" proved it by calling
+`setTool(Tool.pen)` and watching the selection go — and went on passing after
+the app started keeping the selection when a pen's side button hands the tool
+back, because the manual `setTool` it used still clears. It was green, it was
+wrong, and the rule it existed to protect had inverted. **When you change a
+rule, grep the tests for sentences about it**, not just for the symbol you
+edited; a test's comment is where its premise lives, and nothing compiles a
+comment. In the same pass, a fixture made a locked-block test pass for the
+wrong reason: the block was big enough that the area rule excluded it anyway,
+so the lock under test did nothing. Make every rule but the one you are
+testing say "yes", and assert that in a line of its own.
+
+And a process one: **do not mutate a file while a full suite is running.**
+`flutter test` compiles each test file as it reaches it, so a lib file
+reverted for thirty seconds mid-run is compiled into whichever files start in
+that window — and reads as a real failure somewhere unrelated.
+
 **Never hand a `CustomPainter` a collection you go on mutating.** Its
 `shouldRepaint` is then comparing an object with itself, so it returns false
 and nothing repaints — which is how the lasso's outline came to appear only
