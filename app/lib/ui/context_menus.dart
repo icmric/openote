@@ -252,6 +252,9 @@ Future<void> showPictureMenu(
 Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     Offset globalPos) async {
   if (!app.selectedIds.contains(b.id)) app.select(b.id);
+  // The rest of this menu is still English literals; these two are not, and
+  // the direction of travel is theirs rather than the other way round.
+  final l = L.of(context);
   final action = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(
@@ -319,6 +322,18 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       if (b.type == BlockType.embed && PortalRef.parse(b.content) != null)
         _item('to-link', Icons.link, 'Change to a page link'),
       const PopupMenuDivider(),
+      // **Group, which is a relationship rather than a container.** Offered
+      // when this block is one of several picked up: *"I want to be able to
+      // select multiple items (of any kind, whether it be content boxes,
+      // graphs, ink, any thing and any combination of anything), right click
+      // on the selection area and be able to press group."*
+      if (app.selectedIds.length > 1 &&
+          app.selectedIds.contains(b.id) &&
+          // ...and they are not already one group, which is what the row
+          // below would then be for.
+          !app.selectionIsOneGroup)
+        _item('group', Icons.join_full, l.menuGroup),
+      if (b.group != null) _item('ungroup', Icons.join_inner, l.menuUngroup),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
       const PopupMenuDivider(),
@@ -382,6 +397,10 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       app.bringToFront(b.id);
     case 'back':
       app.sendToBack(b.id);
+    case 'group':
+      app.groupSelected();
+    case 'ungroup':
+      app.ungroupSelected();
     case 'delete':
       app.removeSelected();
   }

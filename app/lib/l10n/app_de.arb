@@ -101,6 +101,8 @@
   "penButtonSelect": "Auswählen",
   "penButtonNothing": "Nichts",
   "barPenButton": "Funktion der Stiftseitentaste",
+  "menuGroup": "Gruppieren",
+  "menuUngroup": "Gruppierung aufheben",
   "commonClose": "Schließen",
   "commonDelete": "Löschen",
   "commonDetailsAdvanced": "Details (für Fortgeschrittene)",

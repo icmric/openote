@@ -776,57 +776,47 @@ class _PageCanvasState extends State<PageCanvas> {
     final poly = _lasso;
     setState(() => _lasso = null);
     if (poly == null || poly.length < 3) return;
-    _gatherLassoedStrokes(poly);
+    _selectLassoedStrokes(poly);
   }
 
-  /// Gather every stroke whose points mostly fall inside the drawn loop into a
-  /// single new ink block, then select it — so the existing move/delete/copy
-  /// machinery works on a freeform ink selection regardless of which blocks the
-  /// strokes originally lived in (Ink Spec §2: strokes are immutable and carry
-  /// page-absolute coordinates, so re-homing them is just a splice).
-  void _gatherLassoedStrokes(List<Offset> poly) {
-    // 1) Detect matches WITHOUT mutating, so the undo snapshot below captures
-    //    the true pre-lasso state.
-    final gathered = <Map<String, dynamic>>[];
-    final keepByBlock = <String, List<dynamic>>{};
+  /// **Select every stroke the loop caught.** Nothing is moved, nothing is
+  /// re-homed, and nothing is written.
+  ///
+  /// It used to splice the matched strokes out of their blocks and into one
+  /// new block, which made the lasso a destructive grouping command dressed
+  /// as a selection: the owner, after it started drawing its outline again,
+  /// *"id like to make it so that after the selection has been changed (in any
+  /// sense, like the strokes are no longer focused) they go back to being
+  /// their individual strokes or however they were before. Its evidently not a
+  /// permenant thing as i can go back in with the lasso after and select a
+  /// single stroke and disconnect it from the group, but i dont want to have
+  /// to do that."*
+  ///
+  /// Quite so, and it costs nothing to stop: a stroke is its own block now, so
+  /// the loop has nothing left to do but name the ones it caught. Changing the
+  /// selection changes it back, because the selection was the only thing that
+  /// changed. Grouping on purpose is [AppState.groupSelected], which is the
+  /// command that says so.
+  ///
+  /// A block holding SEVERAL strokes is a group, and a loop that catches any
+  /// of it takes the whole thing — that being what a group is for.
+  void _selectLassoedStrokes(List<Offset> poly) {
+    final hit = <String>[];
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
-      final keep = <dynamic>[];
-      var blockChanged = false;
       for (final sj in InkStorage.strokesOf(b.content)) {
         final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
         if (_strokeInsidePoly(s, poly)) {
-          gathered.add(sj.cast<String, dynamic>());
-          blockChanged = true;
-        } else {
-          keep.add(sj);
+          hit.add(b.id);
+          break;
         }
       }
-      if (blockChanged) keepByBlock[b.id] = keep;
     }
-    if (gathered.isEmpty) return;
-
-    // 2) Snapshot, then apply: splice matched strokes out of their blocks,
-    //    drop now-empty blocks, and re-home the gathered strokes into one new
-    //    selected ink block.
-    app.pushUndo();
-    for (final entry in keepByBlock.entries) {
-      final b = app.blocks.where((x) => x.id == entry.key).firstOrNull;
-      if (b == null) continue;
-      if (entry.value.isEmpty) {
-        app.removeBlock(b.id, recordUndo: false);
-      } else {
-        b.content['strokes'] = entry.value;
-        _refitInkBounds(b);
-        b.updatedAt = nowMs();
-      }
+    if (hit.isEmpty) {
+      app.select(null);
+      return;
     }
-    final grouped = app.addBlock(
-        Block(type: BlockType.ink, x: 0, y: 0, content: {'strokes': gathered}),
-        recordUndo: false);
-    _refitInkBounds(grouped);
-    app.updateBlock(grouped);
-    app.select(grouped.id);
-    // Switch back to Select so the gathered ink can be dragged/deleted at once.
+    app.selectMany(hit);
+    // Back to Select, so what was caught can be dragged or deleted at once.
     app.setTool(Tool.select);
   }
 

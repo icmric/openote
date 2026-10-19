@@ -366,6 +366,12 @@ class LIt extends L {
   String get barPenButton => 'Cosa fa il pulsante laterale della penna';
 
   @override
+  String get menuGroup => 'Raggruppa';
+
+  @override
+  String get menuUngroup => 'Dividi';
+
+  @override
   String get commonClose => 'Chiudi';
 
   @override

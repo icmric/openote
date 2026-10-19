@@ -4,6 +4,26 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — group anything with anything
+
+- **Select several things, right-click, Group.** A text box, a graph, a
+  picture, some handwriting, any combination — selecting one of them then
+  selects all of them. Right-click any member for **Ungroup**.
+- **Nothing moves either way.** A group is a relationship, not a container:
+  every block keeps its own geometry, its own type and its own place on the
+  page, so grouping and ungrouping are both free and an undo puts it back.
+- **A grouped box can still be typed in**: the first click takes the group,
+  and a second click on the same box goes into it.
+
+### Changed — the lasso selects, and stops rearranging
+
+- **The lasso no longer re-homes your strokes.** It used to splice everything
+  it caught into one new piece of handwriting, permanently — so a loop drawn
+  to move a word left the word welded together afterwards, and taking it apart
+  again meant lassoing each stroke. It selects what it caught and changes
+  nothing else; the selection going away leaves the strokes exactly as they
+  were. To make a lasting group, group it.
+
 ### Fixed — the pen, the lasso and the flick
 
 - **Your pen's side button works.** It never could: Flutter reads a pen's

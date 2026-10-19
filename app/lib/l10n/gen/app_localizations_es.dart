@@ -367,6 +367,12 @@ class LEs extends L {
   String get barPenButton => 'Qué hace el botón lateral del lápiz';
 
   @override
+  String get menuGroup => 'Agrupar';
+
+  @override
+  String get menuUngroup => 'Desagrupar';
+
+  @override
   String get commonClose => 'Cerrar';
 
   @override

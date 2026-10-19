@@ -159,14 +159,17 @@ void main() {
     app.cancelPendingSave();
   });
 
-  testWidgets('THE LASSO IS HOW STROKES BECOME ONE OBJECT', (t) async {
+  testWidgets('THE LASSO SELECTS WHAT IT CAUGHT, AND CHANGES NOTHING ELSE',
+      (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await openPage(t);
     app.setTool(Tool.pen);
 
     await stroke(t, const Offset(200, 200), const Offset(240, 210));
     await stroke(t, const Offset(246, 202), const Offset(280, 212));
-    expect(inkBlocks(), 2);
+    await stroke(t, const Offset(600, 500), const Offset(640, 510));
+    expect(inkBlocks(), 3);
+    final before = [for (final b in app.blocks) b.id];
 
     app.setTool(Tool.lasso);
     await t.pump();
@@ -185,9 +188,49 @@ void main() {
     await t.pump();
     app.cancelPendingSave();
 
-    expect(inkBlocks(), 1, reason: 'the loop said these two are one thing');
-    expect(app.selectedIds, hasLength(1),
-        reason: 'and handed it over selected, ready to be moved at once');
-    expect(app.tool, Tool.select);
+    // *"Id like to make it so that after the selection has been changed … they
+    // go back to being their individual strokes or however they were before."*
+    // They never stop being: the loop selects, and that is all it does.
+    expect(app.selectedIds, hasLength(2),
+        reason: 'the two it went round, not the one across the page');
+    expect(inkBlocks(), 3, reason: 'nothing was re-homed into a new block');
+    expect([for (final b in app.blocks) b.id], before,
+        reason: 'and no block was created or destroyed');
+    expect(app.tool, Tool.select,
+        reason: 'so what was caught can be dragged at once');
+
+    // And letting go of the selection leaves three separate strokes behind.
+    app.select(null);
+    expect(inkBlocks(), 3);
+    expect(app.selectedIds, isEmpty);
+  });
+
+  testWidgets('and a loop that catches nothing just clears the selection',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await openPage(t);
+    app.setTool(Tool.pen);
+    await stroke(t, const Offset(200, 200), const Offset(240, 210));
+    app.select(app.blocks.first.id);
+
+    app.setTool(Tool.lasso);
+    await t.pump();
+    final g = await t.startGesture(const Offset(600, 500),
+        kind: PointerDeviceKind.mouse);
+    for (final p in const [
+      Offset(660, 500),
+      Offset(660, 560),
+      Offset(600, 560),
+      Offset(600, 502),
+    ]) {
+      await g.moveTo(p);
+      await t.pump();
+    }
+    await g.up();
+    await t.pump();
+    app.cancelPendingSave();
+
+    expect(app.selectedIds, isEmpty);
+    expect(inkBlocks(), 1);
   });
 }

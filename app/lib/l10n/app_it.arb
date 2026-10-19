@@ -101,6 +101,8 @@
   "penButtonSelect": "Seleziona",
   "penButtonNothing": "Niente",
   "barPenButton": "Cosa fa il pulsante laterale della penna",
+  "menuGroup": "Raggruppa",
+  "menuUngroup": "Dividi",
   "commonClose": "Chiudi",
   "commonDelete": "Elimina",
   "commonDetailsAdvanced": "Dettagli (avanzato)",

@@ -9949,17 +9949,37 @@ class AppState extends ChangeNotifier
       editingBlockId = null;
     } else if (additive) {
       if (!selectedIds.add(id)) selectedIds.remove(id);
+      if (selectedIds.contains(id)) _addGroupOf(id);
       selectedBlockId = selectedIds.contains(id) ? id : selectedIds.firstOrNull;
       editingBlockId = null;
     } else {
+      // **A grouped block hands the selection to its group.** The owner:
+      // *"This basically makes them behave as if ive gone through and
+      // selected them all even if ive only selected one."*
+      //
+      // Unless it was already selected — that is the second click, and it
+      // means "into this one", which is how every other app with grouping
+      // behaves and the only way a grouped text box could ever be typed in.
+      final takeGroup = blockById(id)?.group != null &&
+          !selectedIds.contains(id) &&
+          !(selectedIds.length == 1 && selectedIds.first == id);
       selectedIds
         ..clear()
         ..add(id);
       selectedBlockId = id;
-      editingBlockId = edit ? id : null;
-      // Remembered here rather than where the caret lands, because this is
-      // the one call every route into a block goes through.
-      if (edit) lastEditedBlockId = id;
+      if (takeGroup) {
+        _addGroupOf(id);
+        // The first click on a group selects the group and nothing more. A
+        // caret token left lying around would land on the next box opened by
+        // any other route.
+        editingBlockId = null;
+        pendingCaretGlobal = null;
+      } else {
+        editingBlockId = edit ? id : null;
+        // Remembered here rather than where the caret lands, because this is
+        // the one call every route into a block goes through.
+        if (edit) lastEditedBlockId = id;
+      }
     }
     notifyListeners();
   }
@@ -9968,9 +9988,79 @@ class AppState extends ChangeNotifier
     selectedIds
       ..clear()
       ..addAll(ids);
+    // A marquee or a lasso that caught one member of a group has caught the
+    // group — that being the whole of what a group asserts.
+    for (final id in ids.toList()) {
+      _addGroupOf(id);
+    }
     selectedBlockId = selectedIds.firstOrNull;
     editingBlockId = null;
     notifyListeners();
+  }
+
+  /// Whether everything selected is already one group, and nothing else —
+  /// in which case there is nothing for "Group" to do.
+  bool get selectionIsOneGroup {
+    if (selectedIds.length < 2) return false;
+    String? seen;
+    for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      final g = b.group;
+      if (g == null || (seen != null && g != seen)) return false;
+      seen = g;
+    }
+    return seen != null &&
+        blocks.where((b) => b.group == seen).length == selectedIds.length;
+  }
+
+  /// Add every other member of [id]'s group to the selection.
+  void _addGroupOf(String id) {
+    final g = blockById(id)?.group;
+    if (g == null) return;
+    for (final b in blocks) {
+      if (b.group == g) selectedIds.add(b.id);
+    }
+  }
+
+  /// **Group the selection**, so that selecting one of them selects all.
+  ///
+  /// Nothing moves and nothing is rewritten: a group is one string on each
+  /// member (see [Block.group]). Returns false when there is nothing to do.
+  ///
+  /// Blocks that were already in other groups are absorbed into this one,
+  /// which is what selecting them and saying "group" means — and it keeps
+  /// groups flat, so there is no tree to reason about or to draw.
+  bool groupSelected() {
+    final members = blocks.where((b) => selectedIds.contains(b.id)).toList();
+    if (members.length < 2) return false;
+    pushUndo();
+    final id = newId();
+    for (final b in members) {
+      b.content['group'] = id;
+      b.updatedAt = nowMs();
+    }
+    markDirty();
+    notifyListeners();
+    return true;
+  }
+
+  /// Take apart every group the selection touches, leaving each block exactly
+  /// where it is. Returns false when none of them was grouped.
+  bool ungroupSelected() {
+    final groups = <String>{
+      for (final b in blocks)
+        if (selectedIds.contains(b.id) && b.group != null) b.group!
+    };
+    if (groups.isEmpty) return false;
+    pushUndo();
+    for (final b in blocks) {
+      if (b.group != null && groups.contains(b.group)) {
+        b.content.remove('group');
+        b.updatedAt = nowMs();
+      }
+    }
+    markDirty();
+    notifyListeners();
+    return true;
   }
 
   /// Move every selected block by a page-space delta (ink blocks translate

@@ -365,6 +365,12 @@ class LDe extends L {
   String get barPenButton => 'Funktion der Stiftseitentaste';
 
   @override
+  String get menuGroup => 'Gruppieren';
+
+  @override
+  String get menuUngroup => 'Gruppierung aufheben';
+
+  @override
   String get commonClose => 'Schließen';
 
   @override

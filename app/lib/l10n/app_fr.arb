@@ -101,6 +101,8 @@
   "penButtonSelect": "Sélectionner",
   "penButtonNothing": "Rien",
   "barPenButton": "Rôle du bouton latéral du stylet",
+  "menuGroup": "Grouper",
+  "menuUngroup": "Dissocier",
   "commonClose": "Fermer",
   "commonDelete": "Supprimer",
   "commonDetailsAdvanced": "Détails (avancé)",

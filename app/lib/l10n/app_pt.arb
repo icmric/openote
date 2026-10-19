@@ -101,6 +101,8 @@
   "penButtonSelect": "Selecionar",
   "penButtonNothing": "Nada",
   "barPenButton": "O que faz o botão lateral da caneta",
+  "menuGroup": "Agrupar",
+  "menuUngroup": "Desagrupar",
   "commonClose": "Fechar",
   "commonDelete": "Apagar",
   "commonDetailsAdvanced": "Detalhes (avançado)",

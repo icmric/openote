@@ -101,6 +101,8 @@
   "penButtonSelect": "选择",
   "penButtonNothing": "无",
   "barPenButton": "触控笔侧键的功能",
+  "menuGroup": "组合",
+  "menuUngroup": "取消组合",
   "commonClose": "关闭",
   "commonDelete": "删除",
   "commonDetailsAdvanced": "详细信息（进阶）",

@@ -355,6 +355,12 @@ class LZh extends L {
   String get barPenButton => '触控笔侧键的功能';
 
   @override
+  String get menuGroup => '组合';
+
+  @override
+  String get menuUngroup => '取消组合';
+
+  @override
   String get commonClose => '关闭';
 
   @override

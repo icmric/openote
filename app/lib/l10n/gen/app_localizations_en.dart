@@ -363,6 +363,12 @@ class LEn extends L {
   String get barPenButton => 'What the pen’s side button does';
 
   @override
+  String get menuGroup => 'Group';
+
+  @override
+  String get menuUngroup => 'Ungroup';
+
+  @override
   String get commonClose => 'Close';
 
   @override

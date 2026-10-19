@@ -78,6 +78,26 @@ Every block shares this envelope. `content` is per type, and §4 is the registry
 
 **Unknown-field rule:** readers MUST preserve fields they don't understand (round-trip unknown keys); writers MUST NOT emit fields with semantics conflicting with this spec. This is the forward-compatibility contract.
 
+### 3.0.1 Keys any block's `content` may carry (normative)
+
+Three keys are not type-specific and may appear in any block's `content`. A
+reader that ignores one of them shows a usable page — which is why they live
+here rather than being three envelope fields.
+
+| Key | | |
+|---|---|---|
+| `locked` | `true` | a background layer: it cannot be moved or resized, and nothing that picks blocks up picks it up. See [Ink Data Spec](13-ink-data-spec.md) §2.1 and the PDF import |
+| `bg` | `RRGGBB` or `RRGGBBAA` | a fill behind this block's own content |
+| `group` | an id string | **a relationship, not a container.** Every block carrying the same `group` is selected together; each keeps its own geometry, type and `z`. Nothing about the page's layout depends on it, so a reader that ignores it simply selects one block at a time |
+
+**`group` is a field on the member, deliberately, not a list on the page.** A
+block copied to another page carries its id with it and becomes a group of one
+there, which selects itself and is indistinguishable from an ungrouped block.
+A page-level list would have had to be found and corrected by every route that
+moves a block between pages, and a missed one would bind two unrelated blocks
+together. Groups are flat: grouping blocks that were already grouped absorbs
+them into the new group rather than nesting.
+
 ### 3.1 Page properties
 
 A page carries its own properties beside its blocks, under `page` in the Page

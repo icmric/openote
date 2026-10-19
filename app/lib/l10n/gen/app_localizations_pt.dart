@@ -365,6 +365,12 @@ class LPt extends L {
   String get barPenButton => 'O que faz o botão lateral da caneta';
 
   @override
+  String get menuGroup => 'Agrupar';
+
+  @override
+  String get menuUngroup => 'Desagrupar';
+
+  @override
   String get commonClose => 'Fechar';
 
   @override

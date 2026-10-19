@@ -101,6 +101,8 @@
   "penButtonSelect": "Seleccionar",
   "penButtonNothing": "Nada",
   "barPenButton": "Qué hace el botón lateral del lápiz",
+  "menuGroup": "Agrupar",
+  "menuUngroup": "Desagrupar",
   "commonClose": "Cerrar",
   "commonDelete": "Borrar",
   "commonDetailsAdvanced": "Detalles (avanzado)",

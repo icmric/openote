@@ -366,6 +366,12 @@ class LFr extends L {
   String get barPenButton => 'Rôle du bouton latéral du stylet';
 
   @override
+  String get menuGroup => 'Grouper';
+
+  @override
+  String get menuUngroup => 'Dissocier';
+
+  @override
   String get commonClose => 'Fermer';
 
   @override

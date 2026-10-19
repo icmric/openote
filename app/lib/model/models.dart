@@ -386,6 +386,27 @@ class Block {
   final int createdAt;
   int updatedAt;
 
+  /// **The group this block belongs to**, or null.
+  ///
+  /// A group is a *relationship*, not a container: every block keeps its own
+  /// geometry, its own type and its own place in the page, and all the group
+  /// asserts is that selecting one selects the rest. So it is one string on
+  /// each member and nothing else — no new block type, no nesting, no
+  /// coordinate space — which is what makes it non-destructive and reversible
+  /// in the sense the owner asked for: *"It should be non descructive and
+  /// reversable."*
+  ///
+  /// A field on the member rather than a list on the page, deliberately. A
+  /// block copied to another page carries its group id with it and becomes a
+  /// group of one there, which selects itself and is indistinguishable from
+  /// not being grouped; a page-level list would have had to be found and
+  /// edited by every route that moves a block, and a missed one would silently
+  /// bind two unrelated blocks together.
+  String? get group {
+    final v = content['group'];
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
   /// A background layer: it cannot be moved or resized, and nothing that
   /// picks blocks up picks it up.
   ///
