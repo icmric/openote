@@ -677,9 +677,10 @@ class _BlockViewState extends State<BlockView> {
 
     // While an ink tool is active, blocks are inert — the pen draws OVER
     // them instead of dragging/editing them (fixes ink-over-block dragging).
-    final inkToolActive = app.tool == Tool.pen ||
-        app.tool == Tool.highlighter ||
-        app.tool == Tool.eraser;
+    // [AppState.inkToolInHand] holds the rule, because what counts as a
+    // drawing tool is also what decides whether anything has a bar to put a
+    // delete cross on.
+    final inkToolActive = app.inkToolInHand;
 
     // Chrome is only live for its OWN block, so two abutting blocks can never
     // both offer a bar at once even though the reserved strips overlap.

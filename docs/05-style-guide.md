@@ -674,7 +674,7 @@ The canvas is the product; its interaction model deserves explicit rules so it s
   - Chrome is *reserved* around the block, never overflowed: `RenderBox.hitTest` rejects anything outside a box's own size (`Clip.none` affects painting only), so chrome drawn at negative offsets is mostly ungrabbable.
 - **Text**: click empty canvas to create a text container and start typing (CANVAS-3). Double-click empty space also creates text (familiar OneNote behavior).
 - **Pen / Highlighter / Eraser**: ink tools; while active, single-finger/pen draws and palm is rejected (INK-4). Two-finger gesture still pans/zooms.
-- **Lasso** (later): freehand-select ink and mixed content.
+- **Lasso**: freehand-select ink and mixed content. A stroke is caught when most of its points are inside the loop; anything else — a box, a picture, a graph — when at least half of its area is, which is the rule the marquee uses, so the two gestures agree. Neither catches a locked block: that is the page the rest is drawn on. It **selects and nothing else** — a selection must never rearrange storage, so making a lasting group is the group command.
 - **Shapes/connectors** (later).
 
 ### 8.2 Pan & zoom (CANVAS-2)

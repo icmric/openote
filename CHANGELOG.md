@@ -38,9 +38,26 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   Appearance, Writing and drawing, Connections, Help, About. It was one long
   page with headings in it: the headings named the groups, but you still had
   to scroll past every one of them to read the names.
+- **Fewer words on it, and lines between them.** Every description was read
+  again and either shortened or deleted: one was a three-line tooltip being
+  used as a label, one repeated the link underneath it, and the rest said at
+  length what their own control already said. A hairline now separates one
+  setting from the next, and a group with two distinct kinds of setting in it
+  (writing, then the pen and the screen) says so with a heading.
 
 ### Fixed — the pen, the lasso and the flick
 
+- **The lasso selects boxes, pictures and graphs, not only handwriting.** It
+  only ever looked at ink. Anything at least half inside the loop is caught,
+  which is the same rule the rectangular selection uses — so a loop drawn
+  inside a slide still does not pick the slide up.
+- **An imported slide stays out of a lasso**, as it already stayed out of a
+  rectangular selection. Sweeping one up left the selection holding something
+  that cannot be moved, which is why a box in that selection appeared not to
+  move with everything else.
+- **One lassoed stroke offers a Delete**, like a selection of several things
+  does. Handwriting is painted rather than boxed, so it has no bar of its own
+  to put a cross on — and neither does a box while a drawing tool is in hand.
 - **What you lasso stays selected when you let the button go**, and the pen
   then drags it. Releasing the side button handed the pen back, and the pen
   coming back threw the selection away — so a loop drawn to move something

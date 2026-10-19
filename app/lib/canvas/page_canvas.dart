@@ -117,6 +117,62 @@ List<Rect> inkSelectionBox(List<Rect> selected) => selected.isEmpty
     ? const []
     : [selected.reduce((a, b) => a.expandToInclude(b))];
 
+/// Ray-casting point-in-polygon test, in whatever space both are in.
+bool pointInPolygon(Offset pt, List<Offset> poly) {
+  var inside = false;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    final a = poly[i], b = poly[j];
+    if (((a.dy > pt.dy) != (b.dy > pt.dy)) &&
+        (pt.dx < (b.dx - a.dx) * (pt.dy - a.dy) / (b.dy - a.dy) + a.dx)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/// **Whether a lasso loop catches a block that is not handwriting.**
+///
+/// Reported: *"The select lasso works great on ink however it doesnt seem to
+/// select other boxes, please investigate this as id really like that to
+/// work."* It did not look at them at all — the loop only ever asked ink.
+///
+/// The same question [marqueeCatches] answers for a rectangle, and
+/// deliberately the same answer: **half the block's area, or it is not
+/// caught.** A freeform loop has no closed form for that overlap, so it is
+/// sampled on a grid — [_kLassoGrid] squared points over the block, counted
+/// for how many fall inside the loop. Which is an approximation of an area,
+/// and an area is the rule that matters: a loop drawn INSIDE a big picture
+/// must not pick the picture up, which is what "the centre is inside it" or
+/// "a corner is inside it" would both do, and which is the whole of the
+/// *"almost impossible to select handwritten notes on top of a PDF without
+/// selecting the PDF itself"* report.
+///
+/// Top-level and pure so the rule can be tested without a canvas.
+bool lassoCatches(List<Offset> poly, Rect block) {
+  if (poly.length < 3) return false;
+  if (block.width <= 0 || block.height <= 0) {
+    return pointInPolygon(block.topLeft, poly);
+  }
+  var inside = 0;
+  for (var iy = 0; iy < _kLassoGrid; iy++) {
+    for (var ix = 0; ix < _kLassoGrid; ix++) {
+      // Cell centres, so neither edge of the block is counted twice and a
+      // loop drawn exactly along one does not decide it on rounding.
+      final pt = Offset(
+        block.left + block.width * (ix + 0.5) / _kLassoGrid,
+        block.top + block.height * (iy + 0.5) / _kLassoGrid,
+      );
+      if (pointInPolygon(pt, poly)) inside++;
+    }
+  }
+  return inside * 2 >= _kLassoGrid * _kLassoGrid;
+}
+
+/// Samples per side of the block when approximating the overlap. Seven is 49
+/// tests per block, which at loop-release time for a page of blocks is
+/// nothing, and resolves half an area to about 2%.
+const int _kLassoGrid = 7;
+
 /// How far outside the selection its dashed box is drawn, in SCREEN pixels —
 /// and therefore how far outside it a press still counts as landing on it.
 /// Shared so that what grabs is exactly what is drawn; a grab region that
@@ -189,8 +245,7 @@ class _PageCanvasState extends State<PageCanvas> {
   AppState get app => widget.state;
   CanvasController get controller => app.canvas;
 
-  bool get _inkTool =>
-      app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser;
+  bool get _inkTool => app.inkToolInHand;
 
   /// When a stylus was last seen, so palm rejection can be *conditional*
   /// (INK-4) instead of absolute.
@@ -847,7 +902,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _selectLassoedStrokes(poly);
   }
 
-  /// **Select every stroke the loop caught.** Nothing is moved, nothing is
+  /// **Select everything the loop caught.** Nothing is moved, nothing is
   /// re-homed, and nothing is written.
   ///
   /// It used to splice the matched strokes out of their blocks and into one
@@ -868,9 +923,25 @@ class _PageCanvasState extends State<PageCanvas> {
   ///
   /// A block holding SEVERAL strokes is a group, and a loop that catches any
   /// of it takes the whole thing — that being what a group is for.
+  ///
+  /// **And everything else on the page is asked too**, by area, through
+  /// [lassoCatches]: *"The select lasso works great on ink however it doesnt
+  /// seem to select other boxes."* Handwriting is asked by its points because
+  /// a stroke is a line and its bounding box is mostly not the stroke; a box
+  /// is asked by its rectangle because that is what the box is.
+  ///
+  /// A locked block — an imported slide — is never caught, for the reason the
+  /// marquee already does not catch one: it is what the others are drawn ON,
+  /// and sweeping it into a selection leaves that selection with a member
+  /// that cannot move, which stops the drag of everything else dead.
   void _selectLassoedStrokes(List<Offset> poly) {
     final hit = <String>[];
-    for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
+    for (final b in app.blocks) {
+      if (b.locked) continue;
+      if (b.type != BlockType.ink) {
+        if (lassoCatches(poly, _blockRect(b))) hit.add(b.id);
+        continue;
+      }
       for (final sj in InkStorage.strokesOf(b.content)) {
         final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
         if (_strokeInsidePoly(s, poly)) {
@@ -894,24 +965,11 @@ class _PageCanvasState extends State<PageCanvas> {
     if (s.x.isEmpty) return false;
     var inside = 0;
     for (var i = 0; i < s.x.length; i++) {
-      if (_pointInPoly(Offset(s.x[i], s.y[i]), poly)) inside++;
+      if (pointInPolygon(Offset(s.x[i], s.y[i]), poly)) inside++;
     }
     return inside / s.x.length >= 0.6;
   }
 
-  /// Ray-casting point-in-polygon test.
-  bool _pointInPoly(Offset pt, List<Offset> poly) {
-    var inside = false;
-    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      final a = poly[i], b = poly[j];
-      if (((a.dy > pt.dy) != (b.dy > pt.dy)) &&
-          (pt.dx <
-              (b.dx - a.dx) * (pt.dy - a.dy) / (b.dy - a.dy) + a.dx)) {
-        inside = !inside;
-      }
-    }
-    return inside;
-  }
 
   // ── Touch pan/pinch (shared: pen-mode palm rejection & navigation) ──────
 

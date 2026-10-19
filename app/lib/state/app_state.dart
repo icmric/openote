@@ -5029,8 +5029,7 @@ class AppState extends ChangeNotifier
     _commitActiveEditor();
     // Blanking only means something on a line that is already a card.
     if (tagsAtCaret().isEmpty) toggleTagOnSelection(TagKind.question);
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
     return true;
   }
 
@@ -5517,13 +5516,36 @@ class AppState extends ChangeNotifier
   /// PRIMARY block alone and says nothing about the others, so the floating
   /// button is the only control that means "all of this".
   ///
-  /// The case this button was built for is not lost by that. It was for ink
-  /// on a tablet, where there is no Delete key — but a lasso leaves the lasso
-  /// tool in hand, not a pen, and a lassoed block shows its bar and its cross
-  /// like any other. A pen cannot be in hand with something selected at all,
-  /// because [setTool] clears the selection on the way to any tool that
-  /// draws.
-  bool get showSelectionDelete => selectedIds.length > 1;
+  /// **Unless the one thing has no bar to put a cross on**, which is the case
+  /// the button was built for in the first place: ink on a tablet, where there
+  /// is no Delete key either. A stroke is its own block and ink is painted
+  /// rather than built, so there is no move bar anywhere on it — and the same
+  /// goes for a box while a drawing tool is in hand, since a block shows no
+  /// chrome at all then. The owner, lassoing: *"When one or more items are
+  /// selected with the lasso, it should have that little delete icon like we
+  /// have when selecting multiple boxes."*
+  ///
+  /// Both halves of that used to be impossible and are not any more: a loop
+  /// round one stroke selects one block, and letting go of a side button
+  /// hands the pen back without dropping the selection.
+  ///
+  /// **Never while the eraser is in hand**, whatever is selected: that tool's
+  /// whole job is to take things away by pointing at them, and a button
+  /// floating in the way of the pointer is worse than no button.
+  bool get showSelectionDelete {
+    if (selectedIds.isEmpty || tool == Tool.eraser) return false;
+    if (selectedIds.length > 1) return true;
+    if (inkToolInHand) return true;
+    return blockById(selectedIds.first)?.type == BlockType.ink;
+  }
+
+  /// Whether the tool in hand draws, which is also the question "does
+  /// anything on the page show its own chrome right now" — a block goes inert
+  /// and loses its bar while one of these is held, so that the pen can write
+  /// over it. One definition, because three of them drifting apart is how a
+  /// box ends up with no way to delete it.
+  bool get inkToolInHand =>
+      tool == Tool.pen || tool == Tool.highlighter || tool == Tool.eraser;
 
   bool get hasInkSelection =>
       blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
@@ -8386,8 +8408,7 @@ class AppState extends ChangeNotifier
             : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1));
     }
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Shift an ink block's strokes with its box. Stroke coordinates are
@@ -8516,8 +8537,7 @@ class AppState extends ChangeNotifier
       }
     }
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// The one big box a paged page writes into, created if it is not there.
@@ -9304,8 +9324,7 @@ class AppState extends ChangeNotifier
     selectedBlockId = null;
     editingBlockId = null;
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void pushUndo() {
@@ -9832,15 +9851,13 @@ class AppState extends ChangeNotifier
           : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1);
     clampBlockToPage(b);
     blocks.add(b);
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
     return b;
   }
 
   void updateBlock(Block b) {
     b.updatedAt = nowMs();
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Lock or unlock every slide that came out of the same PDF, wherever in
@@ -9905,8 +9922,7 @@ class AppState extends ChangeNotifier
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
     if (editingBlockId == id) editingBlockId = null;
     _tidyGroups();
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void removeSelected() {
@@ -9917,8 +9933,7 @@ class AppState extends ChangeNotifier
     selectedBlockId = null;
     editingBlockId = null;
     _tidyGroups();
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Duplicate with FRESH ids (Data Model Spec §2 rule 3).
@@ -10032,8 +10047,7 @@ class AppState extends ChangeNotifier
       b.groupId = g;
       b.updatedAt = nowMs();
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void ungroupSelected() {
@@ -10044,8 +10058,7 @@ class AppState extends ChangeNotifier
       b.groupId = null;
       b.updatedAt = nowMs();
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Drop a `groupId` only one block still carries.
@@ -10144,8 +10157,7 @@ class AppState extends ChangeNotifier
         b.updatedAt = nowMs();
       }
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Snap + clamp all selected at drag end. Ongoing left-margin alignment:
@@ -10167,8 +10179,7 @@ class AppState extends ChangeNotifier
       }
       clampBlockToPage(b);
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// **Whether the tool in hand was picked up by the app or by the person.**
@@ -10218,8 +10229,7 @@ class AppState extends ChangeNotifier
   void setBackground(String bg) {
     pushUndo();
     pageProps.background = bg;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void refresh() => notifyListeners();
@@ -10448,6 +10458,9 @@ class AppState extends ChangeNotifier
 
   // ── Persistence ────────────────────────────────────────────────────────
 
+  /// **And this notifies**, so a caller must not. Thirteen of them did, which
+  /// is one spare rebuild of everything on the page per edit — and per POINTER
+  /// SAMPLE on the one path that calls this in a loop, [moveSelectedBy].
   void markDirty() {
     _dirty = true;
     // Cheap counter, not a rebuild: it lets the open page's flashcards be
