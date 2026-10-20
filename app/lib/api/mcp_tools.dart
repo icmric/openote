@@ -26,6 +26,7 @@ import '../markdown/md_blocks.dart';
 import '../model/block_schema.dart';
 import '../model/inline_atom.dart';
 import '../model/models.dart';
+import '../model/tags.dart' show NoteTag;
 import '../model/table_conversion.dart';
 import '../state/app_state.dart';
 import '../state/page_protection.dart' show ProtectionTree;
@@ -1367,7 +1368,18 @@ Map<String, Object?> _update(_PageWrite pw, Map<String, Object?> args) {
     warnings.addAll(check.warnings);
   }
   pw.begin();
-  if (content != null) b.content = content;
+  if (content != null) {
+    // A change of text is an edit like a typed one (spec §4.6), so tags and
+    // flashcard schedules follow their lines the way they do when typing —
+    // unless the caller sent tags of its own, which are then the truth.
+    if (b.type == BlockType.text && !(patch as Map).containsKey('tags')) {
+      final before = b.content['text'] as String? ?? '';
+      final after = content['text'] as String? ?? '';
+      NoteTag.rebase(content, before, after);
+      pw.app.study.remapCardStates(b.id, NoteTag.lineMoves(before, after));
+    }
+    b.content = content;
+  }
   final dx = args.containsKey('x') ? (args['x'] as num).toDouble() - b.x : 0.0;
   final dy = args.containsKey('y') ? (args['y'] as num).toDouble() - b.y : 0.0;
   if (dx != 0 || dy != 0) _shift(b, dx, dy);

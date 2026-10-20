@@ -379,14 +379,15 @@ class _TextBlockViewState extends State<TextBlockView> {
           // line moves every marker below it onto the wrong sentence — and
           // takes the flashcards derived from them with it. Rebase before the
           // new text lands, while both versions are still available, and carry
-          // each moved tag's review schedule across with it: a card is
-          // identified by `blockId:line`, so a tag that moves alone leaves its
-          // schedule orphaned under a name nothing points at any more.
-          widget.app.study.remapCardStates(
-            widget.block.id,
-            NoteTag.rebase(widget.block.content,
-                _engine.deserialize(widget.block.content), v),
-          );
+          // every moved line's review schedule across with it: a card is
+          // identified by `blockId:line`, so a card that moves alone leaves its
+          // schedule orphaned under a name nothing points at any more — or
+          // worse, under the name of the card below it. EVERY line, not the
+          // tags' lines: a card written as `?[…](…)` has no tag.
+          final was = _engine.deserialize(widget.block.content);
+          NoteTag.rebase(widget.block.content, was, v);
+          widget.app.study
+              .remapCardStates(widget.block.id, NoteTag.lineMoves(was, v));
           _engine.serialize(widget.block.content, v);
           widget.block.updatedAt = nowMs();
           // Width is measured in the parent build (lag-free); markDirty here

@@ -385,25 +385,44 @@ class StudyState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Carry review schedules across when a block's tags change line.
+  /// Carry review schedules across when a block's lines move — [moved] is
+  /// `NoteTag.lineMoves` of the edit, every line that came through it.
   ///
   /// A card's identity is `blockId:line` — chosen because it survives edits to
-  /// other lines with no extra bookkeeping — so re-basing a tag *renames its
+  /// other lines with no extra bookkeeping — so a line moving *renames its
   /// card*. Without this the schedule is orphaned under the old name and the
-  /// next prune deletes it: press Enter above a tagged line and weeks of
-  /// spacing are gone, from a keystroke that changed nothing about the card.
+  /// next prune deletes it: press Enter above a card and weeks of spacing are
+  /// gone, from a keystroke that changed nothing about the card.
   ///
-  /// Removed first, then re-added, so a run of tags shifting by one can't
-  /// overwrite each other on the way past.
+  /// **Every line, not only tagged ones** (v1.0.2 bug 16). This was fed the
+  /// TAGS' moves, and a card written in the prose (`?[…](…)`) has no tag: one
+  /// line typed above two of them moved the first onto the second's id, so
+  /// it took the second's schedule, the second started over, and the first's
+  /// own history was left for the prune.
+  ///
+  /// Removed first, then re-added, so a run of lines shifting by one can't
+  /// overwrite each other on the way past. **And every destination is
+  /// cleared**, schedule or not: whatever was filed there belonged to a line
+  /// that has itself moved (and is carried) or is gone. Overwriting only when
+  /// the arriving card had a schedule meant a card never reviewed moved onto
+  /// the deleted line's id and inherited its history.
   void remapCardStates(String blockId, Map<int, int> moved) {
     if (moved.isEmpty) return;
     final carried = <String, CardState>{};
+    var changed = false;
     for (final e in moved.entries) {
       if (e.key == e.value) continue;
       final s = _cardStates.remove('$blockId:${e.key}');
-      if (s != null) carried['$blockId:${e.value}'] = s;
+      if (s != null) {
+        carried['$blockId:${e.value}'] = s;
+        changed = true;
+      }
     }
-    if (carried.isEmpty) return;
+    for (final e in moved.entries) {
+      if (e.key == e.value) continue;
+      if (_cardStates.remove('$blockId:${e.value}') != null) changed = true;
+    }
+    if (!changed) return;
     _cardStates.addAll(carried);
     _writeCardStates();
     studyRevision++;

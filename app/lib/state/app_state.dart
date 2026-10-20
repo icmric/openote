@@ -9542,15 +9542,39 @@ class AppState extends ChangeNotifier
     final j = jsonDecode(snap) as Map<String, dynamic>;
     pageProps =
         PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
-    blocks = [
+    final restored = [
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
     ];
+    _carryCardSchedules(blocks, restored);
+    blocks = restored;
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
     docRevision++;
     markDirty(); // which notifies
+  }
+
+  /// **Flashcard schedules follow their lines through undo and redo.**
+  ///
+  /// A schedule is filed under `blockId:line`, and the edit being undone
+  /// moved it with its line (`StudyState.remapCardStates`). Undo puts the
+  /// text and its tags back, which live in the block, and left the schedules
+  /// where the edit had put them — so Enter above two reviewed cards and then
+  /// Ctrl+Z swapped their histories. The same matching in reverse, box by box,
+  /// puts them back.
+  void _carryCardSchedules(List<Block> from, List<Block> to) {
+    final was = {
+      for (final b in from)
+        if (b.type == BlockType.text) b.id: b.content['text'] as String? ?? ''
+    };
+    for (final b in to) {
+      if (b.type != BlockType.text) continue;
+      final before = was[b.id];
+      if (before == null) continue;
+      final after = b.content['text'] as String? ?? '';
+      study.remapCardStates(b.id, NoteTag.lineMoves(before, after));
+    }
   }
 
   void pushUndo() {
