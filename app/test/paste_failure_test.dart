@@ -83,10 +83,10 @@ void main() {
     app.addListener(() => notified++);
     final before = app.blocks.length;
 
-    // MUTATION: swap `tryAddBlob` back to `addBlob` in `insertImageBytes`
+    // MUTATION: swap `tryAddBlob` back to `addBlob` in `insertImageInNewBox`
     // and this test fails by THROWING — which on screen was a paste that
     // did nothing at all.
-    final b = insertImageBytes(app, png, 'image/png', const Offset(200, 200));
+    final b = insertImageInNewBox(app, png, 'image/png', const Offset(200, 200));
 
     expect(b, isNull);
     expect(app.blocks.length, before,
@@ -123,16 +123,21 @@ void main() {
 
     // Fail once so there is a notice to clear.
     breakBlobStore(store);
-    expect(insertImageBytes(app, png, 'image/png', const Offset(200, 200)),
+    expect(insertImageInNewBox(app, png, 'image/png', const Offset(200, 200)),
         isNull);
     expect(app.saveError, isNotNull);
 
     // The disk comes back (space freed, folder writable again).
     repairBlobStore(store);
-    final b = insertImageBytes(app, png, 'image/png', const Offset(200, 200));
+    final b = insertImageInNewBox(app, png, 'image/png', const Offset(200, 200));
     expect(b, isNotNull, reason: 'the ordinary paste path still places a block');
-    expect((b!.content['blob'] as String), startsWith('sha256:'));
-    expect(app.blob(b.content['blob'] as String), isNotNull,
+    // A picture is text now — `![](sha256:…)` in a box of its own, which is
+    // the one shape a picture has on a page (v1.0.2 §3).
+    expect(b!.type, BlockType.text);
+    final ref = RegExp(r'!\[\]\((sha256:[0-9a-f]+)\)')
+        .firstMatch(b.content['text'] as String);
+    expect(ref, isNotNull, reason: 'the box carries the reference inline');
+    expect(app.blob(ref!.group(1)!), isNotNull,
         reason: 'and the bytes are really stored under that hash');
     // MUTATION: stop clearing `_blobWriteError` on a successful `tryAddBlob`
     // and this fails — the chip would cry wolf for the rest of the session.

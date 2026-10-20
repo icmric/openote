@@ -4,6 +4,7 @@ import '../model/inline_atom.dart';
 
 import 'package:flutter/material.dart';
 
+import '../core/picture_bytes.dart';
 import '../core/platform_open.dart';
 import '../model/tags.dart';
 import '../editor/inline_math_editor.dart';
@@ -564,12 +565,9 @@ class _MarkdownViewState extends State<MarkdownView> {
         //  * top-left anchored, so any residual aspect mismatch shows as a gap
         //    at the bottom rather than moving the image.
         final sized = w != null || h != null;
-        final image = Image.memory(bytes,
-            width: w,
-            height: h,
-            fit: BoxFit.contain,
-            alignment: Alignment.topLeft,
-            gaplessPlayback: true);
+        // Raster or SVG, decided by the bytes — see [pictureFromBytes]. The
+        // reference is a hash and says nothing about the format.
+        final image = pictureFromBytes(bytes, width: w, height: h);
         final menu = widget.onPictureMenu;
         return Padding(
           padding: EdgeInsets.only(

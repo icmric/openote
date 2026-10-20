@@ -188,6 +188,39 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('AND A MIDDLE-DRAG OVER A TEXT BOX DOES NOT SELECT ITS TEXT',
+        (t) async {
+      // The owner, once the canvas half worked: *"The middle button drag
+      // kinda works however it does still highlight text but still allows me
+      // to move around."* Two handlers on one gesture, and only the canvas
+      // was looking at which button it was.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final box = app.addBlock(Block(
+          type: BlockType.text,
+          x: 100,
+          y: 100,
+          w: 300,
+          h: 90, // tall enough that the placeholder font does not overflow it
+          content: {'text': 'some words to drag across', 'autoWidth': false}));
+      await pump(t);
+      final before = app.canvas.offset;
+
+      final at = app.canvas.pageToScreen(const Offset(150, 120));
+      final g = await t.startGesture(at,
+          kind: PointerDeviceKind.mouse, buttons: kMiddleMouseButton);
+      await g.moveBy(const Offset(-60, -30));
+      await t.pump();
+      await g.up();
+      await t.pump();
+
+      expect(app.canvas.offset, isNot(before), reason: 'it panned');
+      expect(app.editingBlockId, isNull,
+          reason: 'and never opened the box to select text in it');
+      expect(app.selectedIds, isEmpty);
+      expect(box.content['text'], 'some words to drag across');
+      app.cancelPendingSave();
+    });
+
     testWidgets('A DRAG OVER THE SLIDE BOX-SELECTS THE NOTES ON IT', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final note = noteAt(200, 200);

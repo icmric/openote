@@ -126,8 +126,11 @@ void main() {
           reason: 'an 80-character reference must not pin the box wide');
     });
 
-    test('a drop that misses every box falls back to a picture block',
+    test('A DROP THAT MISSES EVERY BOX MAKES A BOX, NOT A PICTURE BLOCK',
         () async {
+      // The owner: *"Dragging and dropping an image onto the canvas inserts
+      // it as the old discontinued image format rather than the more scalable
+      // one which inlines with text."* This was the last route that did.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp, app, _) = await fixture();
       addTearDown(() {
@@ -140,7 +143,19 @@ void main() {
       expect(
           insertImageIntoTextAt(app, png, 'image/png', const Offset(900, 900),
               dark: false),
-          isNull);
+          isNull,
+          reason: 'nothing to drop it into, which is the case under test');
+
+      final made = insertImageInNewBox(
+          app, png, 'image/png', const Offset(900, 900));
+
+      expect(made, isNotNull);
+      expect(made!.type, BlockType.text,
+          reason: 'a regular content box, which can be typed into');
+      expect(made.content['text'] as String, contains('](sha256:'));
+      expect(made.content['autoWidth'], false);
+      expect(app.blocks.where((x) => x.type == BlockType.image), isEmpty,
+          reason: 'and no page gains a new image block by any route');
     });
 
     test('tags below the image keep decorating their own lines', () async {

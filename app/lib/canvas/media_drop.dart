@@ -36,31 +36,57 @@ String mimeForExtension(String name) {
   };
 }
 
-const _imageExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'};
+/// What counts as a picture when a file arrives by drop or by paste.
+///
+/// **SVG is one of them** (GitHub #10, promised for this release): a drawing
+/// is a picture, and before this a dropped .svg became an attachment chip — a
+/// file you could open in something else, on a page that could have drawn it.
+/// Nothing else about the path changes, because an SVG blob is referenced the
+/// same way a PNG blob is and the renderers ask the bytes which they have.
+const _imageExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'};
 
 bool _looksLikeImage(String name) =>
     _imageExtensions.contains(name.split('.').last.toLowerCase());
 
-/// Insert image bytes as a block at [at] (page coordinates), sized to fit.
+/// **A picture with no box to go in makes one**, at [at] (page coordinates).
 ///
-/// The block is created at a sane width and left selected, so the very next
-/// gesture can move or resize it — pasting something you then have to hunt for
-/// is barely better than not pasting at all.
+/// The last of the four routes that still made a standalone `BlockType.image`.
+/// Reported by the owner: *"Dragging and dropping an image onto the canvas
+/// inserts it as the old discontinued image format rather than the more
+/// scalable one which inlines with text. I think the best way to fix this
+/// would be to create a regular content box and just insert the image in
+/// there."* Quite so, and it is also the answer the plan had already reached
+/// (v1.0.2 §3): there is then exactly ONE shape a picture has on a page —
+/// `![](sha256:…)` in a text block's own Markdown — and *"1 single unified way
+/// of managing any type of data on the page"* is true rather than nearly true.
+///
+/// What that buys, which is the whole reason: the box can be typed into, so a
+/// picture dropped on empty canvas is the start of a note rather than an
+/// opaque thing sitting on one. Select, cut, copy, paste and move are the
+/// field's own, because the picture is characters. And an image block had no
+/// text buffer, which is what made *"I can't type into this box with the
+/// image"* literally true.
 ///
 /// Null when the bytes could not be stored (full disk, read-only folder):
 /// the failure is already on the status bar via `AppState.saveError`, and a
 /// block referencing bytes nothing holds would render as a broken picture
 /// that LOOKS like the paste worked.
-Block? insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
+Block? insertImageInNewBox(AppState app, Uint8List bytes, String mime, Offset at,
     {double width = 320}) {
   final hash = app.tryAddBlob(bytes, mime);
   if (hash == null) return null;
   final b = app.addBlock(Block(
-    type: BlockType.image,
+    type: BlockType.text,
     x: at.dx - width / 2,
+    // The same geometry the image block used, so a picture still lands where
+    // it was dropped rather than hanging below the pointer.
     y: at.dy - width * 0.375,
     w: width,
-    content: {'blob': 'sha256:$hash', 'mime': mime},
+    // **No `h`**: the box measures itself round the picture, which is what an
+    // image block's null height did by aspect ratio. And `autoWidth: false`,
+    // because auto-width measures the RAW markdown and eighty characters of
+    // hash would pin the box to its maximum width.
+    content: {'text': '![](sha256:$hash)', 'autoWidth': false},
   ));
   app.select(b.id);
   return b;
@@ -82,7 +108,7 @@ Block? insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
 /// resolves.
 ///
 /// Returns the block it went into, or null when the drop missed every text
-/// box (the caller then falls back to [insertImageBytes]).
+/// box (the caller then falls back to [insertImageInNewBox]).
 /// Put an image into the text box that is being edited RIGHT NOW, at the
 /// caret. Returns the block it went into, or null when nothing editable has
 /// focus — the caller then falls back to making a standalone image block.
@@ -117,7 +143,7 @@ Block? insertImageIntoTextAt(
   final target = _textBlockAt(app, pagePt);
   if (target == null) return null;
   // Same rule as [insertImageAtCaret]: no reference to bytes that were never
-  // stored. The caller's fallback to [insertImageBytes] fails the same way
+  // stored. The caller's fallback to [insertImageInNewBox] fails the same way
   // and the notice is already up.
   final hash = app.tryAddBlob(bytes, mime);
   if (hash == null) return null;
@@ -233,7 +259,7 @@ void _rebaseTags(Block b, {required int fromLine, required int by}) {
 
 /// Insert a non-image file as an attachment block.
 ///
-/// Null on a failed write, like [insertImageBytes] — an attachment chip whose
+/// Null on a failed write, like [insertImageInNewBox] — an attachment chip whose
 /// bytes were never stored is a file the user believes is kept and is not.
 Block? insertFileBytes(
     AppState app, Uint8List bytes, String name, Offset at) {
@@ -279,7 +305,7 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
     // Into the text box under the cursor when there is one — a screenshot
     // pasted onto a note belongs IN the note, not floating over it.
     if (insertImageIntoTextAt(app, bytes, _mimeOf(fmt), at, dark: dark) == null) {
-      insertImageBytes(app, bytes, _mimeOf(fmt), at);
+      insertImageInNewBox(app, bytes, _mimeOf(fmt), at);
     }
     return PasteResult.image;
   }
@@ -297,7 +323,7 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
         } else if (insertImageIntoTextAt(app, bytes, mimeForExtension(name), at,
                 dark: dark) ==
             null) {
-          insertImageBytes(app, bytes, mimeForExtension(name), at);
+          insertImageInNewBox(app, bytes, mimeForExtension(name), at);
         }
         return PasteResult.files;
       }
@@ -451,7 +477,7 @@ Future<int> dropFilesOntoCanvas(
       landed = insertImageIntoTextAt(app, bytes, mimeForExtension(name), where,
               dark: dark) !=
               null ||
-          insertImageBytes(app, bytes, mimeForExtension(name), where) != null;
+          insertImageInNewBox(app, bytes, mimeForExtension(name), where) != null;
     }
     if (landed) {
       offset += 24;

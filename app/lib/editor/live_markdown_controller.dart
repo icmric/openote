@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart'
     show indentPx, inlineLinkStyle, inlineRunStyle, kBulletGutter;
+import '../core/picture_bytes.dart';
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
 import '../model/inline_atom.dart';
@@ -2122,20 +2123,15 @@ class _EditImageState extends State<_EditImage> {
     final w = _dragW ?? widget.width;
     final h = _dragH ?? widget.height;
     final sized = w != null || h != null;
-    final image = Image.memory(widget.bytes,
+    // Raster or SVG, decided by the bytes, through the one helper the
+    // read-only renderer uses too — a drawing that appeared while you typed
+    // and vanished when you clicked away would be the two of them disagreeing.
+    final image = pictureFromBytes(widget.bytes,
         key: _imgKey,
         width: w,
         height: h,
-        fit: BoxFit.contain,
-        alignment: Alignment.topLeft,
-        gaplessPlayback: true,
-        // The decode fails asynchronously, so the swap has to wait for the
-        // frame that is already building.
-        errorBuilder: (_, __, ___) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _undecodable = true);
-          });
-          return const SizedBox.shrink();
+        onUndecodable: () {
+          if (mounted) setState(() => _undecodable = true);
         });
     return Padding(
       padding: EdgeInsets.only(

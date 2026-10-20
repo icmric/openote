@@ -20,6 +20,7 @@
 /// cut at the fold, which is what a printer does and what the reader expects.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -33,6 +34,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../canvas/ink_painter.dart' show colorFromHex;
+import '../core/picture_bytes.dart' show looksLikeSvg;
 import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
 import '../math/graph_plot.dart';
@@ -43,6 +45,36 @@ import '../state/app_state.dart';
 import 'md_common.dart';
 import 'pdf_export.dart' show buildPageRasterPdf;
 import 'widget_raster.dart';
+
+/// A picture for the PDF, raster or vector.
+///
+/// An SVG blob used to reach `pw.MemoryImage`, fail to decode and be caught by
+/// the guard around it — the words survived and the drawing silently did not.
+/// `pw.SvgImage` draws it as vector, which is the whole point of having it on
+/// the page: it stays sharp at any zoom and in print.
+///
+/// Null when the bytes are neither, which is what the callers already handle.
+pw.Widget? _pdfPicture(Uint8List bytes,
+    {double? width,
+    double? height,
+    pw.BoxFit fit = pw.BoxFit.contain,
+    pw.Alignment alignment = pw.Alignment.centerLeft}) {
+  try {
+    if (looksLikeSvg(bytes)) {
+      return pw.SvgImage(
+          svg: utf8.decode(bytes, allowMalformed: true),
+          width: width,
+          height: height,
+          fit: fit,
+          alignment: alignment);
+    }
+    return pw.Image(pw.MemoryImage(bytes),
+        width: width, height: height, fit: fit, alignment: alignment);
+  } catch (_) {
+    // A picture the encoder cannot read must not take the words with it.
+    return null;
+  }
+}
 
 /// Page px per PDF point.
 ///
@@ -513,14 +545,14 @@ pw.Widget? _mixedFlow(AppState app, Block b,
           // points — a 600px screenshot drawn 8 inches wide. Falling back to
           // the block's own width is what the screen does too.
           final wPt = (wPx ?? b.w) / _pxPerPoint;
-          children.add(pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 2),
-            child: pw.Image(pw.MemoryImage(bytes),
-                width: wPt,
-                height: hPx == null ? null : hPx / _pxPerPoint,
-                fit: pw.BoxFit.contain,
-                alignment: pw.Alignment.centerLeft),
-          ));
+          final picture = _pdfPicture(bytes,
+              width: wPt, height: hPx == null ? null : hPx / _pxPerPoint);
+          if (picture != null) {
+            children.add(pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+              child: picture,
+            ));
+          }
         } catch (_) {
           // An image the encoder cannot read must not take the words with it.
         }
@@ -949,12 +981,8 @@ pw.Widget? _imageWidget(AppState app, Block b, double h,
   final ref = b.content['blob'] as String?;
   final bytes = prerendered ?? (ref == null ? null : app.blob(ref));
   if (bytes != null) {
-    try {
-      image = pw.Image(pw.MemoryImage(bytes),
-          width: wPt, height: hPt, fit: pw.BoxFit.fill);
-    } catch (_) {
-      image = null;
-    }
+    image = _pdfPicture(bytes,
+        width: wPt, height: hPt, fit: pw.BoxFit.fill);
   }
 
   // An imported slide carries the text pdfium pulled out of it. Emitting it

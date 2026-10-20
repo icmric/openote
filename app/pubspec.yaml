@@ -31,6 +31,11 @@ dependencies:
   flutter_math_fork: ^0.7.2
   # Image insertion & save dialogs
   file_selector: ^1.0.3
+  # SVG drawings on a page, in the flow of the writing. Already in the tree
+  # transitively (through flutter_math_fork); promoted because the renderers
+  # and the exporter now import it directly. MIT (Dan Field); audited per
+  # LICENSING.md.
+  flutter_svg: ^2.3.0
   # xlsx import: an .xlsx is a zip of XML, and both halves were ALREADY in
   # the dependency tree transitively — promoting them adds no new third-party
   # code to the build, which is why the reader is hand-rolled rather than a

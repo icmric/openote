@@ -4,6 +4,28 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — drawings, and pictures that live in the writing
+
+- **SVG drawings work.** Drop one on a page, or Insert ▸ Image, and it is
+  drawn as a drawing — sharp at any zoom, and still sharp in an exported PDF,
+  because it is exported as vector rather than as a photograph of itself.
+  Before, a dropped .svg became an attachment chip on a page that could have
+  drawn it.
+- **A picture dropped on empty canvas makes a box you can type in.** It used
+  to make a picture-only block: opaque, higher than the text, and with nothing
+  to type into — so a picture dropped on a note covered it. Now there is one
+  shape a picture has on a page, whichever way it arrives, and it is part of
+  the writing: select it, cut it, paste it, write under it.
+  - **Nothing already on your pages changes.** Picture blocks still open,
+    still move and still export; the only two routes that made new ones have
+    stopped.
+- **The middle button no longer highlights text while it pans.** Panning over
+  a box dragged the page and selected the box's words at the same time.
+- **A pinch no longer leaves the alignment grid on the page.** Once the grid
+  appeared on every page and stayed until a restart: the second finger of a
+  pinch cancels the first, and a cancelled drag never told the canvas it had
+  ended.
+
 ### Added — group anything with anything
 
 - **Select several things and group them**: Ctrl+G, the right-click menu, or

@@ -1243,6 +1243,35 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  /// **A gesture taken away mid-drag still has to end.**
+  ///
+  /// The framework cancels a pointer when something else wins the arena — a
+  /// second finger arriving on the way to a pinch is the ordinary case — and
+  /// this `Listener` had no cancel at all, so a drag that was cancelled never
+  /// reached [_selectUp] and `draggingBlock` stayed true. That flag is what
+  /// draws the alignment grid, on every page, until something else happens to
+  /// clear it.
+  ///
+  /// Which is the owner's report: *"in once case caused a grid to appear
+  /// permenantly on all pages in addition to any background styling.
+  /// Disapeared after a restart"* — a restart being the only thing that was
+  /// certain to clear it. Reported while describing touch navigation, which
+  /// is where the stray second finger comes from.
+  ///
+  /// Nothing is committed here: a cancelled drag is not a drop. The blocks
+  /// keep whatever the last move put on them, which is what the undo pushed
+  /// at the start of the drag is for.
+  void _selectCancel(PointerCancelEvent e) {
+    _touches.remove(e.pointer);
+    if (_touches.length < 2) _pinchBaseDist = null;
+    if (_mode == _DragMode.moveSelection) app.settleSelected();
+    _mode = _DragMode.none;
+    _moveUndoPushed = false;
+    _downOnLocked = false;
+    app.setDragging(false);
+    setState(() {});
+  }
+
   void _selectUp(PointerUpEvent e) {
     _touches.remove(e.pointer);
     if (_touches.length < 2) _pinchBaseDist = null;
@@ -1945,6 +1974,7 @@ class _PageCanvasState extends State<PageCanvas> {
         onPointerDown: _selectDown,
         onPointerMove: _selectMove,
         onPointerUp: _selectUp,
+        onPointerCancel: _selectCancel,
         behavior: HitTestBehavior.translucent,
         child: canvas,
       );

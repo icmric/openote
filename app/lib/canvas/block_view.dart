@@ -1,4 +1,5 @@
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -260,7 +261,21 @@ class _BlockViewState extends State<BlockView> {
         local.dy > s.height - _kChromePad;
   }
 
+  /// **The middle button is the canvas's, wherever it is pressed.**
+  ///
+  /// Nothing on the page has a use for it and panning is not a block's
+  /// business, so a block neither claims it nor reads it. Reported by the
+  /// owner after the canvas half of this was fixed: *"The middle button drag
+  /// kinda works however it does still highlight text but still allows me to
+  /// move around"* — the canvas was panning and the box underneath was
+  /// drag-selecting its own text at the same time, because only one of the
+  /// two was looking at which button it was.
+  static bool _isMiddle(PointerEvent e) =>
+      e.kind == PointerDeviceKind.mouse &&
+      (e.buttons & kMiddleMouseButton) != 0;
+
   void _pointerDown(PointerDownEvent e) {
+    if (_isMiddle(e)) return;
     // **A background layer does not claim.** Claiming is how a block tells the
     // canvas to keep its hands off a gesture, and a locked block — an
     // imported slide — has no gesture of its own: it cannot be moved, resized
@@ -276,6 +291,7 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerMove(PointerMoveEvent e) {
+    if (_isMiddle(e)) return; // see [_isMiddle]
     final from = _pressGlobal;
     if (from == null || !_editableType || _locked) return;
     // A drag that began on the bar or a handle is a move or a resize. It must

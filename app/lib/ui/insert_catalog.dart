@@ -489,32 +489,26 @@ Future<void> insertPickedImage(
   final file = await _pick(context, groups: [
     XTypeGroup(
         label: L.of(context).insertPickImages,
-        extensions: const ['png', 'jpg', 'jpeg', 'gif', 'webp'])
+        extensions: const ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
   ]);
   if (file == null) return;
   final Uint8List bytes = await file.readAsBytes();
-  final ext = file.name.split('.').last.toLowerCase();
-  final mime = switch (ext) {
-    'jpg' || 'jpeg' => 'image/jpeg',
-    'gif' => 'image/gif',
-    'webp' => 'image/webp',
-    _ => 'image/png',
-  };
+  // The one table, in `media_drop.dart`, so the menu and the drop cannot
+  // disagree about what a file is — which is how .svg came to be a picture by
+  // one route and an attachment by the other.
+  final mime = mimeForExtension(file.name);
   // Caret first. If a text box has focus the picture belongs IN it, in the
   // flow of the writing — the same thing paste and drag-and-drop already do.
   if (insertImageAtCaret(app, bytes, mime) != null) return;
 
-  // `tryAddBlob`: a full disk or read-only folder throws out of `writeBlob`
-  // synchronously, and a block referencing unstored bytes must not be made.
-  final hash = app.tryAddBlob(bytes, mime);
-  if (hash == null) return;
-  final b = app.addBlock(Block(
-      type: BlockType.image,
-      x: at.dx,
-      y: at.dy,
-      w: 320,
-      content: {'blob': 'sha256:$hash', 'mime': mime}));
-  app.select(b.id);
+  // And with no caret, a box of its own carrying the same reference — NOT a
+  // standalone picture block. This was the second of the two routes that
+  // still made one; the other was a drop onto empty canvas. See
+  // [insertImageInNewBox], which also handles the failed-write case.
+  //
+  // Centred on [at] rather than cornered there, which is what every other
+  // route does with the point it is given.
+  insertImageInNewBox(app, bytes, mime, at);
 }
 
 Future<void> insertPickedFile(
