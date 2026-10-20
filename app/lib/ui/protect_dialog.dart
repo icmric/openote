@@ -232,6 +232,20 @@ class _UnlockDialogState extends State<_UnlockDialog> {
   }
 }
 
+/// **Before a window shows, or is made onto, page [pageId]** (v1.0.2 bug 33).
+///
+/// True at once for a page a window may already show; otherwise only once the
+/// passcode has been given, which opens the windows onto that passcode's pages
+/// for the rest of this visit to the open page — and nothing else: the page
+/// stays locked in the navigator. See [AppState.windowShows].
+Future<bool> confirmWindowOnto(
+    BuildContext context, AppState app, String pageId) async {
+  if (app.windowShows(pageId)) return true;
+  if (app.node(pageId) == null) return false; // in the recycle bin
+  return askToUnlock(context, app.windowLockTitle(pageId),
+      (pw) => app.unlockWindowsOnto(pageId, pw));
+}
+
 /// Run the whole "the user clicked a locked page" interaction. Returns true
 /// when the subtree is now unlocked.
 Future<bool> promptUnlock(

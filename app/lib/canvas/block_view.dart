@@ -19,6 +19,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/color_picker.dart';
 import '../ui/context_menus.dart';
+import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import 'canvas_controller.dart';
 import 'portal_view.dart';
 
@@ -673,7 +674,8 @@ class _BlockViewState extends State<BlockView> {
       BlockType.embed => PortalBlockView(
           block: b,
           app: app,
-          onMenu: (at) => showBlockMenu(context, app, b, at)),
+          onMenu: (at) => showBlockMenu(context, app, b, at),
+          onUnlock: (pageId) => confirmWindowOnto(context, app, pageId)),
       BlockType.board => BoardBlockView(block: b, app: app),
       BlockType.graph => GraphBlockView(block: b, app: app),
       BlockType.substitute => SubstituteBlockView(block: b, app: app),

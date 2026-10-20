@@ -537,6 +537,7 @@ class AppState extends ChangeNotifier
   void reloadProtection() {
     _protectedIds.clear();
     _unlocked.clear();
+    _windowUnlocks.clear();
     if (notebookId == null) return;
     final prefix = 'protect:${notebookId!}:';
     for (final k in _repo.settingKeys()) {
@@ -630,10 +631,69 @@ class AppState extends ChangeNotifier
 
   /// Forget every unlock now — the "Lock now" action, and what shutdown does.
   void lockAll() {
-    if (_unlocked.isEmpty) return;
+    if (_unlocked.isEmpty && _windowUnlocks.isEmpty) return;
     _unlocked.clear();
+    _windowUnlocks.clear();
     _gateRevision++;
     notifyListeners();
+  }
+
+  // ── Windows onto pages with a passcode (v1.0.2 bug 33) ──────────────────
+  //
+  // A page window draws its source live, and nothing asked about the
+  // passcode: drag a locked page from the navigator onto any other page and
+  // its contents were there. The owner's rule for the fix: *"it requires a
+  // passcode to be able to view it before we insert/select a portion of the
+  // page to show, then require it again every time the page is opened to
+  // unlock the view."*
+  //
+  // So a window keeps its own unlocks, separate from [_unlocked], and they
+  // last for one visit to the page the window is on. Unlocking the section
+  // in the navigator does not open its windows elsewhere, and opening a
+  // window does not unlock the section: the two are different doors.
+
+  /// Passcode roots whose pages windows may show, on this visit to the page
+  /// they are on. Keyed by root, so one passcode opens every window onto the
+  /// pages it covers.
+  final Set<String> _windowUnlocks = {};
+
+  /// **Whether a window may show page [sourcePageId] now.**
+  ///
+  /// Always for a page with no passcode over it, and for the page you are
+  /// looking at — a window onto part of its own page shows nothing you cannot
+  /// already see beside it.
+  bool windowShows(String sourcePageId) {
+    if (sourcePageId == pageId) return true;
+    if (node(sourcePageId) == null) {
+      // In the recycle bin, a page is out of the tree, so nothing says which
+      // section it sat in — and that section may have a passcode. Unable to
+      // tell, a window shows one only where nothing in the notebook has one.
+      return !_anyProtection;
+    }
+    final root = governingNode(sourcePageId);
+    return root == null || _windowUnlocks.contains(root);
+  }
+
+  /// Try [passcode] for the windows onto [sourcePageId], for the rest of this
+  /// visit to the open page. Returns false — and changes nothing — when it
+  /// does not match.
+  bool unlockWindowsOnto(String sourcePageId, String passcode) {
+    final root = governingNode(sourcePageId);
+    if (root == null) return true;
+    final rec = protectionFor(root);
+    if (rec == null || !rec.matches(passcode)) return false;
+    _windowUnlocks.add(root);
+    _gateRevision++;
+    notifyListeners();
+    return true;
+  }
+
+  /// The name the passcode prompt for a window onto [sourcePageId] shows: the
+  /// thing whose passcode it is, which may be the section rather than the page.
+  String windowLockTitle(String sourcePageId) {
+    final root = governingNode(sourcePageId) ?? sourcePageId;
+    final t = nodes.where((n) => n.id == root).firstOrNull?.title.trim() ?? '';
+    return t.isEmpty ? 'This page' : t;
   }
 
   // ── Git as a sync transport (PLANNING: "git/github integration") ──────
@@ -8038,6 +8098,8 @@ class AppState extends ChangeNotifier
   Future<void> selectPage(String? id) async {
     _rememberView(); // keep your place when flicking between pages (§7a.5)
     await flushSave();
+    // A window onto a locked page asks again on every visit (bug 33).
+    if (id != pageId) _windowUnlocks.clear();
     pageId = id;
     select(null);
     _undo.clear();

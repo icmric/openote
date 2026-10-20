@@ -17,6 +17,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../ui/context_menus.dart';
+import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
@@ -2004,7 +2005,7 @@ class _PageCanvasState extends State<PageCanvas> {
         if (!_pageDragOver) setState(() => _pageDragOver = true);
       },
       onLeave: (_) => setState(() => _pageDragOver = false),
-      onAcceptWithDetails: (d) {
+      onAcceptWithDetails: (d) async {
         setState(() => _pageDragOver = false);
         final box = context.findRenderObject() as RenderBox?;
         if (box == null) return;
@@ -2013,6 +2014,9 @@ class _PageCanvasState extends State<PageCanvas> {
         // the pointer, and the window lands under the cursor rather than
         // up and to the left of it.
         final at = controller.screenToPage(box.globalToLocal(d.offset));
+        // A page with a passcode asks for it before a window shows it — the
+        // drag that made one was a way to read a locked page (bug 33).
+        if (!await confirmWindowOnto(context, app, d.data) || !mounted) return;
         app.pushUndo();
         final b = app.addBlock(Block(
           type: BlockType.embed,

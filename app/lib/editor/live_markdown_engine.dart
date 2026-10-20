@@ -29,6 +29,7 @@ import 'onote_text_editor.dart';
 import 'unicode_input.dart';
 import '../ui/context_menus.dart';
 import '../ui/link_dialog.dart';
+import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import '../ui/save_picture.dart';
 
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
@@ -1713,8 +1714,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
       if (site.wiki && (site.url?.isNotEmpty ?? false))
         ContextMenuButtonItem(
           label: 'Show as a page window',
-          onPressed: () {
+          onPressed: () async {
             editable.hideToolbar();
+            // A page with a passcode asks for it first (bug 33).
+            if (!await confirmWindowOnto(context, app, site.url!) ||
+                !context.mounted) {
+              return;
+            }
             _showLinkAsWindow(site);
           },
         ),
