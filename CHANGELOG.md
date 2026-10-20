@@ -4,6 +4,195 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — group anything with anything
+
+- **Select several things and group them**: Ctrl+G, the right-click menu, or
+  the button above the selection. A text box, a graph, a picture, some
+  handwriting, any combination — selecting one of them then selects all of
+  them, and they move, copy, cut and delete as a unit. Ctrl+Shift+G takes a
+  group apart again.
+- **Nothing moves either way.** A group is a relationship, not a container:
+  every block keeps its own geometry, its own type and its own place on the
+  page, so grouping and ungrouping are both free and an undo puts it back.
+- **A grouped box can still be typed in**: the first click takes the group,
+  and the next reaches the box under the pointer.
+- **A copy is its own group**, never a new member of the one it came from —
+  otherwise dragging the original would walk the copies across the page with
+  it. Paste part of a group and you get a group of just that part; a group
+  left with one member stops being a group.
+- **A notebook with no groups in it is written byte for byte as before**, so
+  this costs nothing until it is used.
+
+### Changed — the lasso selects, and stops rearranging
+
+- **The lasso no longer re-homes your strokes.** It used to splice everything
+  it caught into one new piece of handwriting, permanently — so a loop drawn
+  to move a word left the word welded together afterwards, and taking it apart
+  again meant lassoing each stroke. It selects what it caught and changes
+  nothing else; the selection going away leaves the strokes exactly as they
+  were. To make a lasting group, group it.
+
+### Changed — Settings is one group at a time
+
+- **A list of groups down the left, one group's settings on the right** —
+  Appearance, Writing and drawing, Connections, Help, About. It was one long
+  page with headings in it: the headings named the groups, but you still had
+  to scroll past every one of them to read the names.
+- **Fewer words on it, and lines between them.** Every description was read
+  again and either shortened or deleted: one was a three-line tooltip being
+  used as a label, one repeated the link underneath it, and the rest said at
+  length what their own control already said. A hairline now separates one
+  setting from the next, and a group with two distinct kinds of setting in it
+  (writing, then the pen and the screen) says so with a heading.
+
+### Fixed — the pen, the lasso and the flick
+
+- **The lasso selects boxes, pictures and graphs, not only handwriting.** It
+  only ever looked at ink. Anything at least half inside the loop is caught,
+  which is the same rule the rectangular selection uses — so a loop drawn
+  inside a slide still does not pick the slide up.
+- **An imported slide stays out of a lasso**, as it already stayed out of a
+  rectangular selection. Sweeping one up left the selection holding something
+  that cannot be moved, which is why a box in that selection appeared not to
+  move with everything else.
+- **One lassoed stroke offers a Delete**, like a selection of several things
+  does. Handwriting is painted rather than boxed, so it has no bar of its own
+  to put a cross on — and neither does a box while a drawing tool is in hand.
+- **What you lasso stays selected when you let the button go**, and the pen
+  then drags it. Releasing the side button handed the pen back, and the pen
+  coming back threw the selection away — so a loop drawn to move something
+  selected it for exactly as long as you held the button down.
+- **Anything selected can be dragged with a drawing tool in hand.** A drag
+  that starts inside the selection moves it; a press anywhere else puts it
+  down and draws, exactly as though nothing had been selected. So there is no
+  mode to leave and nothing to put back: the pen draws, and the selection is
+  dragged, and where you pressed is the whole difference. (An eraser still
+  erases, wherever it is aimed.)
+- **The eraser shows how far it reaches.** A faint ring follows the pointer
+  whenever a press would rub something out — including a hovering pen, so you
+  can see what the next touch will take before it takes it.
+- **The pen's buttons stopped being a coin toss.** The lasso setting did
+  nothing and the eraser one worked "most times but not every time": the
+  engine reports every pen event with no buttons at all on Windows, and those
+  arrive at stylus rate, so each one undid what the button had just said a
+  millisecond earlier.
+- **The Draw tab is shorter.** Pen size is one control with the presets and
+  the exact slider behind it, and the two hardware preferences — what the
+  pen's side button does, and whether a finger draws — are in Settings, where
+  you go looking for a setting. What is left on the row is what you change
+  while you are drawing.
+- **Each pen button does what you told Windows it was for.** A button your
+  pen driver maps to the eraser erases — Windows reports that one as "the pen
+  is inverted", which is its own way of saying eraser, so there is nothing to
+  configure. The other kind, which Windows only calls "barrel button",
+  **lassoes by default**, as it does in OneNote; the Draw tab can set it to
+  Select, Eraser or nothing instead. Before this, both ended up as the
+  eraser.
+- **Your pen's side button works.** It never could: Flutter reads a pen's
+  pressure and rotation from Windows and never looks at its buttons, reporting
+  every pen touch as a plain left-click — so the barrel press did not reach
+  Openote at all, whatever Openote did with it. It is read directly now. The
+  Draw tab chooses what it does: eraser (as before), Select, or nothing. The
+  tail of the pen always erases, because that end of a pen is an eraser.
+  - A pen with two side buttons reports both the same way, so they cannot be
+    told apart — not by us and not by Windows.
+- **Settings › Pen and touch test** shows exactly what your pen, your finger
+  and your buttons report, and what the app makes of it. It is there so a
+  report about input can be answered with evidence instead of a guess.
+- **A finger stops drawing once a pen has been used on the machine.** It used
+  to stop only for two seconds after the last stylus event, which is shorter
+  than the pause between two written words — so a resting hand drew. A
+  touch-only tablet still inks with a finger, and "Always" still means always.
+- **The lasso draws its loop as you draw it.** The outline only appeared once
+  the gesture ended.
+- **Ctrl+Shift+C swaps the last two colours** instead of toggling one colour
+  against none, so you can flick between two while writing. Out of the box the
+  pair is your colour and Automatic, which is the "a couple of words, not
+  every word" case.
+
+### Added — things on the canvas stay joined
+
+- **Group and ungroup.** A stroke is its own block, so a written word is
+  several of them and the lasso was the only thing that gathered them — for
+  exactly as long as the selection lasted. Joined blocks are now one thing to
+  pick up: clicking any member selects all of them, and they move, copy, cut
+  and delete together. Ctrl+G joins, Ctrl+Shift+G takes apart, and both are in
+  the right-click menu and on the button above a selection, because neither
+  chord is on a tablet held in one hand with a pen in the other.
+  - A grouped text box is still typeable: the first click picks the group up,
+    the second opens the box under the pointer.
+  - A copy never joins the group it was copied from, and a group left with one
+    member is no longer a group.
+  - Membership is an envelope field (`groupId`, Data Model Spec §3.2), so an
+    older release carries it through untouched rather than destroying it — it
+    just will not move the other members for you.
+
+### Added — Automatic text colour, and dark text on a slide
+
+- **There is a way back to the default colour.** The picker opens with
+  **Automatic** at the top: dark text on a light page, light on a dark one.
+  The colour button's own bar shows what Automatic will actually come out as,
+  rather than the near-black it usually becomes.
+- **Default text on a slide is dark, in either theme.** A PDF or a picture
+  brings its own background, so text on top of one contrasts with the
+  document rather than with the page — the rule the pen has followed since
+  automatic ink turned out to be white on a white scan. A colour you chose is
+  never overridden.
+
+### Added — the handwriting format is written down
+
+- **Anyone can read Openote handwriting without Openote.** The ink
+  specification now carries the stroke format's byte layout, with a worked
+  example to check an implementation against. It was the one part of a
+  notebook that nothing but Openote could read.
+
+### Fixed — handwriting, and annotating a PDF
+
+- **An edit to handwriting is no longer undone by the next save.** Moving,
+  erasing, recolouring or resizing a note written on an earlier day wrote the
+  new position and the old strokes, so one page reload later the selection box
+  was in the place you dragged it to and the handwriting was where it started.
+  Reported as boxes that "suddenly jump to different positions" and drags that
+  "only move the selection box".
+- **Middle-drag pans over a PDF or a picture**, not just over blank page. A
+  slide covers the whole page, so on an annotated PDF there was nowhere left
+  that panning worked.
+- **You can box-select your notes on top of a slide.** A drag over the slide
+  now draws a selection box, because an imported slide is the surface you are
+  writing on and has no use for a drag of its own. Before, there was no empty
+  space left to start one from.
+- **A locked slide behaves like the page behind your notes.** A selection box
+  passes over it, and clicking it no longer picks it up — so it cannot be
+  dragged, resized or carried off while you are writing on it, and a selection
+  of notes made over the top of one moves the notes. Right-clicking it still
+  reaches its own menu, which is where Unlock is.
+- **A PDF locks and unlocks as one document.** "Unlock every page of this PDF"
+  does the whole import at once, which on a forty-page deck was forty
+  right-clicks on forty pages. Unlocking the one slide in front of you is
+  still there beside it.
+- **A selection box takes in what it covers, not what it grazes.** It now
+  wants about half of something before claiming it, so brushing the corner of
+  a picture on the way past leaves the picture behind.
+- **Every stroke is its own mark.** Nothing decides which of your strokes
+  belong together any more. Anything drawn within two seconds of the last one
+  used to join it wherever on the page it was, so annotating the top of a
+  slide and then the bottom produced one piece of handwriting the size of the
+  slide — which every selection box then caught. To treat several strokes as
+  one thing, circle them with the lasso: it gathers them into one piece and
+  hands it over selected.
+- **A selection of handwriting is still drawn as one box**, not one per
+  stroke — which is what it looked like when a word was one piece, and the
+  selection is one thing you are about to move.
+- **And it costs no more space than it used to.** Separate strokes are stored
+  together and come back apart, so a page of handwriting takes the same room
+  it took when a whole word was one piece — measured, 200 strokes went from
+  26 KB to 123 KB when each became its own object, and they are back to 26 KB.
+  A group made with the lasso is stored as the one object it is.
+- **An imported picture keeps its real format.** Everything brought in from
+  OneNote was labelled a PNG whatever it was, so exporting that notebook to a
+  folder wrote JPEGs with a `.png` name. The format is read from the bytes,
+  and an exported picture is named accordingly.
+
 ### Fixed — text styles work together
 
 - **Any style can be combined with any other, in either order.** Bold and a
@@ -77,6 +266,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   name ready to be typed over. Pictures are not stored twice: the copy points
   at the same ones. A page with a passcode on it makes a copy with the same
   passcode.
+- Long menu labels shorten with an ellipsis instead of running past the
+  edge of the menu, which a longer translation could already do.
 
 ### Changed — a new page looks like the page above it, and templates are gone
 
@@ -121,6 +312,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   letter — `Google Drive · you@example.com (G:)`.
 - Drives that cannot say anything useful are left alone: a folder inside your
   home directory is still just "Dropbox", with no drive letter to add noise.
+
 
 
 ### Added — try Openote in a browser before you download it

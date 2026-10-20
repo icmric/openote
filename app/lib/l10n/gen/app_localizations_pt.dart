@@ -21,6 +21,9 @@ class LPt extends L {
   String get atomUpdateToView => 'Atualize o Openote para o ver';
 
   @override
+  String get barBackToEquation => 'Voltar às ferramentas de equação';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -70,9 +73,6 @@ class LPt extends L {
 
   @override
   String get barEraserWhole => 'Apaga o traço inteiro que você tocar';
-
-  @override
-  String get barBackToEquation => 'Voltar às ferramentas de equação';
 
   @override
   String get barEscWhenDone => 'Esc quando terminar';
@@ -151,14 +151,6 @@ class LPt extends L {
   String get barInkMoreColours => 'Mais cores…';
 
   @override
-  String barPenSize(String size) {
-    return 'Espessura $size';
-  }
-
-  @override
-  String get barPenSizeExact => 'Tamanho exato…';
-
-  @override
   String get barInkPickColour => 'Obter uma cor da página';
 
   @override
@@ -193,6 +185,14 @@ class LPt extends L {
   @override
   String get barPenProximity =>
       'Aproximar a caneta da página muda para traço.\nSe escolher outra ferramenta com a caneta por perto, ela fica\naté a caneta se afastar e voltar. A ponta traseira da caneta (ou\no botão dela, mantido apertado) apaga.';
+
+  @override
+  String barPenSize(String size) {
+    return 'Espessura $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Tamanho exato…';
 
   @override
   String get barPlanner => 'Agenda';
@@ -319,10 +319,6 @@ class LPt extends L {
   String get barToolText => 'Texto  (T)';
 
   @override
-  String get barTouchDrawing =>
-      'Desenhe com o dedo.\nAuto: o dedo desenha até você usar a caneta; depois o dedo arrasta a página, para a palma da mão não marcar nada.\nDois dedos sempre arrastam e dão zoom.';
-
-  @override
   String get barUnderline => 'Sublinhado  (Ctrl+U)';
 
   @override
@@ -337,6 +333,15 @@ class LPt extends L {
   String get canvasDeleteSelection => 'Eliminar  (Del)';
 
   @override
+  String get canvasGroupSelection => 'Agrupar  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Desagrupar  (Ctrl+Shift+G)';
+
+  @override
+  String get commandNotInDemo => 'Não disponível na demonstração web';
+
+  @override
   String get commonBack => 'Voltar';
 
   @override
@@ -344,6 +349,9 @@ class LPt extends L {
 
   @override
   String get commonClose => 'Fechar';
+
+  @override
+  String get commonCopy => 'Copiar';
 
   @override
   String get commonDelete => 'Apagar';
@@ -536,9 +544,6 @@ class LPt extends L {
   String get insertLinkToPage => 'Ligar a uma página';
 
   @override
-  String get linkEdit => 'Editar link…';
-
-  @override
   String get insertPageLink => 'Link';
 
   @override
@@ -609,6 +614,9 @@ class LPt extends L {
   String get insertVideoTip => 'Uma gravação de aula, ou qualquer link da web';
 
   @override
+  String get linkEdit => 'Editar link…';
+
+  @override
   String mathSemanticLabel(String latex) {
     return 'Equação: $latex';
   }
@@ -639,12 +647,6 @@ class LPt extends L {
   String get navCollapse => 'Fechar o navegador  (Ctrl+\\)';
 
   @override
-  String get navHideSections => 'Ocultar a lista de seções';
-
-  @override
-  String get navShowSections => 'Mostrar a lista de seções';
-
-  @override
   String get navColour => 'Cor';
 
   @override
@@ -668,6 +670,11 @@ class LPt extends L {
   String get navDeletePermanently => 'Apagar de vez';
 
   @override
+  String navDeletedGroup(String title) {
+    return 'Grupo “$title” apagado';
+  }
+
+  @override
   String navDeletedPage(String title) {
     return 'Página “$title” apagada';
   }
@@ -676,14 +683,6 @@ class LPt extends L {
   String navDeletedSection(String title) {
     return 'Seção “$title” apagada';
   }
-
-  @override
-  String navDeletedGroup(String title) {
-    return 'Grupo “$title” apagado';
-  }
-
-  @override
-  String get navUndo => 'Desfazer';
 
   @override
   String navDeletesInDays(int days) {
@@ -706,6 +705,9 @@ class LPt extends L {
 
   @override
   String get navExpand => 'Abrir o navegador  (Ctrl+\\)';
+
+  @override
+  String get navHideSections => 'Ocultar a lista de seções';
 
   @override
   String get navHome => 'Início';
@@ -743,6 +745,9 @@ class LPt extends L {
   String get navMenuDelete => 'Apagar';
 
   @override
+  String get navMenuDuplicate => 'Duplicar';
+
+  @override
   String get navMenuExportSectionPdf => 'Exportar a seção em PDF…';
 
   @override
@@ -776,12 +781,6 @@ class LPt extends L {
   String get navMenuRecentChanges => 'Alterações recentes…';
 
   @override
-  String get navMenuDuplicate => 'Duplicar';
-
-  @override
-  String get navMenuRename => 'Renomear';
-
-  @override
   String get navMenuRemoveExam => 'Tirar a data da prova';
 
   @override
@@ -789,6 +788,9 @@ class LPt extends L {
 
   @override
   String get navMenuRemovePasscode => 'Tirar a senha…';
+
+  @override
+  String get navMenuRename => 'Renomear';
 
   @override
   String get navMenuSetExam => 'Definir a data da prova…';
@@ -861,6 +863,12 @@ class LPt extends L {
 
   @override
   String get navSection => 'Seção';
+
+  @override
+  String get navShowSections => 'Mostrar a lista de seções';
+
+  @override
+  String get navUndo => 'Desfazer';
 
   @override
   String get navUntitled => 'Sem título';
@@ -1314,6 +1322,18 @@ class LPt extends L {
       'Escolha um bloco de notas e vem directamente, sem exportar nada antes. Funciona em qualquer computador.';
 
   @override
+  String get penButtonEraser => 'Borracha';
+
+  @override
+  String get penButtonLasso => 'Laço';
+
+  @override
+  String get penButtonNothing => 'Nada';
+
+  @override
+  String get penButtonSelect => 'Selecionar';
+
+  @override
   String get settingsAbout => 'Sobre';
 
   @override
@@ -1325,7 +1345,7 @@ class LPt extends L {
 
   @override
   String get settingsAiOn =>
-      'Sim — os assistentes de IA deste computador podem ler suas anotações.';
+      'Sim — a IA deste computador pode ler suas anotações.';
 
   @override
   String get settingsAppearance => 'Aparência';
@@ -1335,6 +1355,9 @@ class LPt extends L {
 
   @override
   String get settingsConnections => 'Conexões';
+
+  @override
+  String get settingsDiagnostics => 'Diagnóstico';
 
   @override
   String get settingsHelp => 'Ajuda';
@@ -1350,18 +1373,26 @@ class LPt extends L {
       'Como adicionar ou corrigir um idioma';
 
   @override
-  String get settingsLanguageHelp =>
-      'O Openote é traduzido por quem o usa. Se o seu faltar ou estiver errado, é um único ficheiro.';
+  String get settingsPenAndTouch => 'Caneta e toque';
 
   @override
-  String get settingsPenProximity => 'Caneta perto da página muda para traço';
+  String get settingsPenButton => 'O botão lateral da caneta';
+
+  @override
+  String get settingsPenButtonHint =>
+      'Mantenha pressionado para usar essa ferramenta.';
+
+  @override
+  String get settingsPenTest => 'Teste de caneta e toque';
+
+  @override
+  String get settingsPenTestHint => 'O que a caneta e seus botões informam.';
 
   @override
   String get settingsShortcuts => 'Atalhos de teclado';
 
   @override
-  String get settingsShortcutsHint =>
-      'Tudo tem uma tecla — a lista completa.  (Ctrl+/)';
+  String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
   String get settingsSpellCheck => 'Corretor ortográfico';
@@ -1371,7 +1402,7 @@ class LPt extends L {
 
   @override
   String get settingsSyncHint =>
-      'Faça cópia deste caderno e compartilhe — GitHub ou uma pasta.';
+      'Faça backup deste caderno no GitHub ou numa pasta.';
 
   @override
   String get settingsTheme => 'Tema';
@@ -1389,6 +1420,12 @@ class LPt extends L {
   String get settingsTitle => 'Configurações';
 
   @override
+  String get settingsTouchDrawing => 'Desenhar com o dedo';
+
+  @override
+  String get settingsTouchDrawingHint => 'Dois dedos sempre movem e ampliam.';
+
+  @override
   String settingsUpToDate(String version) {
     return 'Está tudo em dia ($version é a versão mais recente).';
   }
@@ -1403,7 +1440,7 @@ class LPt extends L {
 
   @override
   String get settingsWelcomeTourHint =>
-      'A versão de três minutos: a tela, a matemática e o traço, e onde ficam suas anotações.';
+      'Três minutos sobre como funciona a tela.';
 
   @override
   String get settingsWhatsNew => 'Novidades';
@@ -1423,6 +1460,9 @@ class LPt extends L {
 
   @override
   String get shellCreateFirstPage => 'Crie sua primeira página';
+
+  @override
+  String get shellDemoNothingSaved => 'Demonstração — nada é guardado';
 
   @override
   String get shellEmptyBody =>
@@ -1519,12 +1559,6 @@ class LPt extends L {
 
   @override
   String get shellSavedOnDevice => 'Salvo neste dispositivo';
-
-  @override
-  String get shellDemoNothingSaved => 'Demonstração — nada é guardado';
-
-  @override
-  String get commandNotInDemo => 'Não disponível na demonstração web';
 
   @override
   String get shellSaving => 'Salvando…';

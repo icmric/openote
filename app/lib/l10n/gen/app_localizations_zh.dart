@@ -20,6 +20,9 @@ class LZh extends L {
   String get atomUpdateToView => '请更新 Openote 以查看';
 
   @override
+  String get barBackToEquation => '返回公式工具';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -68,9 +71,6 @@ class LZh extends L {
 
   @override
   String get barEraserWhole => '碰到哪一笔就整笔擦掉';
-
-  @override
-  String get barBackToEquation => '返回公式工具';
 
   @override
   String get barEscWhenDone => '完成后按 Esc';
@@ -148,14 +148,6 @@ class LZh extends L {
   String get barInkMoreColours => '更多颜色…';
 
   @override
-  String barPenSize(String size) {
-    return '笔迹粗细 $size';
-  }
-
-  @override
-  String get barPenSizeExact => '精确大小…';
-
-  @override
   String get barInkPickColour => '从页面上拾取颜色';
 
   @override
@@ -188,6 +180,14 @@ class LZh extends L {
   @override
   String get barPenProximity =>
       '触控笔靠近页面时自动切换到手写。\n笔悬停时若改选其他工具，会一直保持，直到笔离开\n再回来。笔的尾端（或绘制时按住的笔杆按键）用来擦除。';
+
+  @override
+  String barPenSize(String size) {
+    return '笔迹粗细 $size';
+  }
+
+  @override
+  String get barPenSizeExact => '精确大小…';
 
   @override
   String get barPlanner => '日程';
@@ -310,10 +310,6 @@ class LZh extends L {
   String get barToolText => '文字  (T)';
 
   @override
-  String get barTouchDrawing =>
-      '用手指绘制。\n自动：手指可以画，直到你拿起触控笔；之后手指改为拖动页面，手掌就不会留下痕迹。\n两根手指始终用于拖动和缩放。';
-
-  @override
   String get barUnderline => '下划线  (Ctrl+U)';
 
   @override
@@ -328,6 +324,15 @@ class LZh extends L {
   String get canvasDeleteSelection => '删除  (Del)';
 
   @override
+  String get canvasGroupSelection => '组合  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => '取消组合  (Ctrl+Shift+G)';
+
+  @override
+  String get commandNotInDemo => '网页演示版中不可用';
+
+  @override
   String get commonBack => '上一步';
 
   @override
@@ -335,6 +340,9 @@ class LZh extends L {
 
   @override
   String get commonClose => '关闭';
+
+  @override
+  String get commonCopy => '复制';
 
   @override
   String get commonDelete => '删除';
@@ -517,9 +525,6 @@ class LZh extends L {
   String get insertLinkToPage => '链接到页面';
 
   @override
-  String get linkEdit => '编辑链接…';
-
-  @override
   String get insertPageLink => '页面链接';
 
   @override
@@ -589,6 +594,9 @@ class LZh extends L {
   String get insertVideoTip => '课堂录像，或任意网页链接';
 
   @override
+  String get linkEdit => '编辑链接…';
+
+  @override
   String mathSemanticLabel(String latex) {
     return '公式：$latex';
   }
@@ -619,12 +627,6 @@ class LZh extends L {
   String get navCollapse => '收起导航栏  (Ctrl+\\)';
 
   @override
-  String get navHideSections => '隐藏分区列表';
-
-  @override
-  String get navShowSections => '显示分区列表';
-
-  @override
   String get navColour => '颜色';
 
   @override
@@ -648,6 +650,11 @@ class LZh extends L {
   String get navDeletePermanently => '彻底删除';
 
   @override
+  String navDeletedGroup(String title) {
+    return '已删除分区组“$title”';
+  }
+
+  @override
   String navDeletedPage(String title) {
     return '已删除页面“$title”';
   }
@@ -656,14 +663,6 @@ class LZh extends L {
   String navDeletedSection(String title) {
     return '已删除分区“$title”';
   }
-
-  @override
-  String navDeletedGroup(String title) {
-    return '已删除分区组“$title”';
-  }
-
-  @override
-  String get navUndo => '撤销';
 
   @override
   String navDeletesInDays(int days) {
@@ -685,6 +684,9 @@ class LZh extends L {
 
   @override
   String get navExpand => '展开导航栏  (Ctrl+\\)';
+
+  @override
+  String get navHideSections => '隐藏分区列表';
 
   @override
   String get navHome => '主页';
@@ -721,6 +723,9 @@ class LZh extends L {
   String get navMenuDelete => '删除';
 
   @override
+  String get navMenuDuplicate => '复制';
+
+  @override
   String get navMenuExportSectionPdf => '把分区导出为 PDF…';
 
   @override
@@ -754,12 +759,6 @@ class LZh extends L {
   String get navMenuRecentChanges => '最近的修改…';
 
   @override
-  String get navMenuDuplicate => '复制';
-
-  @override
-  String get navMenuRename => '重命名';
-
-  @override
   String get navMenuRemoveExam => '移除考试日期';
 
   @override
@@ -767,6 +766,9 @@ class LZh extends L {
 
   @override
   String get navMenuRemovePasscode => '移除密码…';
+
+  @override
+  String get navMenuRename => '重命名';
 
   @override
   String get navMenuSetExam => '设置考试日期…';
@@ -838,6 +840,12 @@ class LZh extends L {
 
   @override
   String get navSection => '分区';
+
+  @override
+  String get navShowSections => '显示分区列表';
+
+  @override
+  String get navUndo => '撤销';
 
   @override
   String get navUntitled => '无标题';
@@ -1265,6 +1273,18 @@ class LZh extends L {
   String get oneNoteSignInBody => '选择一个笔记本即可直接导入，无需事先导出。任何电脑都能用。';
 
   @override
+  String get penButtonEraser => '橡皮擦';
+
+  @override
+  String get penButtonLasso => '套索';
+
+  @override
+  String get penButtonNothing => '无';
+
+  @override
+  String get penButtonSelect => '选择';
+
+  @override
   String get settingsAbout => '关于';
 
   @override
@@ -1274,7 +1294,7 @@ class LZh extends L {
   String get settingsAiOff => '关 — 可连接 Claude 或其他 AI 助手。';
 
   @override
-  String get settingsAiOn => '开 — 这台电脑上的 AI 助手可以读取你的笔记。';
+  String get settingsAiOn => '已开启 — 本机上的 AI 可以读取你的笔记。';
 
   @override
   String get settingsAppearance => '外观';
@@ -1284,6 +1304,9 @@ class LZh extends L {
 
   @override
   String get settingsConnections => '连接';
+
+  @override
+  String get settingsDiagnostics => '诊断';
 
   @override
   String get settingsHelp => '帮助';
@@ -1298,16 +1321,25 @@ class LZh extends L {
   String get settingsLanguageContribute => '如何添加或修正一种语言';
 
   @override
-  String get settingsLanguageHelp => 'Openote 由使用它的人翻译。如果缺少您的语言或翻译有误，只需一个文件即可。';
+  String get settingsPenAndTouch => '触控笔与触摸';
 
   @override
-  String get settingsPenProximity => '触控笔靠近页面时切换到手写';
+  String get settingsPenButton => '触控笔侧键';
+
+  @override
+  String get settingsPenButtonHint => '按住即可临时使用该工具。';
+
+  @override
+  String get settingsPenTest => '触控笔与触摸测试';
+
+  @override
+  String get settingsPenTestHint => '你的触控笔及其按键汇报的内容。';
 
   @override
   String get settingsShortcuts => '键盘快捷键';
 
   @override
-  String get settingsShortcutsHint => '每个功能都有快捷键 — 这是完整列表。  (Ctrl+/)';
+  String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
   String get settingsSpellCheck => '拼写检查';
@@ -1316,7 +1348,7 @@ class LZh extends L {
   String get settingsSync => '同步';
 
   @override
-  String get settingsSyncHint => '备份并分享这个笔记本 — 用 GitHub 或一个文件夹。';
+  String get settingsSyncHint => '将此笔记本备份到 GitHub 或文件夹。';
 
   @override
   String get settingsTheme => '主题';
@@ -1334,6 +1366,12 @@ class LZh extends L {
   String get settingsTitle => '设置';
 
   @override
+  String get settingsTouchDrawing => '用手指绘图';
+
+  @override
+  String get settingsTouchDrawingHint => '双指始终用于平移和缩放。';
+
+  @override
   String settingsUpToDate(String version) {
     return '已是最新版本（$version 就是最新版）。';
   }
@@ -1347,7 +1385,7 @@ class LZh extends L {
   String get settingsWelcomeTour => '新手导览';
 
   @override
-  String get settingsWelcomeTourHint => '三分钟版：画布、公式与手写，以及笔记存放在哪里。';
+  String get settingsWelcomeTourHint => '三分钟了解画布的用法。';
 
   @override
   String get settingsWhatsNew => '更新内容';
@@ -1367,6 +1405,9 @@ class LZh extends L {
 
   @override
   String get shellCreateFirstPage => '创建第一页';
+
+  @override
+  String get shellDemoNothingSaved => '演示版 — 内容不会保存';
 
   @override
   String get shellEmptyBody => '你在这里做的一切都留在自己的设备上，\n用的是属于你自己的开放格式。';
@@ -1457,12 +1498,6 @@ class LZh extends L {
 
   @override
   String get shellSavedOnDevice => '已保存在本机';
-
-  @override
-  String get shellDemoNothingSaved => '演示版 — 内容不会保存';
-
-  @override
-  String get commandNotInDemo => '网页演示版中不可用';
 
   @override
   String get shellSaving => '正在保存…';

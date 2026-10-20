@@ -192,3 +192,26 @@ String expandAtoms(String text, Map<String, dynamic> content) {
   buf.write(text.substring(last));
   return buf.toString();
 }
+
+/// The file extension an exported asset of [mime] should carry, without a dot.
+///
+/// The exporters derived this by splitting the mime at the slash, which works
+/// for `image/png` and for nothing else: `image/svg+xml` came out as
+/// `svg+xml`, and `application/octet-stream` — what a sniff returns when it
+/// does not recognise the bytes — as `octet-stream`.
+///
+/// The inverse of `mimeForExtension` in `canvas/media_drop.dart`, and the two
+/// disagree on purpose: that one answers for a file somebody chose, where an
+/// unknown extension most likely means a picture, and this one answers for
+/// bytes, where an unknown type must not be given a picture's name.
+String extensionForMime(String mime) => switch (mime.toLowerCase()) {
+      'image/png' => 'png',
+      'image/jpeg' || 'image/jpg' => 'jpg',
+      'image/gif' => 'gif',
+      'image/webp' => 'webp',
+      'image/bmp' => 'bmp',
+      'image/tiff' => 'tiff',
+      'image/svg+xml' => 'svg',
+      'application/pdf' => 'pdf',
+      _ => 'bin',
+    };

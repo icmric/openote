@@ -58,6 +58,14 @@ class _PageTitleViewState extends State<PageTitleView> {
     if (page == null) return;
     _editingPageId = page.id;
     _controller.text = page.title == 'Untitled page' ? '' : page.title;
+    // **Clicking the title is clicking out of whatever was being typed into.**
+    // Leaving the paragraph as the editing block left its editor built, and
+    // the standing keyboard claim an editor registers from `build` fires on
+    // the frame this field appears in — so the band grew and the caret
+    // stayed where it was. Also what a student means by it: the page title is
+    // not part of the page's content, and nothing on the page stays picked up
+    // while you retitle it.
+    widget.app.select(null);
     widget.app.setTitleEditing(true);
     setState(() => _editing = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {

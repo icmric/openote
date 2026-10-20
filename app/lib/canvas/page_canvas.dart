@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -32,6 +33,9 @@ import 'portal_view.dart';
 ///   · click empty page (something selected)→ deselect
 ///   · drag empty page                      → marquee multi-select (CANVAS-7)
 ///   · click ink                            → select ink block; drag moves it
+///   · click a grouped block                → select the whole group; click
+///                                            again to reach the member
+///                                            (CANVAS-7, Data Model §3.2)
 ///   · middle-drag                          → pan · Ctrl+scroll → zoom
 ///   · trackpad pan/pinch                   → pan/zoom · two-finger touch → pinch
 class PageCanvas extends StatefulWidget {
@@ -69,6 +73,113 @@ class PageCanvas extends StatefulWidget {
 
 enum _DragMode { none, pending, marquee, moveSelection, pan }
 
+/// Does a marquee of [marquee] take in the block at [block]?
+///
+/// Reported in issue #20: *"Box selection selects entire objects even with
+/// very little overlap."* It did — any intersection at all counted, so
+/// brushing the corner of a picture on the way past took the whole picture
+/// with you, and over an imported slide every marquee caught the slide.
+///
+/// Half of the block, rather than all of it. Requiring the whole thing is
+/// PowerPoint's rule and it means a box poking a few pixels out of the
+/// marquee is left behind with no way to tell why; requiring a touch is what
+/// was there. Half is the reading of "drag a box around the things you want"
+/// that does not ask anybody to be precise.
+///
+/// A block with no area — a zero-width ink block, a picture that has not
+/// loaded — falls back to a touch, because there is no proportion to take.
+/// **How far the eraser reaches**, in screen pixels at any zoom.
+///
+/// One constant rather than a literal in `_eraseAt`, because the ring drawn
+/// under the pointer has to be the same size as the thing it is advertising:
+/// *"id like to have a faint outline of the eraser when its being used so
+/// that people can see the AoE"*. A ring that lied would be worse than none.
+const double kEraserRadius = 12.0;
+
+bool marqueeCatches(Rect marquee, Rect block) {
+  final area = block.width * block.height;
+  if (area <= 0) return marquee.overlaps(block);
+  final hit = marquee.intersect(block);
+  if (hit.isEmpty) return false;
+  return hit.width * hit.height >= area / 2;
+}
+
+/// **One dashed box around a selection of handwriting**, or none.
+///
+/// A stroke is its own block, so a written word is several of them, and a
+/// dashed box per stroke is a box per letter drawn over somebody's own
+/// handwriting. The selection is one thing about to be moved, which is what
+/// this drew before a word stopped being one block, and what OneNote draws
+/// too.
+///
+/// Top-level and pure so the rule can be tested without a canvas.
+List<Rect> inkSelectionBox(List<Rect> selected) => selected.isEmpty
+    ? const []
+    : [selected.reduce((a, b) => a.expandToInclude(b))];
+
+/// Ray-casting point-in-polygon test, in whatever space both are in.
+bool pointInPolygon(Offset pt, List<Offset> poly) {
+  var inside = false;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    final a = poly[i], b = poly[j];
+    if (((a.dy > pt.dy) != (b.dy > pt.dy)) &&
+        (pt.dx < (b.dx - a.dx) * (pt.dy - a.dy) / (b.dy - a.dy) + a.dx)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/// **Whether a lasso loop catches a block that is not handwriting.**
+///
+/// Reported: *"The select lasso works great on ink however it doesnt seem to
+/// select other boxes, please investigate this as id really like that to
+/// work."* It did not look at them at all — the loop only ever asked ink.
+///
+/// The same question [marqueeCatches] answers for a rectangle, and
+/// deliberately the same answer: **half the block's area, or it is not
+/// caught.** A freeform loop has no closed form for that overlap, so it is
+/// sampled on a grid — [_kLassoGrid] squared points over the block, counted
+/// for how many fall inside the loop. Which is an approximation of an area,
+/// and an area is the rule that matters: a loop drawn INSIDE a big picture
+/// must not pick the picture up, which is what "the centre is inside it" or
+/// "a corner is inside it" would both do, and which is the whole of the
+/// *"almost impossible to select handwritten notes on top of a PDF without
+/// selecting the PDF itself"* report.
+///
+/// Top-level and pure so the rule can be tested without a canvas.
+bool lassoCatches(List<Offset> poly, Rect block) {
+  if (poly.length < 3) return false;
+  if (block.width <= 0 || block.height <= 0) {
+    return pointInPolygon(block.topLeft, poly);
+  }
+  var inside = 0;
+  for (var iy = 0; iy < _kLassoGrid; iy++) {
+    for (var ix = 0; ix < _kLassoGrid; ix++) {
+      // Cell centres, so neither edge of the block is counted twice and a
+      // loop drawn exactly along one does not decide it on rounding.
+      final pt = Offset(
+        block.left + block.width * (ix + 0.5) / _kLassoGrid,
+        block.top + block.height * (iy + 0.5) / _kLassoGrid,
+      );
+      if (pointInPolygon(pt, poly)) inside++;
+    }
+  }
+  return inside * 2 >= _kLassoGrid * _kLassoGrid;
+}
+
+/// Samples per side of the block when approximating the overlap. Seven is 49
+/// tests per block, which at loop-release time for a page of blocks is
+/// nothing, and resolves half an area to about 2%.
+const int _kLassoGrid = 7;
+
+/// How far outside the selection its dashed box is drawn, in SCREEN pixels —
+/// and therefore how far outside it a press still counts as landing on it.
+/// Shared so that what grabs is exactly what is drawn; a grab region that
+/// disagreed with its own outline by a few pixels would be a thing nobody
+/// could learn. See `_PageCanvasState._selectionTakes`.
+const double kSelectionOutline = 4;
+
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
 
@@ -93,6 +204,30 @@ class _PageCanvasState extends State<PageCanvas> {
   /// mouse. A finger TAP still does everything a click does.
   PointerDeviceKind _downKind = PointerDeviceKind.mouse;
 
+  /// **Where to draw the eraser's ring**, or null when there is nothing to
+  /// rub out with. Fed from every pointer the ink layer sees; read by
+  /// [OverlayPainter], which repaints on it without rebuilding the canvas.
+  final ValueNotifier<Offset?> _eraserAt = ValueNotifier(null);
+
+  /// True when a press right now would rub something out: the eraser tool, or
+  /// a pen signal saying so.
+  /// `app.penErasing` rather than the private flag beside it: that is the one
+  /// the toolbar and the cursor already read, it is set from both routes into
+  /// a pen button, and one source of truth about "the button means erase" is
+  /// enough.
+  bool get _erasingNow =>
+      app.tool == Tool.eraser || app.penErasing || _gestureErase;
+
+  /// Remember where the eraser is, for the ring. Null hides it.
+  void _noteEraser(Offset? atLocal) {
+    final next = _erasingNow ? atLocal : null;
+    if (_eraserAt.value != next) _eraserAt.value = next;
+  }
+
+  /// Whether this gesture began over a background layer the canvas took the
+  /// drag back from. See [_selectDown].
+  bool _downOnLocked = false;
+
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
   double? _pinchBaseDist;
@@ -110,8 +245,7 @@ class _PageCanvasState extends State<PageCanvas> {
   AppState get app => widget.state;
   CanvasController get controller => app.canvas;
 
-  bool get _inkTool =>
-      app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser;
+  bool get _inkTool => app.inkToolInHand;
 
   /// When a stylus was last seen, so palm rejection can be *conditional*
   /// (INK-4) instead of absolute.
@@ -146,12 +280,15 @@ class _PageCanvasState extends State<PageCanvas> {
         mode: app.touchDrawing,
         activeTouches: _touches.length,
         stylusActive: _stylusActive,
+        penEverSeen: app.penSeenHere,
       );
 
   void _noteStylus(PointerEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
       _lastStylus = PageCanvas.clock();
+      // Remembered for good, not for two seconds. See [AppState.penSeenHere].
+      app.notePenSeen();
     }
   }
 
@@ -189,6 +326,14 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = false);
       app.setPenErasing(false);
     }
+    // **And the same for a tool it had borrowed.** The erase case above was
+    // found by review; this one was found by that review's own test going red
+    // when the barrel's default became the lasso. Same shape, same cause —
+    // there is no event left to say the button was let go — and without it a
+    // pen carried off mid-press leaves the canvas lassoing for ever.
+    if (_toolBeforePenSelect != null && !isPen && !_stylusActive) {
+      _applyPenTool(null);
+    }
     // A hover from anything else matters for two reasons: Windows promotes a
     // barrel press to a mouse right-button, so the button can arrive as a
     // `mouse` event at the pen's own position (see [penGestureErases]); and a
@@ -207,10 +352,33 @@ class _PageCanvasState extends State<PageCanvas> {
     // A pen event is authoritative both ways; anything else may only ADD the
     // signal. Otherwise a promoted mouse move carrying no buttons would
     // cancel the button the pen itself had just reported.
-    final held = _erasingButtons(e);
-    if (held ? !_penButtonHeld : (isPen && _penButtonHeld)) {
-      setState(() => _penButtonHeld = held);
-      app.setPenErasing(_penErasing);
+    // **Where the runner is reporting, it is the only authority.**
+    //
+    // This used to read the button state off the event and let a pen event
+    // clear it as well as set it, which was right when the bits came from the
+    // event. On Windows they never do: the engine reports every pen event with
+    // no buttons at all, and those arrive at stylus rate — so a hover a
+    // millisecond after the channel said "barrel down" said "nothing is held"
+    // and took it straight back.
+    //
+    // Which is both reports. *"The lasso doesnt seem to work, when set it just
+    // draws every time"* — the tool was borrowed and returned before the pen
+    // could land. *"When set to the eraser it rubs it out most times but not
+    // every time"* — the same race, won by whichever arrived last.
+    //
+    // An event-derived "nothing is held" is not evidence of anything on a
+    // platform that cannot report a pen button, so it is not allowed to be.
+    if (!PenButtons.heard) {
+      final held = _erasingButtons(e);
+      if (held ? !_penButtonHeld : (isPen && _penButtonHeld)) {
+        setState(() => _penButtonHeld = held);
+        app.setPenErasing(_penErasing);
+      }
+      // The same signal where the button borrows a tool instead. A pen event
+      // is authoritative both ways here; anything else may only ADD the
+      // signal, for the same reason the erase half does.
+      final borrowed = _borrowedTool(e);
+      if (borrowed != null || isPen) _applyPenTool(borrowed);
     }
     if (isPen) {
       if (approaching && app.tool == Tool.select) {
@@ -235,7 +403,23 @@ class _PageCanvasState extends State<PageCanvas> {
   /// a digitiser — which matters here more than usual, since the report came
   /// from hardware nobody working on this owns.
   bool _erasingButtons(PointerEvent e) => penGestureErases(
-      kind: e.kind, buttons: e.buttons, penInRange: _stylusActive);
+      kind: e.kind,
+      buttons: e.buttons,
+      penInRange: _stylusActive,
+      side: app.penButton);
+
+  /// And the tool it borrows, if any — the same signal with the setting on
+  /// something other than the eraser. On Linux this is the only route it has:
+  /// GTK reports the pen and the real button number, so the barrel arrives
+  /// here rather than through the runner's channel.
+  Tool? _borrowedTool(PointerEvent e) => penGestureHoldsButton(
+            kind: e.kind,
+            buttons: e.buttons,
+            penInRange: _stylusActive,
+          ) &&
+          e.kind != PointerDeviceKind.invertedStylus
+      ? PenButtons.toolFor(PenButton.barrel, app.penButton)
+      : null;
 
   /// True while the pen's button is down, whether or not it is touching.
   ///
@@ -287,6 +471,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    PenButtons.bits.removeListener(_penBitsChanged);
+    _eraserAt.dispose();
     _wetTick.dispose();
     super.dispose();
   }
@@ -294,6 +480,7 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void initState() {
     super.initState();
+    PenButtons.bits.addListener(_penBitsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
       // Restore this page's remembered view if the user actually adjusted it
@@ -313,6 +500,48 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
+  /// **The pen's buttons, as the runner read them off the window messages.**
+  ///
+  /// Flutter's Windows embedder never looks at a pen's flags, so this is the
+  /// only route a barrel press has into the app — see `core/pen_buttons.dart`
+  /// for the whole of why. It feeds exactly the state the hover path already
+  /// maintained from the button BITS, so everything downstream (the cursor,
+  /// the tool indicator, erase-while-held) keeps working as written.
+  void _penBitsChanged() {
+    final bits = PenButtons.bits.value;
+    // A pen flag can only have come from a pen, in range: better evidence
+    // than the grace window, and it is what [AppState.penSeenHere] wants.
+    if (bits != 0) {
+      _lastStylus = PageCanvas.clock();
+      app.notePenSeen();
+    }
+    final erase = PenButtons.erases(bits, app.penButton);
+    if (erase != _penButtonHeld) {
+      setState(() => _penButtonHeld = erase);
+      app.setPenErasing(erase);
+    }
+    _applyPenTool(PenButtons.toolFor(bits, app.penButton));
+  }
+
+  /// Hold the side button and [borrow] is borrowed; let go and the tool that
+  /// was in hand comes back. Both routes into this — the runner's channel on
+  /// Windows, the ordinary button bits on Linux — come through here, so the
+  /// behaviour cannot differ between them.
+  void _applyPenTool(Tool? borrow) {
+    if (borrow != null && _toolBeforePenSelect == null) {
+      _toolBeforePenSelect = app.tool;
+      app.setTool(borrow, automatic: true);
+    } else if (borrow == null && _toolBeforePenSelect != null) {
+      final back = _toolBeforePenSelect!;
+      _toolBeforePenSelect = null;
+      app.setTool(back, automatic: true);
+    }
+  }
+
+  /// The tool to go back to when the pen's side button is let go, where it is
+  /// set to Select. Null when it is not being held.
+  Tool? _toolBeforePenSelect;
+
   void _inkDown(PointerDownEvent e) {
     app.claimedPointers.remove(e.pointer); // keep the claim set tidy
     // The pen's own erase signals, per gesture: the tail end, or the barrel
@@ -323,10 +552,14 @@ class _PageCanvasState extends State<PageCanvas> {
     // pressed before the pen landed or as it landed. `_penButtonHeld` carries
     // the former, which is how somebody actually uses it: press, then touch.
     _gestureErase = penGestureErases(
-        kind: e.kind,
-        buttons: e.buttons,
-        heldWhileHovering: _penErasing,
-        penInRange: _stylusActive);
+            kind: e.kind,
+            buttons: e.buttons,
+            heldWhileHovering: _penErasing,
+            penInRange: _stylusActive,
+            side: app.penButton) ||
+        // ...or the runner read the flag off the message, which on Windows is
+        // the only place it exists. See [_penBitsChanged].
+        PenButtons.erases(PenButtons.bits.value, app.penButton);
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
     if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
@@ -513,17 +746,22 @@ class _PageCanvasState extends State<PageCanvas> {
         return;
       }
     }
+    // **A stroke is its own object.** Nothing guesses which marks belong
+    // together. The test was time alone, so two corners of a slide annotated
+    // within two seconds became one block the size of the slide; then it was
+    // time and distance, which still swept up a line of separate marks:
+    // *"i just drew a bit where i had several seperate strokes and they all
+    // got grouped into one large thing. It should be split stroke by stroke,
+    // if they are visibly not connected they shouldnt be connected as an
+    // object."* (Issue #20.)
+    //
+    // Guessing is what was wrong with it, not the particular guess. Strokes
+    // are page-absolute and immutable (Ink Spec §2), so which block holds
+    // which stroke costs nothing to get right later — and the lasso (INK-7)
+    // already gathers what it caught into one block and selects it, which is
+    // grouping said out loud instead of inferred from a timer.
     app.pushUndo();
-    Block? target;
-    for (final b in app.blocks.reversed) {
-      if (b.type == BlockType.ink &&
-          nowMs() - b.updatedAt < 2000 &&
-          InkStorage.strokesOf(b.content).length < 512) {
-        target = b;
-        break;
-      }
-    }
-    target ??= app.addBlock(
+    final target = app.addBlock(
         Block(type: BlockType.ink, x: 0, y: 0, content: {'strokes': []}),
         recordUndo: false);
     (target.content[kStrokesKey] as List).add(w.toJson());
@@ -539,7 +777,7 @@ class _PageCanvasState extends State<PageCanvas> {
       app.pushUndo();
       _eraseUndoPushed = true;
     }
-    final radius = 12.0 / controller.scale;
+    final radius = kEraserRadius / controller.scale;
     final r2 = radius * radius;
     // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
     // removes any stroke the eraser touches whole — OneNote's default, and the
@@ -661,57 +899,63 @@ class _PageCanvasState extends State<PageCanvas> {
     final poly = _lasso;
     setState(() => _lasso = null);
     if (poly == null || poly.length < 3) return;
-    _gatherLassoedStrokes(poly);
+    _selectLassoedStrokes(poly);
   }
 
-  /// Gather every stroke whose points mostly fall inside the drawn loop into a
-  /// single new ink block, then select it — so the existing move/delete/copy
-  /// machinery works on a freeform ink selection regardless of which blocks the
-  /// strokes originally lived in (Ink Spec §2: strokes are immutable and carry
-  /// page-absolute coordinates, so re-homing them is just a splice).
-  void _gatherLassoedStrokes(List<Offset> poly) {
-    // 1) Detect matches WITHOUT mutating, so the undo snapshot below captures
-    //    the true pre-lasso state.
-    final gathered = <Map<String, dynamic>>[];
-    final keepByBlock = <String, List<dynamic>>{};
-    for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
-      final keep = <dynamic>[];
-      var blockChanged = false;
+  /// **Select everything the loop caught.** Nothing is moved, nothing is
+  /// re-homed, and nothing is written.
+  ///
+  /// It used to splice the matched strokes out of their blocks and into one
+  /// new block, which made the lasso a destructive grouping command dressed
+  /// as a selection: the owner, after it started drawing its outline again,
+  /// *"id like to make it so that after the selection has been changed (in any
+  /// sense, like the strokes are no longer focused) they go back to being
+  /// their individual strokes or however they were before. Its evidently not a
+  /// permenant thing as i can go back in with the lasso after and select a
+  /// single stroke and disconnect it from the group, but i dont want to have
+  /// to do that."*
+  ///
+  /// Quite so, and it costs nothing to stop: a stroke is its own block now, so
+  /// the loop has nothing left to do but name the ones it caught. Changing the
+  /// selection changes it back, because the selection was the only thing that
+  /// changed. Grouping on purpose is [AppState.groupSelected], which is the
+  /// command that says so.
+  ///
+  /// A block holding SEVERAL strokes is a group, and a loop that catches any
+  /// of it takes the whole thing — that being what a group is for.
+  ///
+  /// **And everything else on the page is asked too**, by area, through
+  /// [lassoCatches]: *"The select lasso works great on ink however it doesnt
+  /// seem to select other boxes."* Handwriting is asked by its points because
+  /// a stroke is a line and its bounding box is mostly not the stroke; a box
+  /// is asked by its rectangle because that is what the box is.
+  ///
+  /// A locked block — an imported slide — is never caught, for the reason the
+  /// marquee already does not catch one: it is what the others are drawn ON,
+  /// and sweeping it into a selection leaves that selection with a member
+  /// that cannot move, which stops the drag of everything else dead.
+  void _selectLassoedStrokes(List<Offset> poly) {
+    final hit = <String>[];
+    for (final b in app.blocks) {
+      if (b.locked) continue;
+      if (b.type != BlockType.ink) {
+        if (lassoCatches(poly, _blockRect(b))) hit.add(b.id);
+        continue;
+      }
       for (final sj in InkStorage.strokesOf(b.content)) {
         final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
         if (_strokeInsidePoly(s, poly)) {
-          gathered.add(sj.cast<String, dynamic>());
-          blockChanged = true;
-        } else {
-          keep.add(sj);
+          hit.add(b.id);
+          break;
         }
       }
-      if (blockChanged) keepByBlock[b.id] = keep;
     }
-    if (gathered.isEmpty) return;
-
-    // 2) Snapshot, then apply: splice matched strokes out of their blocks,
-    //    drop now-empty blocks, and re-home the gathered strokes into one new
-    //    selected ink block.
-    app.pushUndo();
-    for (final entry in keepByBlock.entries) {
-      final b = app.blocks.where((x) => x.id == entry.key).firstOrNull;
-      if (b == null) continue;
-      if (entry.value.isEmpty) {
-        app.removeBlock(b.id, recordUndo: false);
-      } else {
-        b.content['strokes'] = entry.value;
-        _refitInkBounds(b);
-        b.updatedAt = nowMs();
-      }
+    if (hit.isEmpty) {
+      app.select(null);
+      return;
     }
-    final grouped = app.addBlock(
-        Block(type: BlockType.ink, x: 0, y: 0, content: {'strokes': gathered}),
-        recordUndo: false);
-    _refitInkBounds(grouped);
-    app.updateBlock(grouped);
-    app.select(grouped.id);
-    // Switch back to Select so the gathered ink can be dragged/deleted at once.
+    app.selectMany(hit);
+    // Back to Select, so what was caught can be dragged or deleted at once.
     app.setTool(Tool.select);
   }
 
@@ -721,24 +965,11 @@ class _PageCanvasState extends State<PageCanvas> {
     if (s.x.isEmpty) return false;
     var inside = 0;
     for (var i = 0; i < s.x.length; i++) {
-      if (_pointInPoly(Offset(s.x[i], s.y[i]), poly)) inside++;
+      if (pointInPolygon(Offset(s.x[i], s.y[i]), poly)) inside++;
     }
     return inside / s.x.length >= 0.6;
   }
 
-  /// Ray-casting point-in-polygon test.
-  bool _pointInPoly(Offset pt, List<Offset> poly) {
-    var inside = false;
-    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      final a = poly[i], b = poly[j];
-      if (((a.dy > pt.dy) != (b.dy > pt.dy)) &&
-          (pt.dx <
-              (b.dx - a.dx) * (pt.dy - a.dy) / (b.dy - a.dy) + a.dx)) {
-        inside = !inside;
-      }
-    }
-    return inside;
-  }
 
   // ── Touch pan/pinch (shared: pen-mode palm rejection & navigation) ──────
 
@@ -777,8 +1008,10 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── Select-mode pointer model ───────────────────────────────────────────
 
-  Rect _blockRect(Block b) => Rect.fromLTWH(
-      b.x, b.y, b.w, b.h ?? app.renderSizes[b.id]?.height ?? 60);
+  /// The rectangle a block occupies, for selection, erasing and hit-testing.
+  /// [AppState.blockRect] holds the formula, because the alignment guides and
+  /// the auto-colour rule need the same answer.
+  Rect _blockRect(Block b) => app.blockRect(b);
 
   /// **The rect to CULL against, which is not the rect to hit-test against.**
   ///
@@ -822,24 +1055,17 @@ class _PageCanvasState extends State<PageCanvas> {
   /// stays legible on a dark page, which was the reported failure.
   ///
   /// A PDF is a `file` block carrying the mime type, not a type of its own.
+
+  /// Whether the topmost thing under [pagePt] is a background layer.
   ///
-  /// Sized through [aspectHeight] rather than [_blockRect], because a slide
-  /// carries no height of its own and the measured one arrives a frame late —
-  /// see that function for what that cost.
-  List<Rect> get _documentRects => [
-        for (final b in app.blocks)
-          if (b.type == BlockType.image ||
-              (b.type == BlockType.file &&
-                  b.content['mime'] == 'application/pdf'))
-            Rect.fromLTWH(
-                b.x,
-                b.y,
-                b.w,
-                b.h ??
-                    aspectHeight(b) ??
-                    app.renderSizes[b.id]?.height ??
-                    60),
-      ];
+  /// Topmost rather than any, because a note written on a slide is a block
+  /// over a block and the one on top is the one being pointed at.
+  bool _overLockedOnly(Offset pagePt) {
+    for (final b in app.blocks.reversed) {
+      if (_blockRect(b).contains(pagePt)) return b.locked;
+    }
+    return false;
+  }
 
   String? _hitInk(Offset pagePt) {
     for (final b in app.blocks.reversed.where((b) => b.type == BlockType.ink)) {
@@ -848,23 +1074,98 @@ class _PageCanvasState extends State<PageCanvas> {
     return null;
   }
 
-  void _selectDown(PointerDownEvent e) {
-    if (app.claimedPointers.remove(e.pointer)) return; // a block owns this one
+  /// **A live selection outranks the tool in hand.**
+  ///
+  /// The owner, on the lasso held under a pen's side button: *"Whenever
+  /// something on the page is selected (such that it is moveable, NOT when in
+  /// editing mode) then pen should act as regular touch input, moving the
+  /// selected items when dragged. I guess though ideally if some items are
+  /// selected but i start using the pen elsewhere on the page (i.e. not within
+  /// the selection zone) it should at minimum deselect the items, although
+  /// ideally also start drawing as if they wernt selected."*
+  ///
+  /// Both halves are here and they are the whole rule: inside the selection a
+  /// drag moves it, outside it the selection is gone and the press carries on
+  /// into whatever the tool does. Which is why nothing has to wrestle over the
+  /// TOOL — the pen comes back after a borrowed lasso and still draws, because
+  /// the only thing deciding is where the press landed.
+  ///
+  /// Returns true when it has taken the gesture, which the move and the up
+  /// then follow by reading [_mode].
+  ///
+  /// Three things it is deliberately not for. An eraser, which is aimed at ink
+  /// and must always rub it out — including the eraser a side button is
+  /// holding, which would otherwise shove the selection about instead. A box
+  /// being typed into, as asked. And a finger, which has a settled meaning on
+  /// this canvas already (navigate while a pen is in use, see [_touchDraws])
+  /// and would lose a pan to every selection left lying about.
+  ///
+  /// Nor does the lasso tool itself go through here: its drag means "select
+  /// these", every time, and the owner picks single strokes back out of a
+  /// selection by lassoing inside it.
+  bool _selectionTakes(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.touch) return false;
+    if (_erasingNow || app.editingBlockId != null) return false;
+    final rect = _selectionRect();
+    if (rect == null) return false;
+    final pagePt = controller.screenToPage(e.localPosition);
+    // Out by the width of its own outline, in screen pixels at this zoom, so
+    // that what grabs is what is drawn.
+    if (!rect.inflate(kSelectionOutline / controller.scale).contains(pagePt)) {
+      app.select(null);
+      return false;
+    }
+    _mode = _DragMode.moveSelection;
     _downScreen = e.localPosition;
     _lastScreen = e.localPosition;
     _downKind = e.kind;
+    _moveUndoPushed = false;
+    app.setDragging(true);
+    return true;
+  }
 
+  void _selectDown(PointerDownEvent e) {
+    final claimed = app.claimedPointers.remove(e.pointer);
+    _downScreen = e.localPosition;
+    _lastScreen = e.localPosition;
+    _downKind = e.kind;
+    _downOnLocked = false;
+
+    // **Before the claim, because panning is not a block's business.** A block
+    // claims every pointer it is handed, whichever button pressed it, so a
+    // middle-drag that began over a picture never reached here — reported as
+    // *"middle-click dragging works on empty canvas, but not over PDFs or
+    // images"*. Nothing on the page has a use for the middle button, so this
+    // is a navigation gesture wherever it starts.
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kMiddleMouseButton) != 0) {
       _mode = _DragMode.pan;
       return;
     }
+    if (claimed) return; // a block, the title band or the bar owns this one
+
+    final pagePt = controller.screenToPage(e.localPosition);
+    // **A background layer hands the gesture back.** A locked block — an
+    // imported slide — cannot be moved, resized or typed into, so it does not
+    // claim its pointers and the press arrives here instead. A slide covers
+    // the page, so without this there is no empty space left to start a
+    // marquee from: *"almost impossible to select handwritten notes on top of
+    // a PDF without selecting the PDF itself"*.
+    //
+    // The drag is all the canvas takes. A click and a right-click are still
+    // the block's, which is what selects a slide and opens its menu.
+    _downOnLocked = _overLockedOnly(pagePt);
+
     // Right-click on empty canvas → context menu (blocks claim theirs first).
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kSecondaryMouseButton) != 0) {
       _mode = _DragMode.none;
-      showCanvasMenu(
-          context, app, e.position, controller.screenToPage(e.localPosition));
+      // ...unless this "right-click" is a pen's barrel button arriving the
+      // long way round, and the student has said what that button is for.
+      // See [PenButtons.suppressesMenu].
+      if (!_downOnLocked && !PenButtons.suppressesMenu(app.penButton)) {
+        showCanvasMenu(context, app, e.position, pagePt);
+      }
       return;
     }
     if (e.kind == PointerDeviceKind.touch) {
@@ -877,7 +1178,6 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
-    final pagePt = controller.screenToPage(e.localPosition);
     final inkHit = _hitInk(pagePt);
     if (inkHit != null) {
       if (!app.selectedIds.contains(inkHit)) {
@@ -952,7 +1252,17 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.pending:
         final pagePt = controller.screenToPage(e.localPosition);
         if (app.tool == Tool.text) {
-          _createTextAt(pagePt); // Text tool: always create
+          // Text tool: always create. Deliberately chosen, so it lands where
+          // it was pointed — including on a slide being annotated, which is
+          // where somebody would most want to type.
+          _createTextAt(pagePt);
+        } else if (_downOnLocked) {
+          // **A click on a background layer puts down whatever was held.**
+          // It is the page behind the notes, so it does what a click on empty
+          // page does, minus the text box nobody wants dropped on a slide
+          // they are annotating. The slide itself does not join the
+          // selection — see [BlockView._tap].
+          app.select(null);
         } else if (app.editingBlockId != null) {
           // **Writing somewhere, then clicking the page, means "and now
           // here".** The owner: *"If i am in a box and click out onto the
@@ -983,7 +1293,10 @@ class _PageCanvasState extends State<PageCanvas> {
         final rect = Rect.fromPoints(_marqueeStartPage, _marqueeEndPage);
         final hit = [
           for (final b in app.blocks)
-            if (rect.overlaps(_blockRect(b))) b.id
+            // A background layer is what the others are drawn on, not one of
+            // them. Sweeping it up is how a selection ends up with a member
+            // that cannot move, which stops the drag dead.
+            if (!b.locked && marqueeCatches(rect, _blockRect(b))) b.id
         ];
         hit.isEmpty ? app.select(null) : app.selectMany(hit);
         setState(() {});
@@ -1073,12 +1386,28 @@ class _PageCanvasState extends State<PageCanvas> {
     final vp = controller.viewport;
     if (vp == Size.zero) return const [];
     final at = controller.pageToScreen(rect.topLeft);
-    const w = 36.0, h = 30.0, gap = 6.0;
+    const bw = 36.0, h = 30.0, gap = 6.0;
+    final l = L.of(context);
+    // **Group lives here for the same reason Delete does.** Joining strokes is
+    // what the lasso is for, and Ctrl+G is not on a tablet held in one hand
+    // with a pen in the other either. Offered only when there is something to
+    // do, so the row stays one button wide in the ordinary case.
+    final actions = <(IconData, String, VoidCallback)>[
+      if (app.canGroup)
+        (Icons.group_work_outlined, l.canvasGroupSelection, app.groupSelected),
+      if (app.canUngroup)
+        (
+          Icons.scatter_plot_outlined,
+          l.canvasUngroupSelection,
+          app.ungroupSelected
+        ),
+      (Icons.delete_outline, l.canvasDeleteSelection, app.removeSelected),
+    ];
+    final w = bw * actions.length;
     final top = (at.dy - h - gap)
         .clamp(2.0, math.max(2.0, vp.height - h - 2))
         .toDouble();
     final left = at.dx.clamp(2.0, math.max(2.0, vp.width - w - 2)).toDouble();
-    final l = L.of(context);
     return [
       Positioned(
         left: left,
@@ -1096,12 +1425,22 @@ class _PageCanvasState extends State<PageCanvas> {
             child: SizedBox(
               width: w,
               height: h,
-              child: IconButton(
-                icon: const Icon(Icons.delete_outline, size: OnoteIcon.md),
-                tooltip: l.canvasDeleteSelection,
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                onPressed: app.removeSelected,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (icon, tip, act) in actions)
+                    SizedBox(
+                      width: bw,
+                      height: h,
+                      child: IconButton(
+                        icon: Icon(icon, size: OnoteIcon.md),
+                        tooltip: tip,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: act,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -1272,10 +1611,17 @@ class _PageCanvasState extends State<PageCanvas> {
                 visible.overlaps(_cullRect(b)))
               ..._strokesOf(b),
         ];
-        final selectedInkRects = [
-          for (final b in inkBlocks)
-            if (app.selectedIds.contains(b.id)) _blockRect(b),
-        ];
+        // **Round everything selected while a drawing tool is in hand, not
+        // only the handwriting.** A block's own chrome is suppressed under an
+        // ink tool (see `BlockView`), so this dashed box is then the only mark
+        // on the page saying what a drag inside it will pick up — and a grab
+        // region nothing draws is a trap. See [_selectionTakes].
+        final selectedInkRects = inkSelectionBox([
+          for (final b in app.blocks)
+            if (app.selectedIds.contains(b.id) &&
+                (b.type == BlockType.ink || _inkTool))
+              _blockRect(b),
+        ]);
         return RepaintBoundary(
           key: app.canvasKey,
           child: ClipRect(
@@ -1321,11 +1667,22 @@ class _PageCanvasState extends State<PageCanvas> {
                           top: 20,
                           child: IgnorePointer(
                             ignoring: _inkTool,
-                            child: PageTitleView(
-                              key: ValueKey('title-${app.pageId}'),
-                              app: app,
-                              width: pageSize.width -
-                                  AppState.pageLeftMargin * 2,
+                            // **Claims its pointers, the way a block does.**
+                            // Without this the canvas also saw the click and
+                            // did what a click on empty page does — reported
+                            // as *"clicking on the title creates a text box
+                            // on the page"*, with the caret landing in the
+                            // title and then leaving for the box that had
+                            // just appeared underneath it.
+                            child: Listener(
+                              onPointerDown: (e) =>
+                                  app.claimedPointers.add(e.pointer),
+                              child: PageTitleView(
+                                key: ValueKey('title-${app.pageId}'),
+                                app: app,
+                                width: pageSize.width -
+                                    AppState.pageLeftMargin * 2,
+                              ),
                             ),
                           ),
                         ),
@@ -1401,7 +1758,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                         : OnoteColors.graphite900,
                                     // …except where the page is not what is
                                     // underneath. See [InkPainter.overDocument].
-                                    documentRects: _documentRects,
+                                    documentRects: app.documentRects,
                                     overDocument: OnoteColors.graphite900),
                               ),
                             ),
@@ -1447,13 +1804,22 @@ class _PageCanvasState extends State<PageCanvas> {
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: _OverlayPainter(
+                      painter: OverlayPainter(
                         controller: controller,
                         marquee: _mode == _DragMode.marquee
                             ? Rect.fromPoints(_marqueeStartPage, _marqueeEndPage)
                             : null,
                         inkSelections: selectedInkRects,
-                        lasso: _lasso,
+                        // **A COPY, and that is the whole of the fix.** The
+                        // loop is built up point by point in one list, and a
+                        // painter handed that list compares it with itself in
+                        // `shouldRepaint` — same instance, same length, so
+                        // nothing had changed and nothing repainted. The loop
+                        // only appeared when the gesture ended and something
+                        // else rebuilt the canvas. Reported: *"the lasso works
+                        // however doesnt show the outline as it gets drawn."*
+                        lasso: _lasso == null ? null : List.of(_lasso!),
+                        eraserAt: _eraserAt,
                         color: Theme.of(context).colorScheme.primary,
                         halo: context.surfaces.canvas,
                       ),
@@ -1498,11 +1864,20 @@ class _PageCanvasState extends State<PageCanvas> {
       // tool is selected. See `app.touchDrawing` for the user override.
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
+        // The ring follows a hovering pen or mouse, not only a press: an
+        // eraser you can see the reach of BEFORE it touches is the point of
+        // drawing it at all.
+        onPointerHover: (e) => _noteEraser(e.localPosition),
         onPointerDown: (e) {
           // The scroll bar claims its pointers; the pen must not draw a
           // stroke behind it.
           if (app.claimedPointers.remove(e.pointer)) return;
           _noteStylus(e);
+          _noteEraser(e.localPosition);
+          // Something selected is something picked up, and a drag on it moves
+          // it whatever is in your hand. A press anywhere else has just put it
+          // down. See [_selectionTakes].
+          if (_selectionTakes(e)) return;
           if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);
             return;
@@ -1525,6 +1900,13 @@ class _PageCanvasState extends State<PageCanvas> {
         },
         onPointerMove: (e) {
           _noteStylus(e);
+          _noteEraser(e.localPosition);
+          // The selection took this gesture at the down event; the drag that
+          // moves it is the select-mode one, unchanged.
+          if (_mode == _DragMode.moveSelection) {
+            _selectMove(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -1532,15 +1914,28 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerUp: (e) {
+          if (_mode == _DragMode.moveSelection) {
+            _selectUp(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
           } else {
             _inkUp(e);
           }
+          // A pen leaves the page and takes the ring with it; a mouse keeps
+          // hovering and keeps it.
+          if (e.kind != PointerDeviceKind.mouse) _noteEraser(null);
         },
         onPointerCancel: (e) {
+          if (_mode == _DragMode.moveSelection) {
+            _mode = _DragMode.none;
+            _moveUndoPushed = false;
+            app.setDragging(false);
+          }
           _touches.remove(e.pointer);
           _gestureErase = false;
+          _noteEraser(null);
           _cancelWetStroke();
         },
         child: canvas,
@@ -1704,7 +2099,10 @@ class _PageCanvasState extends State<PageCanvas> {
     return Listener(
       onPointerSignal: _onScroll,
       // Hover is how a pen announces its approach; see _stylusProximity.
-      onPointerHover: _stylusProximity,
+      onPointerHover: (e) {
+        _stylusProximity(e);
+        _noteEraser(e.localPosition);
+      },
       // **Trackpad pan/pinch, claim-checked exactly like a mouse drag.**
       //
       // Reported: scrolling and zooming inside a graph moved the PAGE
@@ -1745,6 +2143,10 @@ class _PageCanvasState extends State<PageCanvas> {
         if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
       },
       child: MouseRegion(
+        // The ring goes with the pointer that owns it. A `Listener` has no
+        // exit event; the region that sets the cursor is the one that knows
+        // when the pointer has left.
+        onExit: (_) => _noteEraser(null),
         cursor: switch (app.tool) {
           // The button held means erase, whatever tool is selected.
           _ when _penErasing => SystemMouseCursors.cell,
@@ -1912,15 +2314,26 @@ class _DragGridPainter extends CustomPainter {
 }
 
 /// Marquee rectangle + dashed outlines for selected ink blocks.
-class _OverlayPainter extends CustomPainter {
-  _OverlayPainter({
+///
+/// Public only so a test can read [debugPaints]: whether the loop somebody is
+/// drawing appears under their pointer is not a thing a widget test can see,
+/// and counting repaints is.
+class OverlayPainter extends CustomPainter {
+  OverlayPainter({
     required this.controller,
     required this.marquee,
     required this.inkSelections,
     required this.lasso,
     required this.color,
     required this.halo,
-  });
+    required this.eraserAt,
+  }) : super(repaint: eraserAt);
+
+  /// How many times an overlay has painted, for the test that proves the lasso
+  /// is drawn as it is drawn rather than at the end. See CONTRIBUTING: count
+  /// the work, never the clock.
+  @visibleForTesting
+  static int debugPaints = 0;
   final CanvasController controller;
   final Rect? marquee;
   final List<Rect> inkSelections;
@@ -1931,8 +2344,44 @@ class _OverlayPainter extends CustomPainter {
   /// colour, so it is white on a light page and near-black on a dark one.
   final Color halo;
 
+  /// **Where the eraser is, in screen space, while it can rub something out.**
+  ///
+  /// A notifier rather than a value, and handed to `super.repaint`, because it
+  /// changes once per pointer sample: a `setState` at that rate would rebuild
+  /// the canvas a hundred times a second to move a circle. Same trick the wet
+  /// stroke uses.
+  final ValueNotifier<Offset?> eraserAt;
+
   @override
   void paint(Canvas canvas, Size size) {
+    debugPaints++;
+    final rub = eraserAt.value;
+    if (rub != null) {
+      // Faint, and a ring rather than a disc: it has to say where the edge is
+      // without hiding the ink it is about to take. The radius does not scale
+      // with zoom because the eraser does not either — `_eraseAt` divides by
+      // the scale, which is the same thing said the other way round.
+      canvas.drawCircle(
+          rub,
+          kEraserRadius,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = color.withValues(alpha: .07));
+      canvas.drawCircle(
+          rub,
+          kEraserRadius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5
+            ..color = halo.withValues(alpha: .8));
+      canvas.drawCircle(
+          rub,
+          kEraserRadius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = color.withValues(alpha: .75));
+    }
     final lassoPts = lasso;
     if (lassoPts != null && lassoPts.length > 1) {
       final path = Path()
@@ -1984,7 +2433,7 @@ class _OverlayPainter extends CustomPainter {
     for (final pr in inkSelections) {
       final r = Rect.fromPoints(controller.pageToScreen(pr.topLeft),
               controller.pageToScreen(pr.bottomRight))
-          .inflate(4);
+          .inflate(kSelectionOutline);
       _dashedRect(canvas, r, Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
@@ -2012,7 +2461,8 @@ class _OverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _OverlayPainter old) =>
+  bool shouldRepaint(covariant OverlayPainter old) =>
+      old.eraserAt != eraserAt ||
       old.marquee != marquee ||
       old.inkSelections.length != inkSelections.length ||
       old.lasso != lasso ||

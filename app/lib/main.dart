@@ -1,3 +1,4 @@
+import 'core/pen_buttons.dart';
 import 'l10n/l10n.dart';
 import 'dart:io' show exit;
 
@@ -20,6 +21,9 @@ import 'ui/app_shell.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The pen's buttons, which the Windows embedder does not report and the
+  // runner reads off the window messages instead. A no-op everywhere else.
+  PenButtons.listen();
   // The notebook we were launched to open: `openote Physics.onotebook`, or a
   // double-click in the file manager — on the notebook folder itself where the
   // shell will open one, and on the `Open this notebook.onotelink` inside it

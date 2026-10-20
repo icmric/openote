@@ -448,6 +448,11 @@ void main() {
       'a [link](https://x.test) and **bold**',
       '{{#ff0000 red}} and plain',
       '  - nested *one* two',
+      // Nested styling: markers at two depths, and the caret has to be told
+      // about both or it walks into characters nobody can see (issue #17).
+      '{{#ff0000 **red and bold**}} tail',
+      '**{{#ff0000 bold then red}}** tail',
+      '## ==**a hot heading**== too',
     ];
     for (final line in corpus) {
       testWidgets('«$line»', (t) async {

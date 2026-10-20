@@ -104,6 +104,9 @@ void main() {
           reason: 'still an annotation surface, exactly as before');
     }
     expect(slides.map((s) => s.content['page']).toSet(), {0, 1});
+    expect(slides.map((s) => s.content['pdf']).toSet(), hasLength(1),
+        reason: 'one hash for the whole deck, which is what links the slides '
+            'to each other — see AppState.setPdfLocked');
     expect(slides.first.content['sourceText'], contains('alpha'),
         reason: 'the text layer still feeds notebook search');
 

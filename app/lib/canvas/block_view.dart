@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/pen_buttons.dart';
 import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
@@ -121,6 +122,16 @@ class _BlockViewState extends State<BlockView> {
   int? _selectBase;
   bool _textDragging = false;
 
+  /// Whether the press that started this gesture landed on a member of a group
+  /// that was not yet held.
+  ///
+  /// **Latched at pointer-down, because picking the group up is the first
+  /// thing the gesture does.** Read live instead, it would be true for the
+  /// press and false for every move after it — handing the rest of the drag
+  /// to the member's own text selection, which is exactly the gesture the
+  /// group was supposed to take.
+  bool _pressTookGroup = false;
+
   /// Whether the press that started this gesture landed on CHROME — the move
   /// bar, a resize handle, or the hit-padding — rather than on the block's own
   /// content.
@@ -139,6 +150,20 @@ class _BlockViewState extends State<BlockView> {
   bool get primary => app.selectedBlockId == b.id;
   bool get editing => app.editingBlockId == b.id;
 
+  /// Is this block's group already the thing being held?
+  ///
+  /// A selection is closed over groups ([AppState.select]), so one member
+  /// being selected means every member is — which is what lets a question
+  /// about the group be answered by looking at this block alone.
+  bool get _groupHeld => b.groupId != null && selected;
+
+  /// Does the group own the next gesture on this block, rather than the block
+  /// itself? True for a member of a group nobody has picked up yet: the first
+  /// click selects the group and the first drag moves it, and only once it is
+  /// held do this block's own body gestures — selecting its text, panning its
+  /// graph — come back. See [_tap].
+  bool get _groupTakesGesture => b.groupId != null && !_groupHeld;
+
   /// A click just opened this box with nothing in it and nothing typed
   /// since — OneNote-style: the caret is live but the box itself stays
   /// invisible (no border, no move bar, no resize handles) until the first
@@ -152,7 +177,31 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.table;
 
   void _tap() {
+    // **A background layer is not one of the things on the page.** A locked
+    // slide stays out of the selection however it is reached — the marquee
+    // skips it, and a click on it is a click on the page behind the notes,
+    // which the canvas answers by clearing the selection. Issue #20: *"it
+    // should more or less act as a background piece, i think the only time it
+    // should not act as one is if i right click it … and unlock it."*
+    //
+    // Only for the types that cannot be edited, which is every kind of slide.
+    // Locking a text box is locking where it sits; typing in it is not moving
+    // it, and taking that away is not what the menu item offers.
+    if (_locked && !_editableType) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    // **A grouped block answers for its group first.** Clicking one member
+    // picks the whole group up, which is the point of having joined it; a
+    // second click, now that the group is already held, goes to the member
+    // under the pointer and opens it. That is how every drawing tool lets you
+    // reach inside a group, and it is the only way a grouped text box stays
+    // typeable without making the first click ambiguous.
+    //
+    // Shift is excluded because it means "add to what I have", and
+    // [AppState.select] already toggles the whole group for it.
+    if (!shift && _groupTakesGesture) {
+      app.select(b.id);
+      return;
+    }
     if (shift) {
       app.select(b.id, additive: true);
     } else if (_editableType) {
@@ -212,9 +261,16 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerDown(PointerDownEvent e) {
-    app.claimedPointers.add(e.pointer);
+    // **A background layer does not claim.** Claiming is how a block tells the
+    // canvas to keep its hands off a gesture, and a locked block — an
+    // imported slide — has no gesture of its own: it cannot be moved, resized
+    // or typed into. Leaving the press to the canvas is what lets a marquee
+    // start on top of a slide; see `_selectDown`, which still leaves the
+    // CLICK to the tap handler below so the slide can be selected.
+    if (!_locked) app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressOnChrome = _isChromeAt(e.position);
+    _pressTookGroup = _groupTakesGesture;
     _selectBase = null;
     _textDragging = false;
   }
@@ -225,6 +281,9 @@ class _BlockViewState extends State<BlockView> {
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
     if (_pressOnChrome) return;
+    // A group nobody is holding moves as one thing. Its members' text stays
+    // selectable, but only after the group has been picked up.
+    if (_pressTookGroup) return;
     if (!_textDragging && (e.position - from).distance < 4) return;
     if (HardwareKeyboard.instance.isAltPressed) return; // Alt-drag moves
     if (!_textDragging) {
@@ -322,7 +381,11 @@ class _BlockViewState extends State<BlockView> {
                 b.type != BlockType.board &&
                 b.type != BlockType.graph &&
                 b.type != BlockType.substitute) ||
-            HardwareKeyboard.instance.isAltPressed;
+            HardwareKeyboard.instance.isAltPressed ||
+            // A member of a group nobody has picked up yet drags the whole
+            // group, whatever the block would otherwise have done with the
+            // gesture — the same rule [_tap] applies to the first click.
+            _pressTookGroup;
     if (_bodyDragMoves) _dragStart(d);
   }
 
@@ -455,9 +518,7 @@ class _BlockViewState extends State<BlockView> {
     return t.trim().isEmpty ? '${b.type.name} block' : t;
   }
 
-  /// True for a background layer that must not be moved or resized —
-  /// currently an imported PDF slide (see `export/pdf_import.dart`).
-  bool get _locked => b.content['locked'] == true;
+  bool get _locked => b.locked;
 
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
@@ -616,9 +677,10 @@ class _BlockViewState extends State<BlockView> {
 
     // While an ink tool is active, blocks are inert — the pen draws OVER
     // them instead of dragging/editing them (fixes ink-over-block dragging).
-    final inkToolActive = app.tool == Tool.pen ||
-        app.tool == Tool.highlighter ||
-        app.tool == Tool.eraser;
+    // [AppState.inkToolInHand] holds the rule, because what counts as a
+    // drawing tool is also what decides whether anything has a bar to put a
+    // delete cross on.
+    final inkToolActive = app.inkToolInHand;
 
     // Chrome is only live for its OWN block, so two abutting blocks can never
     // both offer a bar at once even though the reserved strips overlap.
@@ -644,14 +706,20 @@ class _BlockViewState extends State<BlockView> {
     final body = MouseRegion(
       onEnter: (_) => _setHover(body: true),
       onExit: (_) => _setHover(body: false),
-      cursor: _editableType && !editing
+      // An I-beam over a group nobody is holding would promise a caret that
+      // the first click does not give — it selects the group instead.
+      cursor: _editableType && !editing && !_groupTakesGesture
           ? SystemMouseCursors.text
           : MouseCursor.defer,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         supportedDevices: devices,
         onTap: editing ? null : _tap,
-        onSecondaryTapUp: editing
+        onSecondaryTapUp: editing ||
+                // A pen's barrel button can arrive as a right-click; where it
+                // has been given a job, that is the job it does rather than
+                // opening a menu. See [PenButtons.suppressesMenu].
+                PenButtons.suppressesMenu(app.penButton)
             ? null
             : (d) => showBlockMenu(context, app, b, d.globalPosition),
         // A locked block (an imported PDF slide) is an annotation surface: it

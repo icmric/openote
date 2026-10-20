@@ -3003,6 +3003,11 @@ class Repository {
         starts([0x57, 0x45, 0x42, 0x50], at: 8)) {
       return 'image/webp';
     }
+    if (starts([0x42, 0x4d])) return 'image/bmp';
+    // Both byte orders: 'II' little-endian, 'MM' big-endian.
+    if (starts([0x49, 0x49, 0x2a, 0x00]) || starts([0x4d, 0x4d, 0x00, 0x2a])) {
+      return 'image/tiff';
+    }
     if (starts([0x4f, 0x49, 0x53, 0x31])) return inkMimeType; // 'OIS1'
     return 'application/octet-stream';
   }
@@ -3998,6 +4003,26 @@ class Repository {
   /// to describe it for third-party writers. Scanning JSON is ~10 ms for a
   /// 300-page notebook, which is well inside "instant" for a search box.
   /// Revisit when a real notebook makes it slow, not before.
+  /// Every page whose stored JSON contains [needle], by id.
+  ///
+  /// The cheap, exact way to find where one import's slides ended up: the
+  /// mirror holds each page as text, the needle is a content hash, and
+  /// nothing has to be decoded to answer. [searchPageContent] runs the same
+  /// scan for words and then builds a readable snippet, which this has no use
+  /// for.
+  List<String> pageIdsContaining(String notebookId, String needle) {
+    if (needle.isEmpty) return const [];
+    final out = <String>[];
+    final rows =
+        _db(notebookId).select('SELECT page_id, json FROM page_mirror');
+    for (final r in rows) {
+      if ((r['json'] as String).contains(needle)) {
+        out.add(r['page_id'] as String);
+      }
+    }
+    return out;
+  }
+
   List<({String pageId, String snippet})> searchPageContent(
       String notebookId, String query,
       {int limit = 50}) {

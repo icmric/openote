@@ -207,6 +207,14 @@ void main() {
     app.markOnboardingSeen();
     await mount(tester, app, showSettingsDialog);
 
+    // **Via the rail**, because Settings is a group at a time now rather than
+    // one long scroll. The door is on Help, with the shortcut list and the pen
+    // diagnostic — which is also the first thing this asserts about the rail:
+    // the page it names is the page you get.
+    expect(find.text('Welcome tour'), findsNothing,
+        reason: 'another group is open, so it is not on screen at all');
+    await tester.tap(find.text('Help'));
+    await tester.pumpAndSettle();
     expect(find.text('Welcome tour'), findsOneWidget,
         reason: 'a door back in is what makes "Skip" a fair offer');
     // By its own icon: Settings stacks several identical "Open…" buttons,

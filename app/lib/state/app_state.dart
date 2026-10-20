@@ -54,6 +54,7 @@ import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../editor/inline_table.dart' show tableColumnWidths;
 import '../editor/list_editing.dart';
+import '../core/pen_buttons.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
@@ -96,9 +97,10 @@ enum EraserMode {
 
 /// Whether a finger draws when an ink tool is selected (INK-1 / INK-4).
 enum TouchDrawing {
-  /// Draw with touch, unless a stylus is in use — then touch pans so a resting
-  /// palm can't mark the page. The default: it gives pen users OneNote's palm
-  /// rejection while leaving ink reachable on a touch-only tablet.
+  /// Draw with touch only on a machine where **no pen has ever been used**.
+  /// The default: a touch-only tablet can still ink (INK-1), and anybody who
+  /// has ever picked up a pen here gets a finger that navigates instead of a
+  /// palm that draws.
   auto,
 
   /// Always draw with touch, even with a stylus present.
@@ -4713,7 +4715,7 @@ class AppState extends ChangeNotifier
   ///
   /// The gap is the same 12px the align guides settle to, so a block put here
   /// looks placed rather than dropped.
-  Offset belowBlock(Block b) => Offset(b.x, _rectOf(b).bottom + 12);
+  Offset belowBlock(Block b) => Offset(b.x, blockRect(b).bottom + 12);
 
   /// The block a new one should be placed under, or null to fall back to the
   /// middle of the view. Never names a block on another page: [blockById]
@@ -5089,8 +5091,7 @@ class AppState extends ChangeNotifier
     _commitActiveEditor();
     // Blanking only means something on a line that is already a card.
     if (tagsAtCaret().isEmpty) toggleTagOnSelection(TagKind.question);
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
     return true;
   }
 
@@ -5514,6 +5515,33 @@ class AppState extends ChangeNotifier
   /// pan unconditionally, which meant ink was unreachable on a touch-only
   /// tablet — palm rejection implemented as "fingers never draw" rather than
   /// "fingers don't draw *while a pen is in use*".
+  /// **Whether a pen has ever been used on this machine.**
+  ///
+  /// Persisted, because it is a question about the hardware rather than the
+  /// minute: *"it should never use regular touch to draw when a pen has been
+  /// used."* See [touchShouldDraw], which used to ask whether one had been
+  /// seen in the last two seconds — shorter than the pause between two words.
+  bool penSeenHere = false;
+
+  /// Said once, the first time a stylus reports itself.
+  void notePenSeen() {
+    if (penSeenHere) return;
+    penSeenHere = true;
+    _repo.setSetting('penSeenHere', true);
+    notifyListeners();
+  }
+
+  /// What a press of the pen's side button does. See [PenButtons].
+  /// Defaults to the lasso, which is what the barrel does in OneNote — and
+  /// the button a driver calls the eraser erases through its own flag, so the
+  /// two no longer collide on one meaning.
+  PenButtonAction penButton = PenButtonAction.lasso;
+  void setPenButton(PenButtonAction v) {
+    penButton = v;
+    _repo.setSetting('penButton', v.name);
+    notifyListeners();
+  }
+
   TouchDrawing touchDrawing = TouchDrawing.auto;
 
   void setTouchDrawing(TouchDrawing v) {
@@ -5550,13 +5578,36 @@ class AppState extends ChangeNotifier
   /// PRIMARY block alone and says nothing about the others, so the floating
   /// button is the only control that means "all of this".
   ///
-  /// The case this button was built for is not lost by that. It was for ink
-  /// on a tablet, where there is no Delete key — but a lasso leaves the lasso
-  /// tool in hand, not a pen, and a lassoed block shows its bar and its cross
-  /// like any other. A pen cannot be in hand with something selected at all,
-  /// because [setTool] clears the selection on the way to any tool that
-  /// draws.
-  bool get showSelectionDelete => selectedIds.length > 1;
+  /// **Unless the one thing has no bar to put a cross on**, which is the case
+  /// the button was built for in the first place: ink on a tablet, where there
+  /// is no Delete key either. A stroke is its own block and ink is painted
+  /// rather than built, so there is no move bar anywhere on it — and the same
+  /// goes for a box while a drawing tool is in hand, since a block shows no
+  /// chrome at all then. The owner, lassoing: *"When one or more items are
+  /// selected with the lasso, it should have that little delete icon like we
+  /// have when selecting multiple boxes."*
+  ///
+  /// Both halves of that used to be impossible and are not any more: a loop
+  /// round one stroke selects one block, and letting go of a side button
+  /// hands the pen back without dropping the selection.
+  ///
+  /// **Never while the eraser is in hand**, whatever is selected: that tool's
+  /// whole job is to take things away by pointing at them, and a button
+  /// floating in the way of the pointer is worse than no button.
+  bool get showSelectionDelete {
+    if (selectedIds.isEmpty || tool == Tool.eraser) return false;
+    if (selectedIds.length > 1) return true;
+    if (inkToolInHand) return true;
+    return blockById(selectedIds.first)?.type == BlockType.ink;
+  }
+
+  /// Whether the tool in hand draws, which is also the question "does
+  /// anything on the page show its own chrome right now" — a block goes inert
+  /// and loses its bar while one of these is held, so that the pen can write
+  /// over it. One definition, because three of them drifting apart is how a
+  /// box ends up with no way to delete it.
+  bool get inkToolInHand =>
+      tool == Tool.pen || tool == Tool.highlighter || tool == Tool.eraser;
 
   bool get hasInkSelection =>
       blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
@@ -5606,7 +5657,7 @@ class AppState extends ChangeNotifier
     if (moving == null) return;
     final others = [
       for (final b in blocks)
-        if (!selectedIds.contains(b.id)) _rectOf(b)
+        if (!selectedIds.contains(b.id)) blockRect(b)
     ];
     final r = findAlignment(moving, others, threshold: 7.0 / scale);
     alignGuides = r.guides;
@@ -5625,13 +5676,55 @@ class AppState extends ChangeNotifier
     alignGuides = const [];
   }
 
-  Rect _rectOf(Block b) =>
-      Rect.fromLTWH(b.x, b.y, b.w, b.h ?? renderSizes[b.id]?.height ?? 60);
+  /// **The rectangle a block occupies**, for selection, hit-testing, the
+  /// alignment guides and deciding what is on top of what.
+  ///
+  /// [aspectHeight] before the measured height because a picture's own
+  /// proportions are known the moment it is added, while the measurement
+  /// arrives a frame after layout — so a slide was reckoned to be a
+  /// sixty-pixel strip for exactly as long as it took anybody to click on it.
+  ///
+  /// One copy, because there were two: the canvas had this formula and the
+  /// alignment guides had it without the aspect fallback, which is the same
+  /// sixty-pixel bug in a place nobody had reported it from yet.
+  Rect blockRect(Block b) => Rect.fromLTWH(b.x, b.y, b.w,
+      b.h ?? aspectHeight(b) ?? renderSizes[b.id]?.height ?? 60);
+
+  /// Page-space rectangles of everything that brings its own background — an
+  /// imported picture, a PDF page.
+  List<Rect> get documentRects => [
+        for (final b in blocks)
+          if (b.type == BlockType.image ||
+              (b.type == BlockType.file &&
+                  b.content['mime'] == 'application/pdf'))
+            blockRect(b),
+      ];
+
+  /// **Whether [b] sits on top of one of those**, so that what is `auto`
+  /// about it should contrast with the document rather than with the page.
+  ///
+  /// The rule and its reasoning belong to `InkPainter.overDocument`, which
+  /// has asked it per stroke since the report that *"automatic white ink is
+  /// also invisible on white documents in dark mode"*. Text asks it too now:
+  /// *"when typing on a PDF, auto text colour should work like auto ink
+  /// colour where it adjusts between black and white based on the PDF."*
+  ///
+  /// The block's CENTRE decides, as a stroke's midpoint does: a box mostly on
+  /// the slide reads as being on the slide, and half a box changing colour
+  /// would be worse than either answer.
+  bool overDocument(Block b) {
+    if (b.type == BlockType.image || b.type == BlockType.file) return false;
+    final at = blockRect(b).center;
+    for (final r in documentRects) {
+      if (r.contains(at)) return true;
+    }
+    return false;
+  }
 
   Rect? _unionRect(Set<String> ids) {
     Rect? out;
     for (final b in blocks.where((b) => ids.contains(b.id))) {
-      final r = _rectOf(b);
+      final r = blockRect(b);
       out = out == null ? r : out.expandToInclude(r);
     }
     return out;
@@ -5871,7 +5964,25 @@ class AppState extends ChangeNotifier
 
   // ── Text colour (inline {{#RRGGBB text}}) ──────────────────────────────
 
-  String lastColor = 'C63838'; // last-used ink colour; default red
+  /// **The two colours Ctrl+Shift+C flicks between**, most recent first.
+  ///
+  /// The owner: *"ctrl + shift + c does flick it back to the last colour,
+  /// however pressing it again doesnt then do the other colour. The usecase
+  /// for that shortcut was being able to flick between colours when writing
+  /// some text where i want to set the colour of a couple words, but not
+  /// every word."*
+  ///
+  /// So the shortcut swaps rather than toggling colour against no-colour. It
+  /// reads what the selection already has and applies the OTHER one, which
+  /// alternates however many times it is pressed. `'auto'` is one of the two
+  /// — and it is [prevColor]'s starting value, so out of the box the flick is
+  /// between the last colour and the default, which is the "a couple of words,
+  /// not every word" case.
+  String lastColor = 'C63838'; // the chosen text colour; default red
+
+  /// The one before [lastColor]. Only [applyTextColor] moves it, so flicking
+  /// does not reorder the pair under the student's fingers.
+  String prevColor = 'auto';
   final List<String> customColors = []; // recent/custom, persisted
   void rememberCustomColor(String hex) {
     customColors.remove(hex);
@@ -5938,10 +6049,31 @@ class AppState extends ChangeNotifier
       r'^\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\}\}$',
       dotAll: true);
 
-  void applyTextColor(String hex) {
+  /// **Colour the selection**, or clear it back to the default with
+  /// `'auto'`.
+  ///
+  /// `'auto'` is the sentinel the pen already uses ([penInk]): not a
+  /// colour, but "whatever contrasts with what it is drawn on". It is
+  /// what the picker's Automatic entry returns, because *"its not
+  /// imedietley clear how to set it to the auto colour"* — there was no
+  /// way at all, and no way back off a colour except undo.
+  void applyTextColor(String hex, {bool remember = true}) {
     final ae = activeEditor;
     if (ae == null) return;
-    lastColor = hex;
+    // A flick is not a choice: it leaves the pair exactly as it is, so
+    // the toolbar goes on showing the colour somebody picked and
+    // pressing the chord again comes back here with the same two to
+    // swap between.
+    if (remember) {
+      if (!_sameColour(hex, lastColor)) prevColor = lastColor;
+      lastColor = hex;
+    }
+    // `{{#…}}` in a code cell is not a colour, it is somebody's source.
+    // The same guard [wrapSelection] carries, for the same reason.
+    if (ae.block.type != BlockType.text) {
+      notifyListeners();
+      return;
+    }
     final c = ae.controller;
     final sel = c.selection;
     if (!sel.isValid || sel.isCollapsed) {
@@ -5967,14 +6099,28 @@ class AppState extends ChangeNotifier
     // sit between the selection and the colour — `{{#c **word**}}` has bold
     // markers in the way, and the old check, which looked only immediately
     // before the selection, did not see the colour at all.
+    // Clearing is the same search with the markers taken away instead of
+    // rewritten, which is why it is a branch here rather than a command of
+    // its own: "no colour" has to find the run it is removing exactly as
+    // precisely as a recolour does.
+    final clearing = hex == 'auto';
     final run = _colourRunFor(c, t, s, e);
     if (run != null) {
       pushUndo();
-      final newOpen = '{{#$hex ';
-      c.text = t.replaceRange(run.open, run.innerStart, newOpen);
-      final shift = newOpen.length - (run.innerStart - run.open);
-      c.selection =
-          TextSelection(baseOffset: s + shift, extentOffset: e + shift);
+      if (clearing) {
+        final openLen = run.innerStart - run.open;
+        c.text = t
+            .replaceRange(run.innerEnd, run.end, '')
+            .replaceRange(run.open, run.innerStart, '');
+        c.selection =
+            TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
+      } else {
+        final newOpen = '{{#$hex ';
+        c.text = t.replaceRange(run.open, run.innerStart, newOpen);
+        final shift = newOpen.length - (run.innerStart - run.open);
+        c.selection =
+            TextSelection(baseOffset: s + shift, extentOffset: e + shift);
+      }
       _commitActiveEditor();
       notifyListeners();
       return;
@@ -5986,16 +6132,27 @@ class AppState extends ChangeNotifier
     if (whole != null) {
       pushUndo();
       final inner = whole.group(2)!;
-      c.text = t.replaceRange(s, e, '{{#$hex $inner}}');
-      final openLen = hex.length + 4; // '{{#' + hex + ' '
-      c.selection = TextSelection(
-          baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
+      if (clearing) {
+        c.text = t.replaceRange(s, e, inner);
+        c.selection =
+            TextSelection(baseOffset: s, extentOffset: s + inner.length);
+      } else {
+        c.text = t.replaceRange(s, e, '{{#$hex $inner}}');
+        final openLen = hex.length + 4; // '{{#' + hex + ' '
+        c.selection = TextSelection(
+            baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
+      }
       _commitActiveEditor();
       notifyListeners();
       return;
     }
 
-    // Case C: fresh selection — wrap it.
+    // Case C: fresh selection — wrap it. Unless the request was to clear,
+    // in which case there is nothing here to clear and nothing to do.
+    if (clearing) {
+      notifyListeners();
+      return;
+    }
     pushUndo();
     final selText = t.substring(s, e);
     c.text = t.replaceRange(s, e, '{{#$hex $selText}}');
@@ -6006,33 +6163,39 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// The "flick" hotkey: colour the selection with the last colour, or strip
-  /// the colour if it's already coloured (back to default).
-  void toggleTextColor() {
+  /// The colour the whole selection already carries, or null when it has
+  /// none — or when the selection spans more than one, which is what stops a
+  /// flick deciding on behalf of two.
+  String? get _selectionColor {
     final ae = activeEditor;
-    if (ae == null) return;
+    if (ae == null) return null;
     final c = ae.controller;
     final sel = c.selection;
-    if (!sel.isValid || sel.isCollapsed) return;
+    if (!sel.isValid || sel.isCollapsed) return null;
     final t = c.text;
     final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
         math.max(sel.baseOffset, sel.extentOffset));
-    // Through other runs' markers, as in [applyTextColor] — so a red bold
-    // word loses its red, instead of gaining a second red inside the first.
     final run = _colourRunFor(c, t, s, e);
-    if (run != null) {
-      pushUndo();
-      final openLen = run.innerStart - run.open;
-      c.text = t
-          .replaceRange(run.innerEnd, run.end, '')
-          .replaceRange(run.open, run.innerStart, '');
-      c.selection =
-          TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
-      _commitActiveEditor();
-      notifyListeners();
-    } else {
-      applyTextColor(lastColor);
-    }
+    if (run == null) return null;
+    // '{{#' + the hex + ' '
+    return t.substring(run.open + 3, run.innerStart - 1);
+  }
+
+  /// Two colours differing only in case or a leading `#` are one colour.
+  static bool _sameColour(String a, String b) =>
+      a.replaceFirst('#', '').toLowerCase() ==
+      b.replaceFirst('#', '').toLowerCase();
+
+  /// The "flick" hotkey: swap the selection between the last two colours.
+  ///
+  /// Not a toggle against no-colour, which only ever did one of the two
+  /// things somebody flicking wants. Out of the box the pair is your colour
+  /// and Automatic, which is the "a couple of words, not every word" case.
+  /// See [lastColor].
+  void toggleTextColor() {
+    final current = _selectionColor ?? 'auto';
+    applyTextColor(_sameColour(current, lastColor) ? prevColor : lastColor,
+        remember: false);
   }
 
   // ── Text-box font family (box-level) ───────────────────────────────────
@@ -6976,11 +7139,22 @@ class AppState extends ChangeNotifier
     // to prevent). The format is the copy, the way it is the API.
     final newIds = <String>[];
     final oldToNew = <String, String>{};
+    // One map for the whole paste, so blocks that shared a group still share
+    // one afterwards.
+    final oldToNewGroup = <String, String>{};
     for (final src in list) {
       final fresh = Block.fromJson({
         ...jsonDecode(jsonEncode(src.toJson())) as Map<String, dynamic>,
         'id': newId(),
       });
+      // A `groupId` is a link WITHIN the pasted selection, so rule 3 remaps it
+      // rather than carrying it: the copies become their own group. Carried
+      // verbatim — which is what cloning through `toJson` does by default —
+      // they would join the group they were copied from, and the next drag of
+      // the original would walk the copies across the page with it. Copy part
+      // of a group and the paste is a group of just that part.
+      final g = fresh.groupId;
+      if (g != null) fresh.groupId = oldToNewGroup.putIfAbsent(g, newId);
       fresh.x = at?.dx ?? src.x + 28;
       fresh.y = at?.dy ?? src.y + 28;
       if (fresh.type == BlockType.ink) {
@@ -6998,6 +7172,9 @@ class AppState extends ChangeNotifier
       oldToNew[src.id] = fresh.id;
     }
     _relinkGraphs(oldToNew);
+    // Pasting one member of a group gives it a fresh id nothing else shares,
+    // which is a group of one — not a group.
+    _tidyGroups();
     selectMany(newIds);
     markDirty();
   }
@@ -7146,6 +7323,11 @@ class AppState extends ChangeNotifier
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
     if (rec is List) _recents.addAll(rec.cast<String>());
+    penSeenHere = _repo.getSetting('penSeenHere') == true;
+    final pb = _repo.getSetting('penButton') as String?;
+    if (pb != null) {
+      penButton = PenButtonAction.values.asNameMap()[pb] ?? penButton;
+    }
     final td = _repo.getSetting('touchDrawing') as String?;
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
@@ -8449,8 +8631,7 @@ class AppState extends ChangeNotifier
       }
     }
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// The one big box a paged page writes into, created if it is not there.
@@ -9392,8 +9573,7 @@ class AppState extends ChangeNotifier
     selectedBlockId = null;
     editingBlockId = null;
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void pushUndo() {
@@ -9920,15 +10100,68 @@ class AppState extends ChangeNotifier
           : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1);
     clampBlockToPage(b);
     blocks.add(b);
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
     return b;
   }
 
   void updateBlock(Block b) {
     b.updatedAt = nowMs();
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
+  }
+
+  /// Lock or unlock every slide that came out of the same PDF, wherever in
+  /// the notebook it landed. Returns how many changed.
+  ///
+  /// An import gives each slide a page of its own, so "unlock this one" is
+  /// forty right-clicks on a forty-page deck: *"if they want to make changes
+  /// to every page that would quickly become annoying if they have to right
+  /// click and unlock each page individually."* (Issue #20.)
+  ///
+  /// Every slide of one import already carries the same `content['pdf']`
+  /// hash, so that is the link — no new field, and it works on decks imported
+  /// before this existed.
+  ///
+  /// **Undo covers the page being looked at and no other**, because a
+  /// snapshot is per page. The way back is the same menu item, whose label
+  /// has flipped to say so.
+  int setPdfLocked(String pdfRef, {required bool locked}) {
+    final nb = notebookId;
+    if (nb == null || pdfRef.isEmpty) return 0;
+    var changed = 0;
+    // The page in front of the student is held in memory and may have edits
+    // that are not on disk yet, so it is changed there and left to the
+    // ordinary save.
+    for (final b in blocks) {
+      if (_relock(b, pdfRef, locked)) changed++;
+    }
+    for (final id in _repo.pageIdsContaining(nb, pdfRef)) {
+      if (id == pageId) continue; // done above, from memory
+      final data = _repo.readPage(nb, id);
+      var touched = false;
+      for (final b in data.blocks) {
+        if (_relock(b, pdfRef, locked)) {
+          touched = true;
+          changed++;
+        }
+      }
+      if (touched) importPage(nb, id, data.blocks, data.props);
+    }
+    if (changed > 0) {
+      markDirty();
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  static bool _relock(Block b, String pdfRef, bool locked) {
+    if (b.content['pdf'] != pdfRef || b.locked == locked) return false;
+    if (locked) {
+      b.content['locked'] = true;
+    } else {
+      b.content.remove('locked');
+    }
+    b.updatedAt = nowMs();
+    return true;
   }
 
   void removeBlock(String id, {bool recordUndo = true}) {
@@ -9937,8 +10170,8 @@ class AppState extends ChangeNotifier
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
     if (editingBlockId == id) editingBlockId = null;
-    markDirty();
-    notifyListeners();
+    _tidyGroups();
+    markDirty(); // which notifies
   }
 
   void removeSelected() {
@@ -9948,8 +10181,8 @@ class AppState extends ChangeNotifier
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
-    markDirty();
-    notifyListeners();
+    _tidyGroups();
+    markDirty(); // which notifies
   }
 
   /// Duplicate with FRESH ids (Data Model Spec §2 rule 3).
@@ -9965,6 +10198,9 @@ class AppState extends ChangeNotifier
       w: src.w,
       h: src.h,
       placement: src.placement,
+      // No `groupId`, and deliberately: the copy is a new thing, not another
+      // member of what it was copied from. Joining the original's group would
+      // make the next drag of that group carry the duplicate off with it.
       content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
     );
     if (fresh.type == BlockType.ink) {
@@ -9987,6 +10223,113 @@ class AppState extends ChangeNotifier
     select(fresh.id);
   }
 
+  // ── Groups (CANVAS-7) ───────────────────────────────────────────────────
+  //
+  // A group is a membership relation and nothing else: no bounds, no label,
+  // no place in the paint order (see [Block.groupId]). Everything that acts
+  // on a selection — the drag, Delete, copy, cut — already works off
+  // [selectedIds], so the whole feature is one rule applied in one place:
+  // **a selection is closed over groups.** Nothing downstream needs to know
+  // groups exist.
+
+  /// Every block sharing [id]'s group, [id] included — just `{id}` when it is
+  /// in no group, which is the common case and costs a single lookup.
+  Set<String> groupMembers(String id) {
+    final g = blocks.where((b) => b.id == id).firstOrNull?.groupId;
+    if (g == null) return {id};
+    return {
+      for (final b in blocks)
+        if (b.groupId == g) b.id
+    };
+  }
+
+  /// [ids] grown to whole groups. Partial selection of a group is the one
+  /// state that must not exist: it would let a drag carry half of something
+  /// that was joined precisely so it would move as one.
+  Set<String> _groupClosure(Iterable<String> ids) {
+    final want = ids.toSet();
+    final groups = {
+      for (final b in blocks)
+        if (b.groupId != null && want.contains(b.id)) b.groupId!
+    };
+    if (groups.isEmpty) return want; // nothing grouped — the usual answer
+    for (final b in blocks) {
+      if (groups.contains(b.groupId)) want.add(b.id);
+    }
+    return want;
+  }
+
+  /// The selected blocks a group could be made from. A locked block is left
+  /// out: it is the page behind the notes rather than a thing on it, and a
+  /// member that refuses to move is a group that cannot be dragged.
+  List<Block> _groupableSelection() => [
+        for (final b in blocks)
+          if (selectedIds.contains(b.id) && !b.locked) b
+      ];
+
+  /// Is there a group to be made out of what is selected?
+  ///
+  /// False once the selection is exactly one whole group, because the answer
+  /// then is Ungroup — and because selection is group-closed, "every member
+  /// shares one id" is the same statement as "this is that group entire".
+  bool get canGroup {
+    final members = _groupableSelection();
+    if (members.length < 2) return false;
+    final g = members.first.groupId;
+    return g == null || members.any((b) => b.groupId != g);
+  }
+
+  bool get canUngroup =>
+      blocks.any((b) => selectedIds.contains(b.id) && b.groupId != null);
+
+  /// Join the selection into one group.
+  ///
+  /// A selection spanning two existing groups **merges** them rather than
+  /// nesting one inside the other: one id per block is what keeps "select the
+  /// group" a lookup instead of a tree walk, and a merge is what somebody who
+  /// drew a box round both of them was asking for.
+  void groupSelected() {
+    if (!canGroup) return;
+    pushUndo();
+    final g = newId();
+    for (final b in _groupableSelection()) {
+      b.groupId = g;
+      b.updatedAt = nowMs();
+    }
+    markDirty(); // which notifies
+  }
+
+  void ungroupSelected() {
+    if (!canUngroup) return;
+    pushUndo();
+    for (final b in blocks) {
+      if (!selectedIds.contains(b.id) || b.groupId == null) continue;
+      b.groupId = null;
+      b.updatedAt = nowMs();
+    }
+    markDirty(); // which notifies
+  }
+
+  /// Drop a `groupId` only one block still carries.
+  ///
+  /// A group is a relation between blocks, so a lone survivor is not in one.
+  /// Left alone it would be a block that answers "select the group" with
+  /// itself and offers Ungroup for a thing nothing is grouped with. Called
+  /// wherever blocks leave the page.
+  void _tidyGroups() {
+    final count = <String, int>{};
+    for (final b in blocks) {
+      final g = b.groupId;
+      if (g != null) count[g] = (count[g] ?? 0) + 1;
+    }
+    for (final b in blocks) {
+      if (b.groupId != null && count[b.groupId] == 1) {
+        b.groupId = null;
+        b.updatedAt = nowMs();
+      }
+    }
+  }
+
   void select(String? id, {bool edit = false, bool additive = false}) {
     // The caret token is for the selection being made RIGHT NOW. Expiring it
     // here rather than trusting one widget type to consume it means a click
@@ -9998,13 +10341,24 @@ class AppState extends ChangeNotifier
       selectedBlockId = null;
       editingBlockId = null;
     } else if (additive) {
-      if (!selectedIds.add(id)) selectedIds.remove(id);
+      // Shift-click toggles the whole group. Taking a group out of a
+      // selection one member at a time would leave exactly the partial
+      // selection [_groupClosure] exists to prevent.
+      final g = groupMembers(id);
+      if (selectedIds.containsAll(g)) {
+        selectedIds.removeAll(g);
+      } else {
+        selectedIds.addAll(g);
+      }
       selectedBlockId = selectedIds.contains(id) ? id : selectedIds.firstOrNull;
       editingBlockId = null;
     } else {
       selectedIds
         ..clear()
-        ..add(id);
+        ..addAll(groupMembers(id));
+      // The block that was clicked stays the primary one, not whichever
+      // member happens to come first: the object row and the inspector speak
+      // for the thing under the pointer.
       selectedBlockId = id;
       editingBlockId = edit ? id : null;
       // Remembered here rather than where the caret lands, because this is
@@ -10017,7 +10371,9 @@ class AppState extends ChangeNotifier
   void selectMany(Iterable<String> ids) {
     selectedIds
       ..clear()
-      ..addAll(ids);
+      // A marquee that catches half a group takes all of it: the box was
+      // drawn round things, and a group is one of them.
+      ..addAll(_groupClosure(ids));
     selectedBlockId = selectedIds.firstOrNull;
     editingBlockId = null;
     notifyListeners();
@@ -10025,12 +10381,22 @@ class AppState extends ChangeNotifier
 
   /// Move every selected block by a page-space delta (ink blocks translate
   /// their stroke coordinates — Ink Spec §3, coordinates are page-absolute).
+  ///
+  /// A locked block stays where it is and does not stop the rest: a slide
+  /// that joined the selection used to be carried off the page with the notes
+  /// written on it.
   void moveSelectedBy(double dx, double dy) {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue;
       b.x += dx;
       b.y += dy;
       if (b.type == BlockType.ink) {
-        for (final sj in (b.content['strokes'] as List)) {
+        // Through [InkStorage.strokesOf], because a block whose blob has not
+        // arrived carries no working list and an unchecked cast threw out of
+        // the middle of this loop — leaving the blocks it had already reached
+        // moved, the rest not, and `notifyListeners` never called, so the
+        // page did not repaint until something else happened to change.
+        for (final sj in InkStorage.strokesOf(b.content)) {
           final m = (sj as Map);
           m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
           m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
@@ -10040,8 +10406,7 @@ class AppState extends ChangeNotifier
         b.updatedAt = nowMs();
       }
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Snap + clamp all selected at drag end. Ongoing left-margin alignment:
@@ -10049,6 +10414,7 @@ class AppState extends ChangeNotifier
   /// margin so everything stays neat (matches the smart initial placement).
   void settleSelected() {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue; // never moved, so nothing to settle
       if (b.type != BlockType.ink) {
         if ((b.x - pageLeftMargin).abs() < 26) {
           b.x = pageLeftMargin;
@@ -10062,8 +10428,7 @@ class AppState extends ChangeNotifier
       }
       clampBlockToPage(b);
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// **Whether the tool in hand was picked up by the app or by the person.**
@@ -10081,10 +10446,27 @@ class AppState extends ChangeNotifier
   /// possible for anyone without a pen.
   bool toolWasAutomatic = false;
 
+  /// **Choosing a tool drops the selection; being handed one does not.**
+  ///
+  /// Picking up the pen from the toolbar means you are done with whatever was
+  /// selected, so it clears — that much has always been right. But the pen
+  /// hands the tool round by itself, in three places (a pen coming into
+  /// range, and a side button borrowing a tool and giving it back), and those
+  /// are the same gesture from the user's side rather than a new decision.
+  ///
+  /// It was the GIVING BACK that showed it: lasso with the side button, let
+  /// go, and the pen came back through here and threw away the selection the
+  /// lasso had just made. The owner: *"it doesnt seem to hold the selection
+  /// after releasing the button. I suspect this is because it puts it right
+  /// into draw mode again, this isnt what it should do."*
+  ///
+  /// So an automatic hand-off leaves the selection alone, and what to do with
+  /// it is decided where the next press lands — inside it moves it, outside
+  /// clears it and draws. See `PageCanvas._selectionTakes`.
   void setTool(Tool t, {bool automatic = false}) {
     tool = t;
     toolWasAutomatic = automatic && t != Tool.select;
-    if (t != Tool.select) select(null);
+    if (t != Tool.select && !automatic) select(null);
     notifyListeners();
   }
 
@@ -10096,8 +10478,7 @@ class AppState extends ChangeNotifier
   void setBackground(String bg) {
     pushUndo();
     pageProps.background = bg;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void refresh() => notifyListeners();
@@ -10326,6 +10707,9 @@ class AppState extends ChangeNotifier
 
   // ── Persistence ────────────────────────────────────────────────────────
 
+  /// **And this notifies**, so a caller must not. Thirteen of them did, which
+  /// is one spare rebuild of everything on the page per edit — and per POINTER
+  /// SAMPLE on the one path that calls this in a loop, [moveSelectedBy].
   void markDirty() {
     _dirty = true;
     // Cheap counter, not a rebuild: it lets the open page's flashcards be

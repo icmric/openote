@@ -34,10 +34,13 @@
 /// directly.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
-/// The field that asked for the keyboard this frame, and the frame it asked in.
+/// The field that asked for the keyboard, and the frame it asked in — null
+/// when it asked between frames, which is its own case below.
 ///
 /// See [claimKeyboard]. Two values rather than one because a marker left over
 /// from an earlier frame must not go on answering for this one.
@@ -86,7 +89,20 @@ Duration? _thisFrame() {
 void claimKeyboard(FocusNode node) {
   _asked = node;
   _askedDuring = _thisFrame();
+  // **A claim made BETWEEN frames has no frame to be scoped to**, and the
+  // frame test below would throw it away unread. That is the ordinary case
+  // for a claim made straight from a gesture — a tap handler runs on the
+  // event queue, not inside a frame — so it lasts until the microtask that
+  // applies it instead, which is the same gap either way: `FocusManager`
+  // applies a request in a microtask, and a standing claim asking before
+  // then would otherwise read "going spare".
+  if (_askedDuring == null) scheduleMicrotask(_forgetClaim);
   node.requestFocus();
+}
+
+void _forgetClaim() {
+  _asked = null;
+  _askedDuring = null;
 }
 
 /// Whether [claimant] may take the keyboard without interrupting anybody.
@@ -107,12 +123,13 @@ void claimKeyboard(FocusNode node) {
 /// it — a field in some other block, being typed into — and taking it off
 /// them is the bug this exists to stop.
 bool keyboardIsGoingSpare(FocusNode claimant) {
-  // Somebody else asked for it in this same frame (see [claimKeyboard]).
-  // Their request is in flight and `primaryFocus` cannot say so yet.
+  // Somebody else asked for it in this same frame, or between frames (see
+  // [claimKeyboard]). Their request is in flight and `primaryFocus` cannot
+  // say so yet.
   if (_asked != null && _asked != claimant) {
-    if (_askedDuring != null && _askedDuring == _thisFrame()) return false;
-    _asked = null; // a frame has passed: the answer below is the true one
-    _askedDuring = null;
+    final during = _askedDuring;
+    if (during == null || during == _thisFrame()) return false;
+    _forgetClaim(); // a frame has passed: the answer below is the true one
   }
   final holder = FocusManager.instance.primaryFocus;
   if (holder == null || holder is FocusScopeNode) return true;

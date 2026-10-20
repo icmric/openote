@@ -1,4 +1,6 @@
 {
+  "@@locale": "en",
+  "@@x-notes": "The English template, and the source of truth for every other language. Rules for anyone adding a string: name it <surface><Thing> so a grep for the surface finds all of it; give every message an @-entry saying WHERE it appears and what any placeholder holds, because a translator sees the string and nothing else; and never build a sentence by concatenating fragments — word order is not the same everywhere. Illustrations in this app are painted, not written, so there is deliberately nothing in them to translate.",
   "atomNewerVersion": "Made in Openote {version}",
   "@atomNewerVersion": {
     "description": "Shown inside a box where a table or similar should be, on a device whose Openote is too old to draw it. {version} is the version it was made in, e.g. \"1.1.0\".",
@@ -16,6 +18,10 @@
   "atomUpdateToView": "Update Openote to view it",
   "@atomUpdateToView": {
     "description": "Second line of that box: what to do about it. Kept short — it sits inside a box the size of the missing table."
+  },
+  "barBackToEquation": "Back to the equation tools",
+  "@barBackToEquation": {
+    "description": "Tooltip on the Equation badge after the user has tapped another tab while the equation is still open. Pressing it brings the equation's own controls back to the command row."
   },
   "barBadgeCount": "{count}",
   "@barBadgeCount": {
@@ -86,10 +92,6 @@
   "barEraserWhole": "Removes any stroke you touch",
   "@barEraserWhole": {
     "description": "Tooltip: the eraser removes a whole pen stroke at once."
-  },
-  "barBackToEquation": "Back to the equation tools",
-  "@barBackToEquation": {
-    "description": "Tooltip on the Equation badge after the user has tapped another tab while the equation is still open. Pressing it brings the equation's own controls back to the command row."
   },
   "barEscWhenDone": "Esc when you are done",
   "@barEscWhenDone": {
@@ -203,20 +205,6 @@
   "@barInkMoreColours": {
     "description": "Tooltip on the button that opens the full colour picker for the pen."
   },
-  "barPenSize": "Pen size {size}",
-  "@barPenSize": {
-    "description": "Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.",
-    "placeholders": {
-      "size": {
-        "type": "String",
-        "example": "2.5"
-      }
-    }
-  },
-  "barPenSizeExact": "Exact size…",
-  "@barPenSizeExact": {
-    "description": "Tooltip on the button that opens a slider for a thickness none of the presets cover."
-  },
   "barInkPickColour": "Pick a colour off the page",
   "@barInkPickColour": {
     "description": "Tooltip on the eyedropper button."
@@ -260,6 +248,20 @@
   "barPenProximity": "Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen's tail (or its barrel\nbutton, held while drawing) erases.",
   "@barPenProximity": {
     "description": "Tooltip on the pen-proximity setting. 'tail' is the blunt end of a stylus; 'barrel button' the button on its side. Keep the line breaks."
+  },
+  "barPenSize": "Pen size {size}",
+  "@barPenSize": {
+    "description": "Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "2.5"
+      }
+    }
+  },
+  "barPenSizeExact": "Exact size…",
+  "@barPenSizeExact": {
+    "description": "Tooltip on the button that opens a slider for a thickness none of the presets cover."
   },
   "barPlanner": "Planner",
   "@barPlanner": {
@@ -434,10 +436,6 @@
   "@barToolText": {
     "description": "Tooltip. Keep the key in brackets as typed."
   },
-  "barTouchDrawing": "Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can't mark the page.\nTwo fingers always pan and zoom.",
-  "@barTouchDrawing": {
-    "description": "Tooltip on the finger-drawing setting. 'pans' means moves the page around. Keep the line breaks."
-  },
   "barUnderline": "Underline  (Ctrl+U)",
   "@barUnderline": {
     "description": "Tooltip. Keep the shortcut as typed."
@@ -460,6 +458,18 @@
   "@canvasDeleteSelection": {
     "description": "Tooltip on the button that appears above a selection. Keep the key name in brackets as the local keyboard spells it."
   },
+  "canvasGroupSelection": "Group  (Ctrl+G)",
+  "@canvasGroupSelection": {
+    "description": "Tooltip on the Group button above a selection. Keep the shortcut in brackets as the local keyboard spells it."
+  },
+  "canvasUngroupSelection": "Ungroup  (Ctrl+Shift+G)",
+  "@canvasUngroupSelection": {
+    "description": "Tooltip on the Ungroup button above a selection. Keep the shortcut in brackets as the local keyboard spells it."
+  },
+  "commandNotInDemo": "Not in the web demo",
+  "@commandNotInDemo": {
+    "description": "Hover text on a toolbar or menu item the web demo cannot run. Short on purpose: the control is greyed, and the only thing it has to say is that the app can do this and this build cannot."
+  },
   "commonBack": "Back",
   "@commonBack": {
     "description": "Button: return to the previous step of a multi-step flow."
@@ -471,6 +481,10 @@
   "commonClose": "Close",
   "@commonClose": {
     "description": "Button that dismisses a dialog."
+  },
+  "commonCopy": "Copy",
+  "@commonCopy": {
+    "description": "Button: copy something to the clipboard."
   },
   "commonDelete": "Delete",
   "@commonDelete": {
@@ -699,10 +713,6 @@
   "@insertLinkToPage": {
     "description": "Title of the dialog that picks which page to link to."
   },
-  "linkEdit": "Edit link…",
-  "@linkEdit": {
-    "description": "Right-click menu item on text that is already a link: reopens the link dialog to change its address."
-  },
   "insertPageLink": "Link…",
   "@insertPageLink": {
     "description": "Insert item: attach an address to some words — a web address, or another page in this notebook."
@@ -796,7 +806,10 @@
   "@insertVideoTip": {
     "description": "Tooltip: it takes a file from this computer or a link to one online."
   },
-  "@@locale": "en",
+  "linkEdit": "Edit link…",
+  "@linkEdit": {
+    "description": "Right-click menu item on text that is already a link: reopens the link dialog to change its address."
+  },
   "mathSemanticLabel": "Equation: {latex}",
   "@mathSemanticLabel": {
     "description": "What a screen reader says for a rendered equation. {latex} is the equation's own LaTeX source — not translated, because it is what the student typed. Only the word before it is yours.",
@@ -845,14 +858,6 @@
   "@navCollapse": {
     "description": "Tooltip. Keep the shortcut in brackets as typed."
   },
-  "navHideSections": "Hide the section list",
-  "@navHideSections": {
-    "description": "Tooltip on the button that folds the sections column away to give the page more room."
-  },
-  "navShowSections": "Show the section list",
-  "@navShowSections": {
-    "description": "Tooltip on the same button when the sections column is already folded away."
-  },
   "navColour": "Colour",
   "@navColour": {
     "description": "Label beside the row of colours a section can be given."
@@ -890,6 +895,15 @@
   "@navDeletePermanently": {
     "description": "Tooltip on the button that removes something for good."
   },
+  "navDeletedGroup": "Deleted group “{title}”",
+  "@navDeletedGroup": {
+    "description": "Snackbar after deleting a section group, with an Undo button beside it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "navDeletedPage": "Deleted page “{title}”",
   "@navDeletedPage": {
     "description": "Snackbar after deleting a page. Kept short because it carries an Undo button beside it.",
@@ -907,19 +921,6 @@
         "type": "String"
       }
     }
-  },
-  "navDeletedGroup": "Deleted group “{title}”",
-  "@navDeletedGroup": {
-    "description": "Snackbar after deleting a section group, with an Undo button beside it.",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
-  "navUndo": "Undo",
-  "@navUndo": {
-    "description": "Button on the deleted-something snackbar that puts it straight back."
   },
   "navDeletesInDays": "{days, plural, =1{Deletes in 1 day} other{Deletes in {days} days}}",
   "@navDeletesInDays": {
@@ -951,6 +952,10 @@
   "navExpand": "Expand the navigator  (Ctrl+\\)",
   "@navExpand": {
     "description": "Tooltip. Keep the shortcut in brackets as typed — the character is a backslash."
+  },
+  "navHideSections": "Hide the section list",
+  "@navHideSections": {
+    "description": "Tooltip on the button that folds the sections column away to give the page more room."
   },
   "navHome": "Home",
   "@navHome": {
@@ -1002,6 +1007,10 @@
   "@navMenuDelete": {
     "description": "Context-menu item."
   },
+  "navMenuDuplicate": "Duplicate",
+  "@navMenuDuplicate": {
+    "description": "Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named \"<title> copy\"."
+  },
   "navMenuExportSectionPdf": "Export section as PDF…",
   "@navMenuExportSectionPdf": {
     "description": "Context-menu item."
@@ -1046,14 +1055,6 @@
   "@navMenuRecentChanges": {
     "description": "Context-menu item: the page's own history."
   },
-  "navMenuDuplicate": "Duplicate",
-  "@navMenuDuplicate": {
-    "description": "Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named \"<title> copy\"."
-  },
-  "navMenuRename": "Rename",
-  "@navMenuRename": {
-    "description": "Context-menu item. Renames a page, section or section group; the row turns into a field in place."
-  },
   "navMenuRemoveExam": "Remove exam date",
   "@navMenuRemoveExam": {
     "description": "Context-menu item."
@@ -1065,6 +1066,10 @@
   "navMenuRemovePasscode": "Remove passcode…",
   "@navMenuRemovePasscode": {
     "description": "Context-menu item."
+  },
+  "navMenuRename": "Rename",
+  "@navMenuRename": {
+    "description": "Context-menu item. Renames a page, section or section group; the row turns into a field in place."
   },
   "navMenuSetExam": "Set exam date…",
   "@navMenuSetExam": {
@@ -1172,6 +1177,14 @@
   "navSection": "Section",
   "@navSection": {
     "description": "Column heading over the list of sections."
+  },
+  "navShowSections": "Show the section list",
+  "@navShowSections": {
+    "description": "Tooltip on the same button when the sections column is already folded away."
+  },
+  "navUndo": "Undo",
+  "@navUndo": {
+    "description": "Button on the deleted-something snackbar that puts it straight back."
   },
   "navUntitled": "Untitled",
   "@navUntitled": {
@@ -1781,6 +1794,22 @@
   "@oneNoteSignInBody": {
     "description": "Body for the Microsoft sign-in import route."
   },
+  "penButtonEraser": "Eraser",
+  "@penButtonEraser": {
+    "description": "Option: the pen side button acts as the eraser."
+  },
+  "penButtonLasso": "Lasso",
+  "@penButtonLasso": {
+    "description": "Option: the pen side button switches to the lasso tool, as it does in OneNote."
+  },
+  "penButtonNothing": "Nothing",
+  "@penButtonNothing": {
+    "description": "Option: the pen side button does nothing."
+  },
+  "penButtonSelect": "Select",
+  "@penButtonSelect": {
+    "description": "Option: the pen side button switches to the selection tool."
+  },
   "settingsAbout": "About",
   "@settingsAbout": {
     "description": "Section heading."
@@ -1793,7 +1822,7 @@
   "@settingsAiOff": {
     "description": "Supporting line when it is not. Claude is a product name."
   },
-  "settingsAiOn": "On — AI helpers on this computer can use your notes.",
+  "settingsAiOn": "On — AI on this computer can read your notes.",
   "@settingsAiOn": {
     "description": "Supporting line when AI access is enabled."
   },
@@ -1808,6 +1837,10 @@
   "settingsConnections": "Connections",
   "@settingsConnections": {
     "description": "Section heading."
+  },
+  "settingsDiagnostics": "Diagnostics",
+  "@settingsDiagnostics": {
+    "description": "Sub-heading inside the Help settings group."
   },
   "settingsHelp": "Help",
   "@settingsHelp": {
@@ -1825,19 +1858,31 @@
   "@settingsLanguageContribute": {
     "description": "Link opening the contributing guide in a browser."
   },
-  "settingsLanguageHelp": "Openote is translated by the people who use it. If yours is missing or wrong, it is one file.",
-  "@settingsLanguageHelp": {
-    "description": "Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file."
+  "settingsPenAndTouch": "Pen and touch",
+  "@settingsPenAndTouch": {
+    "description": "Sub-heading inside the Writing and drawing settings group."
   },
-  "settingsPenProximity": "Pen near the page switches to inking",
-  "@settingsPenProximity": {
-    "description": "Row label: bringing a stylus close to the screen picks the pen tool."
+  "settingsPenButton": "The pen's side button",
+  "@settingsPenButton": {
+    "description": "Settings row label; the dropdown beside it says which tool."
+  },
+  "settingsPenButtonHint": "Held down, it borrows that tool.",
+  "@settingsPenButtonHint": {
+    "description": "Hint under it: the tool is borrowed only while the button is held."
+  },
+  "settingsPenTest": "Pen and touch test",
+  "@settingsPenTest": {
+    "description": "Settings row: opens a dialog showing what the pen and touchscreen report."
+  },
+  "settingsPenTestHint": "What your pen and its buttons report.",
+  "@settingsPenTestHint": {
+    "description": "Hint under the pen and touch test row in Settings."
   },
   "settingsShortcuts": "Keyboard shortcuts",
   "@settingsShortcuts": {
     "description": "Row label."
   },
-  "settingsShortcutsHint": "Everything has a key — the full list.  (Ctrl+/)",
+  "settingsShortcutsHint": "Ctrl+/",
   "@settingsShortcutsHint": {
     "description": "Supporting line. Keep the shortcut in brackets as typed."
   },
@@ -1849,7 +1894,7 @@
   "@settingsSync": {
     "description": "Row label for the backup-and-share settings."
   },
-  "settingsSyncHint": "Back up and share this notebook — GitHub or a folder.",
+  "settingsSyncHint": "Back up this notebook to GitHub or a folder.",
   "@settingsSyncHint": {
     "description": "Supporting line under settingsSync. GitHub is a product name."
   },
@@ -1872,6 +1917,14 @@
   "settingsTitle": "Settings",
   "@settingsTitle": {
     "description": "Title of the settings dialog."
+  },
+  "settingsTouchDrawing": "Draw with your finger",
+  "@settingsTouchDrawing": {
+    "description": "Settings row label for whether a finger draws."
+  },
+  "settingsTouchDrawingHint": "Two fingers always pan and zoom.",
+  "@settingsTouchDrawingHint": {
+    "description": "Hint under it. Two fingers mean pan and zoom whatever this is set to."
   },
   "settingsUpToDate": "You're up to date ({version} is the newest version).",
   "@settingsUpToDate": {
@@ -1897,7 +1950,7 @@
   "@settingsWelcomeTour": {
     "description": "Row label: reopens the three-step welcome flow."
   },
-  "settingsWelcomeTourHint": "The three-minute version: the canvas, maths and ink, and where your notes live.",
+  "settingsWelcomeTourHint": "Three minutes on how the canvas works.",
   "@settingsWelcomeTourHint": {
     "description": "Supporting line naming the flow's three steps."
   },
@@ -1924,6 +1977,10 @@
   "shellCreateFirstPage": "Create your first page",
   "@shellCreateFirstPage": {
     "description": "Button in the empty state."
+  },
+  "shellDemoNothingSaved": "Demo — nothing is saved",
+  "@shellDemoNothingSaved": {
+    "description": "Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16."
   },
   "shellEmptyBody": "Everything you make here lives on your device,\nin an open format you own.",
   "@shellEmptyBody": {
@@ -2041,14 +2098,6 @@
   "@shellSavedOnDevice": {
     "description": "Status-bar text when everything is written and the notebook is not synced anywhere."
   },
-  "shellDemoNothingSaved": "Demo — nothing is saved",
-  "commandNotInDemo": "Not in the web demo",
-  "@commandNotInDemo": {
-    "description": "Hover text on a toolbar or menu item the web demo cannot run. Short on purpose: the control is greyed, and the only thing it has to say is that the app can do this and this build cannot."
-  },
-  "@shellDemoNothingSaved": {
-    "description": "Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16."
-  },
   "shellSaving": "Saving…",
   "@shellSaving": {
     "description": "Shown while a page is being written to disk."
@@ -2149,6 +2198,5 @@
   "touchDrawNever": "Never",
   "@touchDrawNever": {
     "description": "Setting: fingers only move and zoom the page; drawing needs a stylus or the mouse. Shown in a small dropdown — one word if the language allows."
-  },
-  "@@x-notes": "The English template, and the source of truth for every other language. Rules for anyone adding a string: name it <surface><Thing> so a grep for the surface finds all of it; give every message an @-entry saying WHERE it appears and what any placeholder holds, because a translator sees the string and nothing else; and never build a sentence by concatenating fragments — word order is not the same everywhere. Illustrations in this app are painted, not written, so there is deliberately nothing in them to translate."
+  }
 }

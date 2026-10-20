@@ -21,6 +21,9 @@ class LEs extends L {
   String get atomUpdateToView => 'Actualiza Openote para verlo';
 
   @override
+  String get barBackToEquation => 'Volver a las herramientas de ecuaciones';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -70,9 +73,6 @@ class LEs extends L {
 
   @override
   String get barEraserWhole => 'Quita el trazo entero que toques';
-
-  @override
-  String get barBackToEquation => 'Volver a las herramientas de ecuaciones';
 
   @override
   String get barEscWhenDone => 'Pulsa Esc cuando termines';
@@ -152,14 +152,6 @@ class LEs extends L {
   String get barInkMoreColours => 'Más colores…';
 
   @override
-  String barPenSize(String size) {
-    return 'Grosor $size';
-  }
-
-  @override
-  String get barPenSizeExact => 'Tamaño exacto…';
-
-  @override
   String get barInkPickColour => 'Tomar un color de la página';
 
   @override
@@ -194,6 +186,14 @@ class LEs extends L {
   @override
   String get barPenProximity =>
       'Acercar el lápiz a la página cambia a tinta.\nSi eliges otra herramienta con el lápiz cerca, se mantiene hasta\nque el lápiz se aleja y vuelve. La punta trasera del lápiz (o su\nbotón lateral, pulsado al dibujar) borra.';
+
+  @override
+  String barPenSize(String size) {
+    return 'Grosor $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Tamaño exacto…';
 
   @override
   String get barPlanner => 'Agenda';
@@ -321,10 +321,6 @@ class LEs extends L {
   String get barToolText => 'Texto  (T)';
 
   @override
-  String get barTouchDrawing =>
-      'Dibuja con el dedo.\nAuto: el dedo dibuja hasta que usas el lápiz; después el dedo mueve la página para que la palma no la marque.\nDos dedos siempre mueven y hacen zoom.';
-
-  @override
   String get barUnderline => 'Subrayado  (Ctrl+U)';
 
   @override
@@ -339,6 +335,15 @@ class LEs extends L {
   String get canvasDeleteSelection => 'Eliminar  (Supr)';
 
   @override
+  String get canvasGroupSelection => 'Agrupar  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Desagrupar  (Ctrl+Mayús+G)';
+
+  @override
+  String get commandNotInDemo => 'No disponible en la demostración web';
+
+  @override
   String get commonBack => 'Atrás';
 
   @override
@@ -346,6 +351,9 @@ class LEs extends L {
 
   @override
   String get commonClose => 'Cerrar';
+
+  @override
+  String get commonCopy => 'Copiar';
 
   @override
   String get commonDelete => 'Borrar';
@@ -538,9 +546,6 @@ class LEs extends L {
   String get insertLinkToPage => 'Enlazar a una página';
 
   @override
-  String get linkEdit => 'Editar enlace…';
-
-  @override
   String get insertPageLink => 'Enlace';
 
   @override
@@ -611,6 +616,9 @@ class LEs extends L {
   String get insertVideoTip => 'Una grabación de clase, o cualquier enlace web';
 
   @override
+  String get linkEdit => 'Editar enlace…';
+
+  @override
   String mathSemanticLabel(String latex) {
     return 'Ecuación: $latex';
   }
@@ -641,12 +649,6 @@ class LEs extends L {
   String get navCollapse => 'Plegar el navegador  (Ctrl+\\)';
 
   @override
-  String get navHideSections => 'Ocultar la lista de secciones';
-
-  @override
-  String get navShowSections => 'Mostrar la lista de secciones';
-
-  @override
   String get navColour => 'Color';
 
   @override
@@ -670,6 +672,11 @@ class LEs extends L {
   String get navDeletePermanently => 'Borrar definitivamente';
 
   @override
+  String navDeletedGroup(String title) {
+    return 'Grupo “$title” borrado';
+  }
+
+  @override
   String navDeletedPage(String title) {
     return 'Página “$title” borrada';
   }
@@ -678,14 +685,6 @@ class LEs extends L {
   String navDeletedSection(String title) {
     return 'Sección “$title” borrada';
   }
-
-  @override
-  String navDeletedGroup(String title) {
-    return 'Grupo “$title” borrado';
-  }
-
-  @override
-  String get navUndo => 'Deshacer';
 
   @override
   String navDeletesInDays(int days) {
@@ -708,6 +707,9 @@ class LEs extends L {
 
   @override
   String get navExpand => 'Desplegar el navegador  (Ctrl+\\)';
+
+  @override
+  String get navHideSections => 'Ocultar la lista de secciones';
 
   @override
   String get navHome => 'Inicio';
@@ -745,6 +747,9 @@ class LEs extends L {
   String get navMenuDelete => 'Borrar';
 
   @override
+  String get navMenuDuplicate => 'Duplicar';
+
+  @override
   String get navMenuExportSectionPdf => 'Exportar la sección como PDF…';
 
   @override
@@ -778,12 +783,6 @@ class LEs extends L {
   String get navMenuRecentChanges => 'Cambios recientes…';
 
   @override
-  String get navMenuDuplicate => 'Duplicar';
-
-  @override
-  String get navMenuRename => 'Renombrar';
-
-  @override
   String get navMenuRemoveExam => 'Quitar la fecha del examen';
 
   @override
@@ -791,6 +790,9 @@ class LEs extends L {
 
   @override
   String get navMenuRemovePasscode => 'Quitar el código…';
+
+  @override
+  String get navMenuRename => 'Renombrar';
 
   @override
   String get navMenuSetExam => 'Poner la fecha del examen…';
@@ -863,6 +865,12 @@ class LEs extends L {
 
   @override
   String get navSection => 'Sección';
+
+  @override
+  String get navShowSections => 'Mostrar la lista de secciones';
+
+  @override
+  String get navUndo => 'Deshacer';
 
   @override
   String get navUntitled => 'Sin título';
@@ -1314,6 +1322,18 @@ class LEs extends L {
       'Elige un cuaderno y pasa directamente, sin exportar nada antes. Funciona en cualquier ordenador.';
 
   @override
+  String get penButtonEraser => 'Borrador';
+
+  @override
+  String get penButtonLasso => 'Lazo';
+
+  @override
+  String get penButtonNothing => 'Nada';
+
+  @override
+  String get penButtonSelect => 'Seleccionar';
+
+  @override
   String get settingsAbout => 'Acerca de';
 
   @override
@@ -1324,7 +1344,7 @@ class LEs extends L {
 
   @override
   String get settingsAiOn =>
-      'Sí — los asistentes de IA de este ordenador pueden usar tus notas.';
+      'Sí — la IA de este ordenador puede leer tus notas.';
 
   @override
   String get settingsAppearance => 'Apariencia';
@@ -1334,6 +1354,9 @@ class LEs extends L {
 
   @override
   String get settingsConnections => 'Conexiones';
+
+  @override
+  String get settingsDiagnostics => 'Diagnóstico';
 
   @override
   String get settingsHelp => 'Ayuda';
@@ -1348,19 +1371,26 @@ class LEs extends L {
   String get settingsLanguageContribute => 'Cómo añadir o corregir un idioma';
 
   @override
-  String get settingsLanguageHelp =>
-      'Openote lo traducen las personas que lo usan. Si falta el tuyo o está mal, es un solo archivo.';
+  String get settingsPenAndTouch => 'Lápiz y táctil';
 
   @override
-  String get settingsPenProximity =>
-      'Acercar el lápiz a la página cambia a tinta';
+  String get settingsPenButton => 'El botón lateral del lápiz';
+
+  @override
+  String get settingsPenButtonHint =>
+      'Mantenlo pulsado para usar esa herramienta.';
+
+  @override
+  String get settingsPenTest => 'Prueba de lápiz y táctil';
+
+  @override
+  String get settingsPenTestHint => 'Lo que informan tu lápiz y sus botones.';
 
   @override
   String get settingsShortcuts => 'Atajos de teclado';
 
   @override
-  String get settingsShortcutsHint =>
-      'Todo tiene una tecla — la lista completa.  (Ctrl+/)';
+  String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
   String get settingsSpellCheck => 'Corrector ortográfico';
@@ -1370,7 +1400,7 @@ class LEs extends L {
 
   @override
   String get settingsSyncHint =>
-      'Haz copia de este cuaderno y compártelo — GitHub o una carpeta.';
+      'Copia este cuaderno en GitHub o en una carpeta.';
 
   @override
   String get settingsTheme => 'Tema';
@@ -1388,6 +1418,13 @@ class LEs extends L {
   String get settingsTitle => 'Ajustes';
 
   @override
+  String get settingsTouchDrawing => 'Dibujar con el dedo';
+
+  @override
+  String get settingsTouchDrawingHint =>
+      'Dos dedos siempre mueven y hacen zoom.';
+
+  @override
   String settingsUpToDate(String version) {
     return 'Todo está al día ($version es la versión más reciente).';
   }
@@ -1402,7 +1439,7 @@ class LEs extends L {
 
   @override
   String get settingsWelcomeTourHint =>
-      'La versión de tres minutos: el lienzo, las matemáticas y la tinta, y dónde viven tus notas.';
+      'Tres minutos sobre cómo funciona el lienzo.';
 
   @override
   String get settingsWhatsNew => 'Novedades';
@@ -1422,6 +1459,9 @@ class LEs extends L {
 
   @override
   String get shellCreateFirstPage => 'Crea tu primera página';
+
+  @override
+  String get shellDemoNothingSaved => 'Demostración: no se guarda nada';
 
   @override
   String get shellEmptyBody =>
@@ -1518,12 +1558,6 @@ class LEs extends L {
 
   @override
   String get shellSavedOnDevice => 'Guardado en este dispositivo';
-
-  @override
-  String get shellDemoNothingSaved => 'Demostración: no se guarda nada';
-
-  @override
-  String get commandNotInDemo => 'No disponible en la demostración web';
 
   @override
   String get shellSaving => 'Guardando…';

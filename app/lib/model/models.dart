@@ -172,6 +172,32 @@ class PaperSize {
       all.firstWhere((p) => p.name == n, orElse: () => a4);
 }
 
+/// **How tall a picture is, before anything has measured it.**
+///
+/// A PDF slide is written by `pdf_import.dart` with a width and no height:
+/// the height is whatever the page turns out to be, and the importer has no
+/// business guessing it. Everything that needs a slide's rectangle therefore
+/// falls back to the size the block reported after it was laid out — and that
+/// is written silently, during layout, without a rebuild. So the frame that
+/// decides where the pictures are is the frame BEFORE any of them has said.
+///
+/// Reported: *"Auto pen colour doesnt work on images/pdfs either, still
+/// coming up as white on a white pdf background."* Quite so — the fallback of
+/// last resort is sixty pixels, so every slide was reckoned to be a sixty-
+/// pixel strip and ink below it was ink on the page.
+///
+/// The picture's own proportions answer it without waiting for anybody:
+/// `naturalW`/`naturalH` are stored the moment a picture is added, and the
+/// view lays the picture out at exactly that aspect. Null when they are
+/// missing — an old block, or a picture that has never loaded — and the
+/// caller falls back as before.
+double? aspectHeight(Block b) {
+  final nw = (b.content['naturalW'] as num?)?.toDouble();
+  final nh = (b.content['naturalH'] as num?)?.toDouble();
+  if (nw == null || nh == null || nw <= 0 || nh <= 0 || b.w <= 0) return null;
+  return b.w * nh / nw;
+}
+
 class PageProps {
   PageProps({
     this.background = 'blank',
@@ -308,6 +334,7 @@ class Block {
     this.rotation = 0,
     this.placement = 'free',
     this.frameId,
+    this.groupId,
     Map<String, dynamic>? content,
     List<String>? absorbedIds,
     this.access,
@@ -336,6 +363,30 @@ class Block {
   double rotation;
   String placement; // 'free' | 'snapped'
   String? frameId;
+
+  /// Which group this block belongs to, or null. Blocks sharing a non-null
+  /// `groupId` are **one thing to pick up**: selecting any member selects all
+  /// of them, so they move, copy and delete together.
+  ///
+  /// A stroke is its own block, so a written word is already several of them
+  /// and the lasso is the only thing that gathers them — this is what makes
+  /// that gathering outlive the selection. The owner, on strokes: *"unless
+  /// they are grouped together, which from what i can see hasnt actually been
+  /// implemented yet"*.
+  ///
+  /// **Flat, and a plain id rather than a block.** Membership is the whole of
+  /// what a group is: it has no bounds, no label and no place in the paint
+  /// order, which is what separates it from [BlockType.frame] (a visible
+  /// region that happens to contain things). A group block would need bounds
+  /// nobody authored, and an older build that moved or dropped it would change
+  /// what the group meant; an envelope field it does not know is rescued into
+  /// [unknownFields] and written back untouched, so membership survives a
+  /// round-trip through a release that has never heard of it.
+  ///
+  /// Nesting is deliberately not modelled. One id per block says a block is in
+  /// at most one group, which is the rule that keeps "select the group" a
+  /// lookup rather than a tree walk.
+  String? groupId;
   Map<String, dynamic> content;
   final List<String> absorbedIds;
   Map<String, dynamic>? access; // reserved (SYNC-9); v1 writes null
@@ -360,9 +411,21 @@ class Block {
   final int createdAt;
   int updatedAt;
 
+  /// A background layer: it cannot be moved or resized, and nothing that
+  /// picks blocks up picks it up.
+  ///
+  /// Written by `export/pdf_import.dart` for an imported slide, which is the
+  /// page somebody is annotating rather than a thing on it. A click goes to
+  /// the canvas, a marquee skips it, and what remains is its right-click menu
+  /// — where "Unlock" is, which is the way back out. Issue #20.
+  ///
+  /// A locked box that can be edited can still be typed into: locking is
+  /// about where a thing sits.
+  bool get locked => content['locked'] == true;
+
   static const _known = {
     'id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'placement', 'frameId',
-    'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',
+    'groupId', 'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',
   };
 
   Map<String, dynamic> toJson() => {
@@ -374,6 +437,13 @@ class Block {
         'z': z,
         'placement': placement,
         'frameId': frameId,
+        // Written only when it says something. An unconditional `"groupId":
+        // null` would change the JSON of every block ever written, so the next
+        // save of an untouched notebook would rewrite all of it and hand the
+        // op log a diff per block — the same reason the paged page keys are
+        // conditional (Data Model Spec §3.1). An ungrouped page stays
+        // byte-identical to what every earlier release wrote.
+        if (groupId != null) 'groupId': groupId,
         'absorbedIds': absorbedIds,
         'access': access,
         'createdAt': createdAt,
@@ -394,6 +464,7 @@ class Block {
         rotation: (j['rotation'] as num?)?.toDouble() ?? 0,
         placement: j['placement'] as String? ?? 'free',
         frameId: j['frameId'] as String?,
+        groupId: j['groupId'] as String?,
         content: (j['content'] as Map?)?.cast<String, dynamic>() ?? {},
         absorbedIds: (j['absorbedIds'] as List?)?.cast<String>() ?? [],
         access: (j['access'] as Map?)?.cast<String, dynamic>(),

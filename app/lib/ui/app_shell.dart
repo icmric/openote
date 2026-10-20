@@ -2,7 +2,7 @@ import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -46,6 +46,21 @@ import '../theme/tokens.dart';
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.app});
   final AppState app;
+
+  /// **Where "now" comes from for the nudge burst window, so a test can hold
+  /// it still.**
+  ///
+  /// Whether two Ctrl+arrow presses belong to one movement is a question
+  /// about elapsed wall-clock time, and a test that answers it by pressing a
+  /// key twice is racing the machine it runs on. `keyboard_map_test` did
+  /// exactly that: the burst is 900 ms wide and under a full suite two
+  /// presses can land further apart than that, so the burst split, one undo
+  /// restored one nudge, and the assertion failed about one run in several —
+  /// never alone, which is the worst shape a red build can have.
+  ///
+  /// [PageCanvas.clock] is the same seam for the same reason.
+  @visibleForTesting
+  static DateTime Function() clock = DateTime.now;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -636,6 +651,22 @@ class _AppShellState extends State<AppShell> {
         if (s != null) app.duplicateBlock(s);
         return true;
       }
+      if (k == LogicalKeyboardKey.keyG) {
+        // Ctrl+G joins, Ctrl+Shift+G takes apart — the pairing every drawing
+        // tool has used for thirty years, so it needs no teaching.
+        //
+        // Not swallowed when there is nothing to do: a chord that returns
+        // true having changed nothing is a dead key, and this one is reached
+        // whenever the canvas has the keyboard.
+        if (shift) {
+          if (!app.canUngroup) return false;
+          app.ungroupSelected();
+        } else {
+          if (!app.canGroup) return false;
+          app.groupSelected();
+        }
+        return true;
+      }
       if (k == LogicalKeyboardKey.equal || k == LogicalKeyboardKey.add) {
         app.canvas.setZoom(app.canvas.scale * 1.2);
         return true;
@@ -1092,13 +1123,13 @@ class _AppShellState extends State<AppShell> {
 
   /// One undo entry per nudge BURST, not per keypress — holding an arrow is
   /// one movement the way one drag is, and pausing ~a second starts a new
-  /// undoable step.
+  /// undoable step. The clock is [AppShell.clock].
   int _lastNudgeMs = 0;
   bool _nudge(double dx, double dy, {required bool fine}) {
     if (_routeOnTop) return false;
     if (app.selectedIds.isEmpty) return false;
     final step = fine ? 1.0 : (app.effectiveSnap ? app.gridSize : 8.0);
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = AppShell.clock().millisecondsSinceEpoch;
     if (now - _lastNudgeMs > 900) app.pushUndo();
     _lastNudgeMs = now;
     app.moveSelectedBy(dx * step, dy * step);

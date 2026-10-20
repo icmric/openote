@@ -123,7 +123,7 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         final hash = (b.content['blob'] as String? ?? '').replaceFirst('sha256:', '');
         if (hash.isNotEmpty) {
           final mime = b.content['mime'] as String? ?? 'image/png';
-          final ext = mime.split('/').last.replaceFirst('jpeg', 'jpg');
+          final ext = extensionForMime(mime);
           final name = 'assets/$hash.$ext';
           assets[hash] = name;
           buf.writeln('![image]($name)\n');

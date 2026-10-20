@@ -125,6 +125,12 @@ abstract class L {
   /// **'Update Openote to view it'**
   String get atomUpdateToView;
 
+  /// Tooltip on the Equation badge after the user has tapped another tab while the equation is still open. Pressing it brings the equation's own controls back to the command row.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to the equation tools'**
+  String get barBackToEquation;
+
   /// A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.
   ///
   /// In en, this message translates to:
@@ -220,12 +226,6 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Removes any stroke you touch'**
   String get barEraserWhole;
-
-  /// Tooltip on the Equation badge after the user has tapped another tab while the equation is still open. Pressing it brings the equation's own controls back to the command row.
-  ///
-  /// In en, this message translates to:
-  /// **'Back to the equation tools'**
-  String get barBackToEquation;
 
   /// Tooltip on the badge shown while an equation is open and its own controls are on the row. 'Esc' is the Escape key.
   ///
@@ -365,18 +365,6 @@ abstract class L {
   /// **'More colours…'**
   String get barInkMoreColours;
 
-  /// Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.
-  ///
-  /// In en, this message translates to:
-  /// **'Pen size {size}'**
-  String barPenSize(String size);
-
-  /// Tooltip on the button that opens a slider for a thickness none of the presets cover.
-  ///
-  /// In en, this message translates to:
-  /// **'Exact size…'**
-  String get barPenSizeExact;
-
   /// Tooltip on the eyedropper button.
   ///
   /// In en, this message translates to:
@@ -442,6 +430,18 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen\'s tail (or its barrel\nbutton, held while drawing) erases.'**
   String get barPenProximity;
+
+  /// Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen size {size}'**
+  String barPenSize(String size);
+
+  /// Tooltip on the button that opens a slider for a thickness none of the presets cover.
+  ///
+  /// In en, this message translates to:
+  /// **'Exact size…'**
+  String get barPenSizeExact;
 
   /// Opens the panel listing every date in the notebook.
   ///
@@ -635,12 +635,6 @@ abstract class L {
   /// **'Text  (T)'**
   String get barToolText;
 
-  /// Tooltip on the finger-drawing setting. 'pans' means moves the page around. Keep the line breaks.
-  ///
-  /// In en, this message translates to:
-  /// **'Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can\'t mark the page.\nTwo fingers always pan and zoom.'**
-  String get barTouchDrawing;
-
   /// Tooltip. Keep the shortcut as typed.
   ///
   /// In en, this message translates to:
@@ -665,6 +659,24 @@ abstract class L {
   /// **'Delete  (Del)'**
   String get canvasDeleteSelection;
 
+  /// Tooltip on the Group button above a selection. Keep the shortcut in brackets as the local keyboard spells it.
+  ///
+  /// In en, this message translates to:
+  /// **'Group  (Ctrl+G)'**
+  String get canvasGroupSelection;
+
+  /// Tooltip on the Ungroup button above a selection. Keep the shortcut in brackets as the local keyboard spells it.
+  ///
+  /// In en, this message translates to:
+  /// **'Ungroup  (Ctrl+Shift+G)'**
+  String get canvasUngroupSelection;
+
+  /// Hover text on a toolbar or menu item the web demo cannot run. Short on purpose: the control is greyed, and the only thing it has to say is that the app can do this and this build cannot.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in the web demo'**
+  String get commandNotInDemo;
+
   /// Button: return to the previous step of a multi-step flow.
   ///
   /// In en, this message translates to:
@@ -682,6 +694,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Close'**
   String get commonClose;
+
+  /// Button: copy something to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get commonCopy;
 
   /// Button or menu item that removes something (to the recycle bin, not for good).
   ///
@@ -917,12 +935,6 @@ abstract class L {
   /// **'Link to page'**
   String get insertLinkToPage;
 
-  /// Right-click menu item on text that is already a link: reopens the link dialog to change its address.
-  ///
-  /// In en, this message translates to:
-  /// **'Edit link…'**
-  String get linkEdit;
-
   /// Insert item: attach an address to some words — a web address, or another page in this notebook.
   ///
   /// In en, this message translates to:
@@ -1043,6 +1055,12 @@ abstract class L {
   /// **'A lecture recording, or any web link'**
   String get insertVideoTip;
 
+  /// Right-click menu item on text that is already a link: reopens the link dialog to change its address.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit link…'**
+  String get linkEdit;
+
   /// What a screen reader says for a rendered equation. {latex} is the equation's own LaTeX source — not translated, because it is what the student typed. Only the word before it is yours.
   ///
   /// In en, this message translates to:
@@ -1091,18 +1109,6 @@ abstract class L {
   /// **'Collapse the navigator  (Ctrl+\\)'**
   String get navCollapse;
 
-  /// Tooltip on the button that folds the sections column away to give the page more room.
-  ///
-  /// In en, this message translates to:
-  /// **'Hide the section list'**
-  String get navHideSections;
-
-  /// Tooltip on the same button when the sections column is already folded away.
-  ///
-  /// In en, this message translates to:
-  /// **'Show the section list'**
-  String get navShowSections;
-
   /// Label beside the row of colours a section can be given.
   ///
   /// In en, this message translates to:
@@ -1145,6 +1151,12 @@ abstract class L {
   /// **'Delete permanently'**
   String get navDeletePermanently;
 
+  /// Snackbar after deleting a section group, with an Undo button beside it.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted group “{title}”'**
+  String navDeletedGroup(String title);
+
   /// Snackbar after deleting a page. Kept short because it carries an Undo button beside it.
   ///
   /// In en, this message translates to:
@@ -1156,18 +1168,6 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Deleted section “{title}”'**
   String navDeletedSection(String title);
-
-  /// Snackbar after deleting a section group, with an Undo button beside it.
-  ///
-  /// In en, this message translates to:
-  /// **'Deleted group “{title}”'**
-  String navDeletedGroup(String title);
-
-  /// Button on the deleted-something snackbar that puts it straight back.
-  ///
-  /// In en, this message translates to:
-  /// **'Undo'**
-  String get navUndo;
 
   /// How long a deleted thing has left in the recycle bin.
   ///
@@ -1192,6 +1192,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Expand the navigator  (Ctrl+\\)'**
   String get navExpand;
+
+  /// Tooltip on the button that folds the sections column away to give the page more room.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide the section list'**
+  String get navHideSections;
 
   /// The navigator's first pane: favourites, recent pages and what is coming up.
   ///
@@ -1252,6 +1258,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Delete'**
   String get navMenuDelete;
+
+  /// Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named "<title> copy".
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate'**
+  String get navMenuDuplicate;
 
   /// Context-menu item.
   ///
@@ -1319,18 +1331,6 @@ abstract class L {
   /// **'Recent changes…'**
   String get navMenuRecentChanges;
 
-  /// Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named "<title> copy".
-  ///
-  /// In en, this message translates to:
-  /// **'Duplicate'**
-  String get navMenuDuplicate;
-
-  /// Context-menu item. Renames a page, section or section group; the row turns into a field in place.
-  ///
-  /// In en, this message translates to:
-  /// **'Rename'**
-  String get navMenuRename;
-
   /// Context-menu item.
   ///
   /// In en, this message translates to:
@@ -1348,6 +1348,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Remove passcode…'**
   String get navMenuRemovePasscode;
+
+  /// Context-menu item. Renames a page, section or section group; the row turns into a field in place.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get navMenuRename;
 
   /// Context-menu item.
   ///
@@ -1474,6 +1480,18 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Section'**
   String get navSection;
+
+  /// Tooltip on the same button when the sections column is already folded away.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the section list'**
+  String get navShowSections;
+
+  /// Button on the deleted-something snackbar that puts it straight back.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get navUndo;
 
   /// Stands in for the name of a page that has none yet.
   ///
@@ -2165,6 +2183,30 @@ abstract class L {
   /// **'Pick a notebook and it comes straight over, with nothing to export first. Works on any computer.'**
   String get oneNoteSignInBody;
 
+  /// Option: the pen side button acts as the eraser.
+  ///
+  /// In en, this message translates to:
+  /// **'Eraser'**
+  String get penButtonEraser;
+
+  /// Option: the pen side button switches to the lasso tool, as it does in OneNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Lasso'**
+  String get penButtonLasso;
+
+  /// Option: the pen side button does nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing'**
+  String get penButtonNothing;
+
+  /// Option: the pen side button switches to the selection tool.
+  ///
+  /// In en, this message translates to:
+  /// **'Select'**
+  String get penButtonSelect;
+
   /// Section heading.
   ///
   /// In en, this message translates to:
@@ -2186,7 +2228,7 @@ abstract class L {
   /// Supporting line when AI access is enabled.
   ///
   /// In en, this message translates to:
-  /// **'On — AI helpers on this computer can use your notes.'**
+  /// **'On — AI on this computer can read your notes.'**
   String get settingsAiOn;
 
   /// Section heading.
@@ -2206,6 +2248,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Connections'**
   String get settingsConnections;
+
+  /// Sub-heading inside the Help settings group.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostics'**
+  String get settingsDiagnostics;
 
   /// Section heading.
   ///
@@ -2231,17 +2279,35 @@ abstract class L {
   /// **'How to add or fix a language'**
   String get settingsLanguageContribute;
 
-  /// Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file.
+  /// Sub-heading inside the Writing and drawing settings group.
   ///
   /// In en, this message translates to:
-  /// **'Openote is translated by the people who use it. If yours is missing or wrong, it is one file.'**
-  String get settingsLanguageHelp;
+  /// **'Pen and touch'**
+  String get settingsPenAndTouch;
 
-  /// Row label: bringing a stylus close to the screen picks the pen tool.
+  /// Settings row label; the dropdown beside it says which tool.
   ///
   /// In en, this message translates to:
-  /// **'Pen near the page switches to inking'**
-  String get settingsPenProximity;
+  /// **'The pen\'s side button'**
+  String get settingsPenButton;
+
+  /// Hint under it: the tool is borrowed only while the button is held.
+  ///
+  /// In en, this message translates to:
+  /// **'Held down, it borrows that tool.'**
+  String get settingsPenButtonHint;
+
+  /// Settings row: opens a dialog showing what the pen and touchscreen report.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen and touch test'**
+  String get settingsPenTest;
+
+  /// Hint under the pen and touch test row in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'What your pen and its buttons report.'**
+  String get settingsPenTestHint;
 
   /// Row label.
   ///
@@ -2252,7 +2318,7 @@ abstract class L {
   /// Supporting line. Keep the shortcut in brackets as typed.
   ///
   /// In en, this message translates to:
-  /// **'Everything has a key — the full list.  (Ctrl+/)'**
+  /// **'Ctrl+/'**
   String get settingsShortcutsHint;
 
   /// Row label.
@@ -2270,7 +2336,7 @@ abstract class L {
   /// Supporting line under settingsSync. GitHub is a product name.
   ///
   /// In en, this message translates to:
-  /// **'Back up and share this notebook — GitHub or a folder.'**
+  /// **'Back up this notebook to GitHub or a folder.'**
   String get settingsSyncHint;
 
   /// Row label: light, dark, or follow the computer.
@@ -2303,6 +2369,18 @@ abstract class L {
   /// **'Settings'**
   String get settingsTitle;
 
+  /// Settings row label for whether a finger draws.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw with your finger'**
+  String get settingsTouchDrawing;
+
+  /// Hint under it. Two fingers mean pan and zoom whatever this is set to.
+  ///
+  /// In en, this message translates to:
+  /// **'Two fingers always pan and zoom.'**
+  String get settingsTouchDrawingHint;
+
   /// Shown after checking, when nothing newer exists.
   ///
   /// In en, this message translates to:
@@ -2324,7 +2402,7 @@ abstract class L {
   /// Supporting line naming the flow's three steps.
   ///
   /// In en, this message translates to:
-  /// **'The three-minute version: the canvas, maths and ink, and where your notes live.'**
+  /// **'Three minutes on how the canvas works.'**
   String get settingsWelcomeTourHint;
 
   /// Link opening the release notes in a browser.
@@ -2362,6 +2440,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Create your first page'**
   String get shellCreateFirstPage;
+
+  /// Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16.
+  ///
+  /// In en, this message translates to:
+  /// **'Demo — nothing is saved'**
+  String get shellDemoNothingSaved;
 
   /// Under shellEmptyTitle. Keep the line break.
   ///
@@ -2506,18 +2590,6 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Saved on this device'**
   String get shellSavedOnDevice;
-
-  /// Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16.
-  ///
-  /// In en, this message translates to:
-  /// **'Demo — nothing is saved'**
-  String get shellDemoNothingSaved;
-
-  /// Hover text on a toolbar or menu item the web demo cannot run. Short on purpose: the control is greyed, and the only thing it has to say is that the app can do this and this build cannot.
-  ///
-  /// In en, this message translates to:
-  /// **'Not in the web demo'**
-  String get commandNotInDemo;
 
   /// Shown while a page is being written to disk.
   ///

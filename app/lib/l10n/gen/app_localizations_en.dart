@@ -20,6 +20,9 @@ class LEn extends L {
   String get atomUpdateToView => 'Update Openote to view it';
 
   @override
+  String get barBackToEquation => 'Back to the equation tools';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -69,9 +72,6 @@ class LEn extends L {
 
   @override
   String get barEraserWhole => 'Removes any stroke you touch';
-
-  @override
-  String get barBackToEquation => 'Back to the equation tools';
 
   @override
   String get barEscWhenDone => 'Esc when you are done';
@@ -150,14 +150,6 @@ class LEn extends L {
   String get barInkMoreColours => 'More colours…';
 
   @override
-  String barPenSize(String size) {
-    return 'Pen size $size';
-  }
-
-  @override
-  String get barPenSizeExact => 'Exact size…';
-
-  @override
   String get barInkPickColour => 'Pick a colour off the page';
 
   @override
@@ -192,6 +184,14 @@ class LEn extends L {
   @override
   String get barPenProximity =>
       'Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen\'s tail (or its barrel\nbutton, held while drawing) erases.';
+
+  @override
+  String barPenSize(String size) {
+    return 'Pen size $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Exact size…';
 
   @override
   String get barPlanner => 'Planner';
@@ -317,10 +317,6 @@ class LEn extends L {
   String get barToolText => 'Text  (T)';
 
   @override
-  String get barTouchDrawing =>
-      'Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can\'t mark the page.\nTwo fingers always pan and zoom.';
-
-  @override
   String get barUnderline => 'Underline  (Ctrl+U)';
 
   @override
@@ -335,6 +331,15 @@ class LEn extends L {
   String get canvasDeleteSelection => 'Delete  (Del)';
 
   @override
+  String get canvasGroupSelection => 'Group  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Ungroup  (Ctrl+Shift+G)';
+
+  @override
+  String get commandNotInDemo => 'Not in the web demo';
+
+  @override
   String get commonBack => 'Back';
 
   @override
@@ -342,6 +347,9 @@ class LEn extends L {
 
   @override
   String get commonClose => 'Close';
+
+  @override
+  String get commonCopy => 'Copy';
 
   @override
   String get commonDelete => 'Delete';
@@ -538,9 +546,6 @@ class LEn extends L {
   String get insertLinkToPage => 'Link to page';
 
   @override
-  String get linkEdit => 'Edit link…';
-
-  @override
   String get insertPageLink => 'Link…';
 
   @override
@@ -611,6 +616,9 @@ class LEn extends L {
   String get insertVideoTip => 'A lecture recording, or any web link';
 
   @override
+  String get linkEdit => 'Edit link…';
+
+  @override
   String mathSemanticLabel(String latex) {
     return 'Equation: $latex';
   }
@@ -641,12 +649,6 @@ class LEn extends L {
   String get navCollapse => 'Collapse the navigator  (Ctrl+\\)';
 
   @override
-  String get navHideSections => 'Hide the section list';
-
-  @override
-  String get navShowSections => 'Show the section list';
-
-  @override
   String get navColour => 'Colour';
 
   @override
@@ -670,6 +672,11 @@ class LEn extends L {
   String get navDeletePermanently => 'Delete permanently';
 
   @override
+  String navDeletedGroup(String title) {
+    return 'Deleted group “$title”';
+  }
+
+  @override
   String navDeletedPage(String title) {
     return 'Deleted page “$title”';
   }
@@ -678,14 +685,6 @@ class LEn extends L {
   String navDeletedSection(String title) {
     return 'Deleted section “$title”';
   }
-
-  @override
-  String navDeletedGroup(String title) {
-    return 'Deleted group “$title”';
-  }
-
-  @override
-  String get navUndo => 'Undo';
 
   @override
   String navDeletesInDays(int days) {
@@ -708,6 +707,9 @@ class LEn extends L {
 
   @override
   String get navExpand => 'Expand the navigator  (Ctrl+\\)';
+
+  @override
+  String get navHideSections => 'Hide the section list';
 
   @override
   String get navHome => 'Home';
@@ -745,6 +747,9 @@ class LEn extends L {
   String get navMenuDelete => 'Delete';
 
   @override
+  String get navMenuDuplicate => 'Duplicate';
+
+  @override
   String get navMenuExportSectionPdf => 'Export section as PDF…';
 
   @override
@@ -778,12 +783,6 @@ class LEn extends L {
   String get navMenuRecentChanges => 'Recent changes…';
 
   @override
-  String get navMenuDuplicate => 'Duplicate';
-
-  @override
-  String get navMenuRename => 'Rename';
-
-  @override
   String get navMenuRemoveExam => 'Remove exam date';
 
   @override
@@ -791,6 +790,9 @@ class LEn extends L {
 
   @override
   String get navMenuRemovePasscode => 'Remove passcode…';
+
+  @override
+  String get navMenuRename => 'Rename';
 
   @override
   String get navMenuSetExam => 'Set exam date…';
@@ -862,6 +864,12 @@ class LEn extends L {
 
   @override
   String get navSection => 'Section';
+
+  @override
+  String get navShowSections => 'Show the section list';
+
+  @override
+  String get navUndo => 'Undo';
 
   @override
   String get navUntitled => 'Untitled';
@@ -1310,6 +1318,18 @@ class LEn extends L {
       'Pick a notebook and it comes straight over, with nothing to export first. Works on any computer.';
 
   @override
+  String get penButtonEraser => 'Eraser';
+
+  @override
+  String get penButtonLasso => 'Lasso';
+
+  @override
+  String get penButtonNothing => 'Nothing';
+
+  @override
+  String get penButtonSelect => 'Select';
+
+  @override
   String get settingsAbout => 'About';
 
   @override
@@ -1319,8 +1339,7 @@ class LEn extends L {
   String get settingsAiOff => 'Off — connect Claude or other AI helpers.';
 
   @override
-  String get settingsAiOn =>
-      'On — AI helpers on this computer can use your notes.';
+  String get settingsAiOn => 'On — AI on this computer can read your notes.';
 
   @override
   String get settingsAppearance => 'Appearance';
@@ -1330,6 +1349,9 @@ class LEn extends L {
 
   @override
   String get settingsConnections => 'Connections';
+
+  @override
+  String get settingsDiagnostics => 'Diagnostics';
 
   @override
   String get settingsHelp => 'Help';
@@ -1344,18 +1366,25 @@ class LEn extends L {
   String get settingsLanguageContribute => 'How to add or fix a language';
 
   @override
-  String get settingsLanguageHelp =>
-      'Openote is translated by the people who use it. If yours is missing or wrong, it is one file.';
+  String get settingsPenAndTouch => 'Pen and touch';
 
   @override
-  String get settingsPenProximity => 'Pen near the page switches to inking';
+  String get settingsPenButton => 'The pen\'s side button';
+
+  @override
+  String get settingsPenButtonHint => 'Held down, it borrows that tool.';
+
+  @override
+  String get settingsPenTest => 'Pen and touch test';
+
+  @override
+  String get settingsPenTestHint => 'What your pen and its buttons report.';
 
   @override
   String get settingsShortcuts => 'Keyboard shortcuts';
 
   @override
-  String get settingsShortcutsHint =>
-      'Everything has a key — the full list.  (Ctrl+/)';
+  String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
   String get settingsSpellCheck => 'Spell check';
@@ -1364,8 +1393,7 @@ class LEn extends L {
   String get settingsSync => 'Sync';
 
   @override
-  String get settingsSyncHint =>
-      'Back up and share this notebook — GitHub or a folder.';
+  String get settingsSyncHint => 'Back up this notebook to GitHub or a folder.';
 
   @override
   String get settingsTheme => 'Theme';
@@ -1383,6 +1411,12 @@ class LEn extends L {
   String get settingsTitle => 'Settings';
 
   @override
+  String get settingsTouchDrawing => 'Draw with your finger';
+
+  @override
+  String get settingsTouchDrawingHint => 'Two fingers always pan and zoom.';
+
+  @override
   String settingsUpToDate(String version) {
     return 'You\'re up to date ($version is the newest version).';
   }
@@ -1397,7 +1431,7 @@ class LEn extends L {
 
   @override
   String get settingsWelcomeTourHint =>
-      'The three-minute version: the canvas, maths and ink, and where your notes live.';
+      'Three minutes on how the canvas works.';
 
   @override
   String get settingsWhatsNew => 'What\'s new';
@@ -1417,6 +1451,9 @@ class LEn extends L {
 
   @override
   String get shellCreateFirstPage => 'Create your first page';
+
+  @override
+  String get shellDemoNothingSaved => 'Demo — nothing is saved';
 
   @override
   String get shellEmptyBody =>
@@ -1513,12 +1550,6 @@ class LEn extends L {
 
   @override
   String get shellSavedOnDevice => 'Saved on this device';
-
-  @override
-  String get shellDemoNothingSaved => 'Demo — nothing is saved';
-
-  @override
-  String get commandNotInDemo => 'Not in the web demo';
 
   @override
   String get shellSaving => 'Saving…';

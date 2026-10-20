@@ -216,6 +216,7 @@ const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) '
     r'((?:\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? (?:(?!\}\})[^\n])+\}\}'
     r'|(?!\}\})[^\n])+?)\}\})';
+
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
 
 /// **An inline atom: a thing that is not text, living in a sentence.**

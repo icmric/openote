@@ -90,6 +90,8 @@ const List<KeySection> keyboardMap = [
         'Tool: Select, Text, Pen, Highlighter, Eraser'),
     KeyBinding('Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / cut / paste blocks'),
     KeyBinding('Ctrl+D', 'Duplicate the selected block'),
+    KeyBinding('Ctrl+G / Ctrl+Shift+G',
+        'Group / ungroup — a group is one thing to pick up'),
     KeyBinding('Del', 'Delete the selection'),
     KeyBinding('Ctrl+Z', 'Undo'),
     KeyBinding('Ctrl+Y / Ctrl+Shift+Z', 'Redo'),

@@ -21,6 +21,9 @@ class LFr extends L {
   String get atomUpdateToView => 'Mettez Openote à jour pour l’afficher';
 
   @override
+  String get barBackToEquation => 'Revenir aux outils d\'équation';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -70,9 +73,6 @@ class LFr extends L {
 
   @override
   String get barEraserWhole => 'Enlève tout trait que vous touchez';
-
-  @override
-  String get barBackToEquation => 'Revenir aux outils d\'équation';
 
   @override
   String get barEscWhenDone => 'Échap quand vous avez fini';
@@ -151,14 +151,6 @@ class LFr extends L {
   String get barInkMoreColours => 'Plus de couleurs…';
 
   @override
-  String barPenSize(String size) {
-    return 'Épaisseur $size';
-  }
-
-  @override
-  String get barPenSizeExact => 'Taille exacte…';
-
-  @override
   String get barInkPickColour => 'Prélever une couleur sur la page';
 
   @override
@@ -193,6 +185,14 @@ class LFr extends L {
   @override
   String get barPenProximity =>
       'Approcher le stylet de la page passe à l\'encre.\nSi vous choisissez un autre outil pendant que le stylet est là, il\nreste jusqu\'à ce que le stylet s\'éloigne et revienne. Le bout\narrière du stylet (ou son bouton, maintenu) efface.';
+
+  @override
+  String barPenSize(String size) {
+    return 'Épaisseur $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Taille exacte…';
 
   @override
   String get barPlanner => 'Agenda';
@@ -320,10 +320,6 @@ class LFr extends L {
   String get barToolText => 'Texte  (T)';
 
   @override
-  String get barTouchDrawing =>
-      'Dessinez au doigt.\nAuto : le doigt dessine jusqu\'à ce que vous preniez le stylet ; ensuite le doigt fait glisser la page, pour que la paume ne marque rien.\nDeux doigts font toujours glisser et zoomer.';
-
-  @override
   String get barUnderline => 'Souligné  (Ctrl+U)';
 
   @override
@@ -338,6 +334,15 @@ class LFr extends L {
   String get canvasDeleteSelection => 'Supprimer  (Suppr)';
 
   @override
+  String get canvasGroupSelection => 'Grouper  (Ctrl+G)';
+
+  @override
+  String get canvasUngroupSelection => 'Dissocier  (Ctrl+Maj+G)';
+
+  @override
+  String get commandNotInDemo => 'Pas dans la démo web';
+
+  @override
   String get commonBack => 'Retour';
 
   @override
@@ -345,6 +350,9 @@ class LFr extends L {
 
   @override
   String get commonClose => 'Fermer';
+
+  @override
+  String get commonCopy => 'Copier';
 
   @override
   String get commonDelete => 'Supprimer';
@@ -537,9 +545,6 @@ class LFr extends L {
   String get insertLinkToPage => 'Lier à une page';
 
   @override
-  String get linkEdit => 'Modifier le lien…';
-
-  @override
   String get insertPageLink => 'Lien';
 
   @override
@@ -611,6 +616,9 @@ class LFr extends L {
       'Un enregistrement de cours, ou n\'importe quel lien web';
 
   @override
+  String get linkEdit => 'Modifier le lien…';
+
+  @override
   String mathSemanticLabel(String latex) {
     return 'Équation : $latex';
   }
@@ -641,12 +649,6 @@ class LFr extends L {
   String get navCollapse => 'Replier le navigateur  (Ctrl+\\)';
 
   @override
-  String get navHideSections => 'Masquer la liste des sections';
-
-  @override
-  String get navShowSections => 'Afficher la liste des sections';
-
-  @override
   String get navColour => 'Couleur';
 
   @override
@@ -670,6 +672,11 @@ class LFr extends L {
   String get navDeletePermanently => 'Supprimer définitivement';
 
   @override
+  String navDeletedGroup(String title) {
+    return 'Groupe « $title » supprimé';
+  }
+
+  @override
   String navDeletedPage(String title) {
     return 'Page « $title » supprimée';
   }
@@ -678,14 +685,6 @@ class LFr extends L {
   String navDeletedSection(String title) {
     return 'Section « $title » supprimée';
   }
-
-  @override
-  String navDeletedGroup(String title) {
-    return 'Groupe « $title » supprimé';
-  }
-
-  @override
-  String get navUndo => 'Annuler';
 
   @override
   String navDeletesInDays(int days) {
@@ -708,6 +707,9 @@ class LFr extends L {
 
   @override
   String get navExpand => 'Déplier le navigateur  (Ctrl+\\)';
+
+  @override
+  String get navHideSections => 'Masquer la liste des sections';
 
   @override
   String get navHome => 'Accueil';
@@ -746,6 +748,9 @@ class LFr extends L {
   String get navMenuDelete => 'Supprimer';
 
   @override
+  String get navMenuDuplicate => 'Dupliquer';
+
+  @override
   String get navMenuExportSectionPdf => 'Exporter la section en PDF…';
 
   @override
@@ -779,12 +784,6 @@ class LFr extends L {
   String get navMenuRecentChanges => 'Modifications récentes…';
 
   @override
-  String get navMenuDuplicate => 'Dupliquer';
-
-  @override
-  String get navMenuRename => 'Renommer';
-
-  @override
   String get navMenuRemoveExam => 'Enlever la date d\'examen';
 
   @override
@@ -792,6 +791,9 @@ class LFr extends L {
 
   @override
   String get navMenuRemovePasscode => 'Enlever le code…';
+
+  @override
+  String get navMenuRename => 'Renommer';
 
   @override
   String get navMenuSetExam => 'Définir la date d\'examen…';
@@ -865,6 +867,12 @@ class LFr extends L {
 
   @override
   String get navSection => 'Section';
+
+  @override
+  String get navShowSections => 'Afficher la liste des sections';
+
+  @override
+  String get navUndo => 'Annuler';
 
   @override
   String get navUntitled => 'Sans titre';
@@ -1319,6 +1327,18 @@ class LFr extends L {
       'Choisissez un carnet et il arrive directement, sans rien exporter. Fonctionne sur n\'importe quel ordinateur.';
 
   @override
+  String get penButtonEraser => 'Gomme';
+
+  @override
+  String get penButtonLasso => 'Lasso';
+
+  @override
+  String get penButtonNothing => 'Rien';
+
+  @override
+  String get penButtonSelect => 'Sélectionner';
+
+  @override
   String get settingsAbout => 'À propos';
 
   @override
@@ -1330,7 +1350,7 @@ class LFr extends L {
 
   @override
   String get settingsAiOn =>
-      'Oui — les assistants IA de cet ordinateur peuvent lire vos notes.';
+      'Oui — l’IA de cet ordinateur peut lire vos notes.';
 
   @override
   String get settingsAppearance => 'Apparence';
@@ -1340,6 +1360,9 @@ class LFr extends L {
 
   @override
   String get settingsConnections => 'Connexions';
+
+  @override
+  String get settingsDiagnostics => 'Diagnostics';
 
   @override
   String get settingsHelp => 'Aide';
@@ -1355,19 +1378,26 @@ class LFr extends L {
       'Comment ajouter ou corriger une langue';
 
   @override
-  String get settingsLanguageHelp =>
-      'Openote est traduit par les gens qui l\'utilisent. Si la vôtre manque ou est incorrecte, c\'est un seul fichier.';
+  String get settingsPenAndTouch => 'Stylet et tactile';
 
   @override
-  String get settingsPenProximity =>
-      'Approcher le stylet de la page passe à l\'encre';
+  String get settingsPenButton => 'Le bouton latéral du stylet';
+
+  @override
+  String get settingsPenButtonHint => 'Maintenez-le pour emprunter cet outil.';
+
+  @override
+  String get settingsPenTest => 'Test du stylet et du tactile';
+
+  @override
+  String get settingsPenTestHint =>
+      'Ce que votre stylet et ses boutons signalent.';
 
   @override
   String get settingsShortcuts => 'Raccourcis clavier';
 
   @override
-  String get settingsShortcutsHint =>
-      'Tout a une touche — la liste complète.  (Ctrl+/)';
+  String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
   String get settingsSpellCheck => 'Correcteur orthographique';
@@ -1377,7 +1407,7 @@ class LFr extends L {
 
   @override
   String get settingsSyncHint =>
-      'Sauvegardez ce carnet et partagez-le — GitHub ou un dossier.';
+      'Sauvegardez ce carnet sur GitHub ou dans un dossier.';
 
   @override
   String get settingsTheme => 'Thème';
@@ -1395,6 +1425,13 @@ class LFr extends L {
   String get settingsTitle => 'Réglages';
 
   @override
+  String get settingsTouchDrawing => 'Dessiner au doigt';
+
+  @override
+  String get settingsTouchDrawingHint =>
+      'À deux doigts, c’est toujours déplacer et zoomer.';
+
+  @override
   String settingsUpToDate(String version) {
     return 'Vous êtes à jour ($version est la version la plus récente).';
   }
@@ -1409,7 +1446,7 @@ class LFr extends L {
 
   @override
   String get settingsWelcomeTourHint =>
-      'La version en trois minutes : le canevas, les maths et l\'encre, et où vivent vos notes.';
+      'Trois minutes sur le fonctionnement du canevas.';
 
   @override
   String get settingsWhatsNew => 'Nouveautés';
@@ -1429,6 +1466,9 @@ class LFr extends L {
 
   @override
   String get shellCreateFirstPage => 'Créez votre première page';
+
+  @override
+  String get shellDemoNothingSaved => 'Démo — rien n’est enregistré';
 
   @override
   String get shellEmptyBody =>
@@ -1525,12 +1565,6 @@ class LFr extends L {
 
   @override
   String get shellSavedOnDevice => 'Enregistré sur cet appareil';
-
-  @override
-  String get shellDemoNothingSaved => 'Démo — rien n’est enregistré';
-
-  @override
-  String get commandNotInDemo => 'Pas dans la démo web';
 
   @override
   String get shellSaving => 'Enregistrement…';

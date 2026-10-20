@@ -25,15 +25,15 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 1 | **Use the macOS and Linux builds** | S | Three platforms ship; two have never been run by a human. CI proves they compile. §1.1 |
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
-| 4 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
-| 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.8 |
+| 4 | **The spell checker knows mitochondria and not Monday** | M | Four reports in one: the bundled list is a Scrabble lexicon, so every name and most of this decade is underlined. §1.16 |
+| 5 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
 | 6 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
 | 7 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
 | 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
 | 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
 | 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
 | 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 12 | The structured `nodes` text model | XL | Gates per-run styling, paragraph collapse and real co-editing. §2.2 |
+| 12 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
 
 ---
 
@@ -128,16 +128,12 @@ with asserts stripped — release and profile only. Every open inline equation
 broke its paragraph's layout in the build a student downloads, and the whole
 suite passed. A sweep is the only way to check for more.
 
-### 1.8 Specify the ink blob format · **S**
+### 1.8 Specify the ink blob format · **Done**
 
-[Ink spec §2.2](../specs/13-ink-data-spec.md) describes the reference an ink
-block stores and then says the bytes behind it are not specified here. That is
-the one place the openness guarantee is unmet: an independent implementation can
-read every other part of a notebook and cannot draw the handwriting.
-
-It is a writing job, not a design one. `app/lib/ink/ink_codec.dart` documents the
-format thoroughly and the encoding is deterministic; it needs transcribing into
-the spec as a byte layout, with a worked example.
+[Ink spec §2.3](../specs/13-ink-data-spec.md) is the byte layout, with a
+worked example and the varint and zigzag rules written out, so an independent
+implementation can draw a notebook's handwriting. This was the one place the
+openness guarantee was unmet.
 
 ### 1.9 MathML export · **S–M**
 
@@ -230,6 +226,121 @@ Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
 warning about what protection does *not* cover is the one most worth
 translating.
+
+---
+
+### 1.15 There is no way to pan with a pen · **S**
+
+Middle-drag pans, two fingers pan, the wheel scrolls, and a graphics tablet
+has none of those. A pen drag on empty page is a selection box, so somebody
+working with a stylus can only move around the page by the scroll bar.
+
+From [#20](https://github.com/icmric/openote/issues/20): *"customizable
+shortcuts would be really helpful for graphics tablet users. For example,
+holding Alt + left-drag to pan and Shift + Alt + left-drag to zoom."*
+
+Two sizes of answer, and the small one is worth shipping on its own: **one
+modifier that means pan**, chosen rather than configured. Space-drag is the
+convention everywhere else and is free here; Alt is not, because Alt-drag
+already means "move this box instead of selecting its text", which is the
+escape hatch a text block needs.
+
+The large one is bindings somebody can change, which wants a settings surface,
+a store, and a decision about what is bindable — a release of its own, and the
+owner has said as much on the issue.
+
+### 1.16 The spell checker knows mitochondria and not Monday · **M**
+
+The owner: *"we do currently have spellcheck but its not particularly good (it
+doesnt pick up on many words, lots of the time it can tell you something is
+wrong but doesnt give options for what it thinks it might be, doesnt auto
+correct if it has high confidence, doesnt as far as im aware support different
+styles of language like Australia vs Brittish vs US English)."*
+
+All four are true, and three of them are one cause: the bundled list is
+**ENABLE**, a Scrabble lexicon. 172,823 words, public domain, and chosen for
+coverage — of playable words. Measured against the asset we ship:
+
+| in it | not in it |
+|---|---|
+| mitochondria, photosynthesis, calculus, semester | Monday, January, Australia, any name |
+| colour, realise, organisation | favourite |
+| laptop, okay | email, internet, website, online, app, blog, wifi, dataset |
+| | don't, isn't — no contraction is in it |
+| | etc, vs, PhD, OK |
+
+So every date, every place, every person and most of this decade is underlined,
+which is what "doesn't pick up on many words" means. Note the dialect row: some
+British spellings are in and others are out, because playability is not a
+dialect. There is no dialect to choose because there is no dialect in there.
+
+**The work, in the order it pays:**
+
+1. **Replace the word list.** SCOWL (permissive, same licence shape as ENABLE)
+   publishes exactly the pieces this needs as separate files: a base list in
+   size tiers, plus `british-`, `canadian-` and `australian-words`,
+   `english-proper-names` and `english-abbreviations`. Assemble at build time,
+   union with ENABLE — strictly better coverage than either — and let Settings
+   pick the dialect, which is then a real choice rather than a label.
+2. **Tokenise contractions and possessives as one word.** `don't` is one token
+   or it is two misspellings.
+3. **Better suggestions.** Generation is edit distance 1, unranked, which is
+   why there is often nothing to offer: a transposition plus an omission is
+   distance 2, and so is every typo in a long word. Add distance 2 for short
+   words, split and join candidates (`alot`), a capitalisation-only candidate
+   once proper names are in, and order by frequency rather than by the order
+   the alphabet loop happened to generate.
+4. **Autocorrect, narrowly.** Only on a word boundary, only when there is
+   exactly one distance-1 candidate, and reversible — which is the same
+   escape-hatch question as [v1.0.2 #23](v1.0.2.md#23-auto-capitalisation),
+   and should be decided once for both.
+
+**Can we piggyback on the operating system?** Partly, and not the part that
+would help most.
+
+  * **Windows 8+** has one: `ISpellCheckerFactory` / `ISpellChecker` (COM),
+    per-BCP-47-locale, with suggestions, a user dictionary and autocorrect
+    pairs. Which dialects a machine actually has is a per-machine question
+    answered by `get_SupportedLanguages`, and is tied to installed language
+    features — so en-AU may simply not be there. That needs measuring on a
+    real machine before it is designed around.
+  * **macOS** has the best of them: `NSSpellChecker`, multi-locale, with
+    `guesses`, `correction` and language auto-detection.
+  * **Linux** has nothing system-wide. The convention is enchant brokering
+    hunspell against the distribution's dictionaries, which is LGPL code and
+    mixed-licence dictionary data — a question [ADR-0005](../adr/) has an
+    opinion about.
+  * **iOS and Android** have `UITextChecker` and `SpellCheckerSession`, which
+    is what Flutter's own `DefaultSpellCheckService` wraps, and why
+    `spell/spell_checker.dart` exists at all.
+
+So a platform provider is two native plugins for two of five platforms, and it
+buys a result that differs per machine: a word underlined on the laptop and
+clean on the desktop, with no way to reproduce either in CI. The call: keep our
+own checker as the default and the only one tested, fix the list — which is
+where the complaint actually comes from — and leave a platform provider as an
+opt-in behind a `SpellService` seam if anyone still wants it afterwards.
+
+### 1.17 Two settings the rail was built to hold
+
+Named by the owner while redesigning Settings — *"In time we will include more
+options such as being able to adjust the text/icon size of the UI, custom
+keybinding, and some other jazz like that"* — so they are written down here
+rather than left as the reason a layout changed.
+
+  * **The size of the interface's text and icons.** Blocked on, and not merely
+    related to, [v1.0.2 #12](v1.0.2.md): nothing in the app reads
+    `textScaler`, so every width it measures for itself is measured at 100%
+    while the widgets draw larger. A control that scaled the interface before
+    that is fixed would ship the bug on purpose. #12 first, then the control,
+    in Settings → Appearance.
+  * **Custom keybindings · M.** `ui/keyboard_map.dart` is display data — the
+    keys as a string and a sentence saying what they do — while the bindings
+    themselves are 37 `SingleActivator`s wired straight to their call sites.
+    Rebinding needs the actions to become addressable things with the map as
+    their labels, which is the same registry a command palette would need
+    ([v1.0.2 §25](v1.0.2.md#25-the-command-bar) option C). Its home is a
+    Keyboard group split out of Help, where the shortcut reference already is.
 
 ---
 

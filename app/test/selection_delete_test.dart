@@ -19,8 +19,18 @@
 // So the rule is "never two deletes for one thing", which keeps both asks:
 // the bin is gone for a lone block that has its own cross, and still there
 // for a multiple selection — where the cross belongs to the primary block
-// alone — and for a pen in hand, where the bar is suppressed and the tablet
-// this was all built for still has no Delete key.
+// alone.
+//
+// **Which leaves the things that have no cross**, and the rule used to be
+// written as though there were none. Handwriting is painted rather than
+// built, so a lone stroke has no bar and never had one; and no block shows
+// its bar while a drawing tool is in hand, which used to be impossible to
+// observe because picking up a pen cleared the selection, and is now
+// ordinary — a side-button lasso hands the pen straight back with the
+// selection it just made. Both get the floating button, which is the case it
+// was built for in the first place: *"When one or more items are selected
+// with the lasso, it should have that little delete icon like we have when
+// selecting multiple boxes."*
 
 import 'dart:io';
 
@@ -110,39 +120,70 @@ void main() {
     await drain(tester);
   });
 
-  testWidgets('a pen cannot be in hand with something selected', (tester) async {
-    // Why the single-selection rule below is safe. This button was built for
-    // ink on a tablet with no Delete key, and the worry is that hiding it for
-    // one selected thing strands that person. It cannot: picking up anything
-    // that draws clears the selection, so the only tools that can be in hand
-    // while something is selected are the ones that leave the block's own bar
-    // — and its cross — on screen.
+  testWidgets('A PEN IN HAND IS THE CASE THAT NEEDS THE BUTTON MOST',
+      (tester) async {
+    // This used to assert the opposite, and reasoned from it: picking up
+    // anything that draws cleared the selection, so "selected, with a pen"
+    // was not a state the app could be in, so the lone-block rule could not
+    // strand the tablet user it was built for.
+    //
+    // It can be in that state now, deliberately — a side button borrows the
+    // lasso, makes a selection and hands the pen back, and throwing the
+    // selection away on the way back was the bug. So the premise is gone and
+    // the stranding is real: no block shows its bar while a drawing tool is
+    // held, and a tablet has no Delete key.
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await canvas(tester, 'onote_del_pen_');
     final b = app.addBlock(ink());
     app.select(b.id);
     expect(app.selectedIds, isNotEmpty, reason: 'precondition');
 
-    app.setTool(Tool.pen);
-    expect(app.selectedIds, isEmpty,
-        reason: 'a pen deselects, so "selected, with a pen" is not a state '
-            'this app can be in');
+    app.setTool(Tool.pen, automatic: true);
+    expect(app.selectedIds, isNotEmpty,
+        reason: 'being handed the pen is not a decision to drop what is '
+            'selected');
     await pump(tester, app);
-    expect(find.byIcon(Icons.delete_outline), findsNothing);
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget,
+        reason: 'and it is the only way to delete this right now');
     await drain(tester);
   });
 
-  testWidgets('one selected block does not get a second delete button',
+  testWidgets('one selected BOX does not get a second delete button',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await canvas(tester, 'onote_del_one_');
-    final b = app.addBlock(ink());
+    final b = app.addBlock(Block(
+        type: BlockType.text,
+        x: 40,
+        y: 60,
+        w: 300,
+        content: {'text': 'one thing', 'autoWidth': false}));
     app.select(b.id);
     await pump(tester, app);
 
     expect(find.byIcon(Icons.delete_outline), findsNothing,
-        reason: 'the block already carries a cross on its own bar');
+        reason: 'the box already carries a cross on its own bar');
     expect(app.showSelectionDelete, isFalse);
+    await drain(tester);
+  });
+
+  testWidgets('one selected STROKE does, because it has no bar at all',
+      (tester) async {
+    // The case the whole button exists for, and the case it had stopped
+    // covering: a stroke is its own block now, ink is painted rather than
+    // built, and nothing anywhere on it offers a cross.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_del_one_ink_');
+    final b = app.addBlock(ink());
+    app.select(b.id);
+    await pump(tester, app);
+
+    expect(app.showSelectionDelete, isTrue);
+    final button = find.byIcon(Icons.delete_outline);
+    expect(button, findsOneWidget);
+    await tester.tap(button);
+    await tester.pump();
+    expect(app.blocks.where((x) => x.id == b.id), isEmpty);
     await drain(tester);
   });
 
@@ -194,6 +235,8 @@ void main() {
   testWidgets('it steps out of the way of the eyedropper', (tester) async {
     // While the eyedropper is armed the next click belongs to it. A button
     // sitting over the page would eat the click that was meant for a colour.
+    // (This asserted nothing until a lone stroke started offering a button:
+    // with one thing selected there was none to step out of the way.)
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await canvas(tester, 'onote_del_dropper_');
     final b = app.addBlock(ink());

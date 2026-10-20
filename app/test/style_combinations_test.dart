@@ -447,6 +447,13 @@ void main() {
         // inside the first instead of removing it.
         if (!haveSqlite) return markTestSkipped('sqlite unavailable');
         put(src);
+        // **The flick swaps the last two colours** rather than toggling one
+        // against nothing (see [AppState.toggleTextColor]), so for it to take
+        // a colour OFF, the colour on the page has to be the one it would
+        // swap away from. Its partner is Automatic out of the box, which is
+        // what "no colour" means here. What the test is about either way is
+        // the descent: the colour's opener is not beside the selection.
+        app.lastColor = 'e53935';
         app.toggleTextColor();
         expect(c.text, want);
       });

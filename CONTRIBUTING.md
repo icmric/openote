@@ -17,13 +17,19 @@ What does **not** belong in a comment: measurements, a quote from a bug report, 
 **Never assert on wall-clock time.** `flutter test` runs files in parallel, so
 a `Stopwatch` bar measures how much CPU the machine had spare. It passes
 alone, fails in a full suite, and fails every time on a two-core CI runner.
-This has taken CI down twice while the code under test was working perfectly.
+This has taken CI down twice while the code under test was working perfectly,
+and a third time through a `retry:` that could not launder it — three
+attempts, 1,248 ms against 81 ms for the same code run alone. **A retry is not
+a fix for a wall-clock bar**; it only widens the window in which the machine
+has to behave.
 
 Count the work instead, on the one path your change exists to alter.
 `Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
 `OpLogStore.debugDirectoryListings` and `ImportWriterHandle.debugMeasureRequests`
 exist for this: a working cache adds zero and a broken one adds hundreds,
-and neither answer moves with the weather. Product code that a widget test
+and neither answer moves with the weather. `AppShell.clock` and
+`PageCanvas.clock` are the product-code half, for the two places a decision
+genuinely depends on elapsed time. Product code that a widget test
 drives needs the same treatment — the sidebar's double-click window takes an
 injectable `sidebarNow`.
 
@@ -39,6 +45,59 @@ sixteen-core machine and does not fit. Those carry
 `@Timeout(Duration(minutes: 3))`. The failure this prevents is the nastiest
 kind: intermittent, one platform, one test at a time, reported as
 "TimeoutException after 0:00:30" with nothing in it about git.
+
+**A fifth way a test has passed against broken code here: the assertion was
+satisfied by something else.** "A pen carried off mid-press does not stay
+lassoing" asserted the tool was `select` afterwards — and it is, because a
+mouse arriving with no pen in range puts the pen down on its own, fix or no
+fix. Deleting the fix did not fail it. The real cost of the missing fix was a
+STALE LATCH, so the test had to go one step further: choose a tool
+deliberately, then release the button, and watch the latch restore over the
+top of it. **If the mutation passes, the assertion is downstream of something
+you did not change** — look for the other thing that produces the same
+observable.
+
+**A sixth way, and the quietest: the premise stopped being true.** A test
+called "a pen cannot be in hand with something selected" proved it by calling
+`setTool(Tool.pen)` and watching the selection go — and went on passing after
+the app started keeping the selection when a pen's side button hands the tool
+back, because the manual `setTool` it used still clears. It was green, it was
+wrong, and the rule it existed to protect had inverted. **When you change a
+rule, grep the tests for sentences about it**, not just for the symbol you
+edited; a test's comment is where its premise lives, and nothing compiles a
+comment. In the same pass, a fixture made a locked-block test pass for the
+wrong reason: the block was big enough that the area rule excluded it anyway,
+so the lock under test did nothing. Make every rule but the one you are
+testing say "yes", and assert that in a line of its own.
+
+And a process one: **do not mutate a file while a full suite is running.**
+`flutter test` compiles each test file as it reaches it, so a lib file
+reverted for thirty seconds mid-run is compiled into whichever files start in
+that window — and reads as a real failure somewhere unrelated.
+
+**Never hand a `CustomPainter` a collection you go on mutating.** Its
+`shouldRepaint` is then comparing an object with itself, so it returns false
+and nothing repaints — which is how the lasso's outline came to appear only
+once the gesture had ended. Pass a copy, or carry a `Listenable` the painter
+repaints on. The symptom is invisible to a widget test that only asks what the
+tree contains, so count the paints: a `static int debugPaints` incremented in
+`paint()` is what pins it (`OverlayPainter`).
+
+**And when an input device does not behave, read the embedder before theorising
+about it.** The engine's source ships inside the SDK —
+`<flutter>/engine/src/flutter/shell/platform/windows/flutter_window.cc` is the
+Windows one — and it is the difference between "the pen's barrel button is not
+reaching us" and three rounds of guessing at bit masks. `grep -rn "PEN_FLAG"`
+over that directory answered a report that had been open for months.
+
+**A widget test is on Android unless it says otherwise**, and a good deal of
+framework behaviour turns on that. `EditableText` unfocuses on a tap outside
+on Windows, macOS and Linux and deliberately does not on Android and iOS — so
+a desktop-only focus bug is simply not reachable under the default, and a test
+written against it greens on a broken build. Set
+`debugDefaultTargetPlatformOverride` and **clear it inside the test body**: the
+framework checks the foundation debug flags before any `addTearDown` callback
+runs, so clearing it there fails the test that just passed.
 
 **Never put a control character in a source file.** Ripgrep treats a file holding
 one as binary and skips it, so the file becomes invisible to every code search —

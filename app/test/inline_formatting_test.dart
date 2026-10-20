@@ -193,6 +193,89 @@ void main() {
     });
   });
 
+  group('text colour, through the toolbar', () {
+    test('COLOURING A COLOURED WORD REPLACES THE COLOUR', () {
+      if (!haveSqlite) return;
+      edit('say «hello» there');
+      app.applyTextColor('FF0000');
+      expect(c.text, 'say {{#FF0000 hello}} there');
+
+      app.applyTextColor('0000FF');
+      expect(c.text, 'say {{#0000FF hello}} there',
+          reason: 'not a second wrapper inside the first');
+      expect(c.text.substring(c.selection.start, c.selection.end), 'hello');
+    });
+
+    test('AND "AUTO" IS THE WAY BACK TO NO COLOUR', () {
+      if (!haveSqlite) return;
+      edit('say «hello» there');
+      app.applyTextColor('FF0000');
+      app.applyTextColor('auto');
+      expect(c.text, 'say hello there');
+      expect(app.lastColor, 'auto',
+          reason: 'and the button under the pointer now says so');
+    });
+
+    test('THE FLICK HOTKEY SWAPS THE LAST TWO COLOURS', () {
+      if (!haveSqlite) return;
+      // *"The usecase for that shortcut was being able to flick between
+      // colours when writing some text where i want to set the colour of a
+      // couple words, but not every word."*
+      edit('say «hello» there');
+      app.applyTextColor('0000FF');
+      app.applyTextColor('FF0000');
+
+      app.toggleTextColor();
+      expect(c.text, 'say {{#0000FF hello}} there',
+          reason: 'it was red, so the flick gives the other one');
+      app.toggleTextColor();
+      expect(c.text, 'say {{#FF0000 hello}} there', reason: 'and back');
+      app.toggleTextColor();
+      expect(c.text, 'say {{#0000FF hello}} there',
+          reason: 'however many times it is pressed');
+    });
+
+    test('and out of the box it flicks between a colour and the default', () {
+      if (!haveSqlite) return;
+      app.lastColor = 'FF0000';
+      edit('say «hello» there');
+      app.toggleTextColor();
+      expect(c.text, 'say {{#FF0000 hello}} there');
+      app.toggleTextColor();
+      expect(c.text, 'say hello there',
+          reason: 'the second slot starts as Automatic, which is the '
+              '"a couple of words, not every word" case');
+    });
+
+    test('flicking does not reorder the pair under your fingers', () {
+      if (!haveSqlite) return;
+      edit('say «hello» there');
+      app.applyTextColor('0000FF');
+      app.applyTextColor('FF0000');
+      app.toggleTextColor();
+      app.toggleTextColor();
+      expect([app.lastColor, app.prevColor], ['FF0000', '0000FF'],
+          reason: 'the toolbar still shows the colour that was chosen');
+    });
+
+    test('a code block is left alone', () {
+      if (!haveSqlite) return;
+      // `{{#…}}` in somebody's source is not a colour. The same guard
+      // `wrapSelection` carries.
+      final code = Block(
+          type: BlockType.code, x: 0, y: 0, content: {'text': 'a = b * c'});
+      app.addBlock(code, recordUndo: false);
+      final cc = TextEditingController(text: 'a = b * c');
+      app.setActiveEditor(cc, code, 'text');
+      cc.selection = const TextSelection(baseOffset: 0, extentOffset: 9);
+
+      app.applyTextColor('FF0000');
+
+      expect(cc.text, 'a = b * c');
+      app.setActiveEditor(c, block, 'text');
+    });
+  });
+
   group('a selection is trimmed to what it actually formats', () {
     test('trailing spaces stay OUTSIDE the markers', () {
       if (!haveSqlite) return;
