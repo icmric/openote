@@ -26,8 +26,10 @@ import '../markdown/md_blocks.dart';
 import '../model/block_schema.dart';
 import '../model/inline_atom.dart';
 import '../model/models.dart';
+import '../model/tags.dart' show NoteTag;
 import '../model/table_conversion.dart';
 import '../state/app_state.dart';
+import '../state/page_protection.dart' show ProtectionTree;
 import '../update/app_update.dart' show kAppVersion;
 
 /// A tool-level failure the calling model is meant to read and recover from.
@@ -92,7 +94,8 @@ final List<Map<String, Object>> mcpToolDefinitions = [
         'paginated. Big notebooks: first call with kind="section" to find a '
         'section, then with sectionId to list its pages. Defaults to the open '
         'notebook. Returns {total, items, nextOffset?}; pass nextOffset as '
-        'offset for the next page of results.',
+        'offset for the next page of results. Anything with a passcode is '
+        'left out, and cannot be opened from here.',
     'inputSchema': {
       'type': 'object',
       'properties': {
@@ -142,7 +145,8 @@ final List<Map<String, Object>> mcpToolDefinitions = [
   {
     'name': 'search',
     'description': 'Full-text search over a notebook\'s pages. Returns page '
-        'ids, titles and a snippet around the first hit.',
+        'ids, titles and a snippet around the first hit. Pages with a '
+        'passcode are never searched.',
     'inputSchema': {
       'type': 'object',
       'properties': {
@@ -414,7 +418,8 @@ Future<String> callMcpTool(
       final title = _titleOf(app, nb, pageId);
       switch (args['format']) {
         case 'markdown':
-          return pageMarkdownOf(app, title, data.blocks);
+          return pageMarkdownOf(app, title, data.blocks,
+              withheld: (id) => _coveredAnywhere(app, id));
         case 'layout':
           final pw = _PageWrite.read(app, nb, pageId);
           final sorted = [...pw.blocks]..sort((a, b) => a.y.compareTo(b.y));
@@ -439,7 +444,11 @@ Future<String> callMcpTool(
       final nb = _notebookOf(app, args);
       final q = '${args['query'] ?? ''}';
       if (q.trim().isEmpty) throw McpToolError('query is empty');
-      final hits = app.searchPagesOf(nb, q);
+      final gate = _Gate(app, nb);
+      final hits = [
+        for (final h in app.searchPagesOf(nb, q))
+          if (!gate.covers(h.pageId)) h
+      ];
       return jsonEncode([
         for (final h in hits)
           {
@@ -457,6 +466,7 @@ Future<String> callMcpTool(
       final title = _titleArg(args['title']);
       final warnings = <String>[];
       final blocks = _contentArgs(args, warnings, required: false);
+      _refuseLockedWindows(app, blocks);
       final level = _levelArg(args['level']);
       final afterPageId = args['afterPageId'] as String?;
       final node = _createPages(app, nb, sectionId,
@@ -499,6 +509,9 @@ Future<String> callMcpTool(
         }
         warnings.addAll([for (final w in pageWarnings) 'pages[$i]: $w']);
       }
+      for (final s in specs) {
+        _refuseLockedWindows(app, s.blocks);
+      }
       final nodes = _createPages(app, nb, sectionId,
           [for (final s in specs) (title: s.title, level: s.level)]);
       final out = <Map<String, Object?>>[];
@@ -521,6 +534,7 @@ Future<String> callMcpTool(
       final warnings = <String>[];
       final pw = _PageWrite.open(app, nb, pageId);
       final blocks = _parseBlocks(args['blocks'], warnings);
+      _refuseLockedWindows(app, blocks);
       return jsonEncode(_append(pw, blocks, warnings));
 
     case 'append_markdown':
@@ -535,6 +549,7 @@ Future<String> callMcpTool(
       final pw = _PageWrite.open(app, nb, pageId);
       final warnings = <String>[];
       final blocks = _contentArgs(args, warnings);
+      _refuseLockedWindows(app, blocks);
       return jsonEncode(_insert(pw, blocks, warnings,
           afterBlockId: args['afterBlockId'] as String?,
           atY: (args['y'] as num?)?.toDouble()));
@@ -598,6 +613,10 @@ Future<String> callMcpTool(
     case 'delete_page':
       final (nb, id) = _pageOf(app, args, pageOnly: true);
       _guardWritable(app, nb);
+      // A subpage of the page going is NOT deleted with it, and slides up to
+      // whatever page is above — which can be one with a passcode.
+      final gate = _Gate(app, nb);
+      gate.refuseCoverageChange([for (final n in gate.nodes) if (n.id != id) n]);
       await app.deleteNodeIn(nb, id);
       _refreshTree(app, nb);
       return jsonEncode({'deleted': id, 'restorable': 'recycle bin'});
@@ -632,6 +651,117 @@ Future<String> callMcpTool(
 
     default:
       throw McpToolError('no such tool: $name');
+  }
+}
+
+// ── Passcodes ────────────────────────────────────────────────────────────
+//
+// **Anything a passcode covers is closed to AI helpers**: not listed, not
+// searched, not read, not changed — not even while it is unlocked in the app
+// — and no tool takes a passcode. The owner: *"I don't even want them to be
+// able to enter a passcode as it could allow it to just be brute forced
+// easily, they should just not be able to access locked pages."*
+//
+// Not "while it is locked". An unlock is for the person at the keyboard, who
+// opened that page to read it; an agent running beside them for the rest of
+// the session is not who it was opened for. And "a passcode keeps it from AI
+// helpers" is one sentence that is always true, where "until you unlock it"
+// would mean an unlock at nine still exposing the page to an agent at three.
+//
+// The same honesty as the gate itself (`state/page_protection.dart`): this
+// closes OPENOTE's door. An AI tool that can read files on this computer can
+// read the notebook's container as anyone can, and the AI dialog says so.
+
+/// What the passcodes in one notebook cover, for one tool call.
+///
+/// Built per notebook, never from the app's own [AppState.isLocked]: that
+/// knows only the OPEN notebook, and this door reaches all of them.
+class _Gate {
+  _Gate(AppState app, String nb)
+      : this._(app.protectedNodeIdsOf(nb), _nodesOf(app, nb));
+
+  _Gate._(this._protected, this.nodes)
+      : _tree = ProtectionTree(nodes, _protected.contains);
+
+  final Set<String> _protected;
+
+  /// The notebook's nodes in navigator order — all of them, covered or not.
+  final List<TreeNode> nodes;
+  final ProtectionTree _tree;
+
+  /// The node whose passcode covers [id], or null when none does.
+  String? over(String id) => _protected.isEmpty ? null : _tree.governing(id);
+
+  bool covers(String id) => over(id) != null;
+
+  /// Whether anything in this notebook is covered at all.
+  bool get coversAny =>
+      _protected.isNotEmpty && nodes.any((n) => covers(n.id));
+
+  /// Refuse [n] when a passcode covers it.
+  void refuse(TreeNode n) {
+    if (covers(n.id)) throw McpToolError(_lockedMessage(n));
+  }
+
+  /// **Refuse a change to the tree that would change what a passcode
+  /// covers.** [after] is this notebook's nodes as the change would leave
+  /// them, in order, and [made] the pages it creates, which must come out
+  /// covered by nothing.
+  ///
+  /// Asked of the result rather than written as a list of cases, because the
+  /// cases are not obvious: re-indenting a run of pages can flatten a subpage
+  /// out from under its locked parent — the levels clamp at 2 — and a
+  /// subpage appended to a section lands under whatever page is last in it.
+  /// The same walk before and after catches every one of them, including any
+  /// nobody has thought of yet.
+  void refuseCoverageChange(List<TreeNode> after,
+      {Set<String> made = const {}}) {
+    if (_protected.isEmpty) return;
+    final next = _Gate._(_protected, after);
+    for (final n in after) {
+      final isNew = made.contains(n.id);
+      if (next.over(n.id) == (isNew ? null : over(n.id))) continue;
+      throw McpToolError(isNew
+          ? 'a new page there would sit under a page with a passcode — '
+              'choose another place. $_kNotHere'
+          : 'that would change which pages a passcode covers, so nothing '
+              'was changed. $_kNotHere');
+    }
+  }
+}
+
+const _kNotHere = 'Openote never lets an AI helper into anything with a '
+    'passcode, even while it is unlocked in the app, and there is no way to '
+    'unlock it from here.';
+
+String _lockedMessage(TreeNode n) {
+  final what = switch (n.kind) {
+    NodeKind.page => 'That page',
+    NodeKind.section => 'That section',
+    NodeKind.sectionGroup => 'That section group',
+  };
+  return '$what has a passcode, or is inside something that does. '
+      '$_kNotHere Nothing was read or changed.';
+}
+
+/// Whether a passcode covers page [id], in whichever notebook holds it.
+bool _coveredAnywhere(AppState app, String id) {
+  final found = _findNode(app, id);
+  return found != null && _Gate(app, found.$1).covers(id);
+}
+
+/// **Refuse a page window onto anything a passcode covers.** A window shows
+/// its source live, so writing one would put what is behind the passcode on a
+/// page that has none.
+void _refuseLockedWindows(AppState app, Iterable<Block> blocks) {
+  for (final b in blocks) {
+    if (b.type != BlockType.embed) continue;
+    final ref = b.content['ref'];
+    final target = ref is Map ? ref['pageId'] : null;
+    if (target is String && _coveredAnywhere(app, target)) {
+      throw McpToolError('a page window cannot show a page with a passcode. '
+          '$_kNotHere Nothing was changed.');
+    }
   }
 }
 
@@ -681,6 +811,8 @@ List<TreeNode> _nodesOf(AppState app, String nb) =>
     throw McpToolError('no page $pageId in any notebook — list_pages shows '
         'what exists');
   }
+  // Before anything else is said about it, its kind included.
+  _Gate(app, found.$1).refuse(found.$2);
   if (pageOnly && found.$2.kind != NodeKind.page) {
     throw McpToolError('$pageId is a ${found.$2.kind.name}, not a page');
   }
@@ -693,13 +825,21 @@ List<TreeNode> _nodesOf(AppState app, String nb) =>
   final asked = args['sectionId'] as String?;
   if (asked == null) {
     final nb = _notebookOf(app, args);
-    final first = _nodesOf(app, nb)
-        .where((n) => n.kind == NodeKind.section)
+    final gate = _Gate(app, nb);
+    // The first one an AI helper may use: defaulting into a section with a
+    // passcode would refuse a call that never named it.
+    final first = gate.nodes
+        .where((n) => n.kind == NodeKind.section && !gate.covers(n.id))
         .firstOrNull;
-    if (first == null) throw McpToolError('that notebook has no sections');
+    if (first == null) {
+      throw McpToolError(gate.coversAny
+          ? 'every section in that notebook has a passcode. $_kNotHere'
+          : 'that notebook has no sections');
+    }
     return (nb, first.id);
   }
   final found = _findNode(app, asked);
+  if (found != null) _Gate(app, found.$1).refuse(found.$2);
   if (found == null || found.$2.kind != NodeKind.section) {
     throw McpToolError('no section $asked — list_pages with kind="section" '
         'shows the sections');
@@ -713,9 +853,17 @@ List<TreeNode> _nodesOf(AppState app, String nb) =>
 
 Map<String, Object?> _listPages(AppState app, Map<String, Object?> args) {
   final nb = _notebookOf(app, args);
-  Iterable<TreeNode> nodes = _nodesOf(app, nb);
+  final gate = _Gate(app, nb);
+  // Filtered FIRST, so no filter below — a title query above all — can be
+  // used to learn anything about what a passcode covers.
+  Iterable<TreeNode> nodes = [
+    for (final n in gate.nodes)
+      if (!gate.covers(n.id)) n
+  ];
   final sectionId = args['sectionId'] as String?;
   if (sectionId != null) {
+    final asked = gate.nodes.where((n) => n.id == sectionId).firstOrNull;
+    if (asked != null) gate.refuse(asked);
     if (!nodes.any((n) => n.id == sectionId && n.kind == NodeKind.section)) {
       throw McpToolError('no section $sectionId in that notebook — '
           'list_pages with kind="section" shows the sections');
@@ -754,6 +902,12 @@ Map<String, Object?> _listPages(AppState app, Map<String, Object?> args) {
           if (n.kind == NodeKind.page) 'level': n.level,
         },
     ],
+    // Said once, with no count, and whatever was asked — so it tells the
+    // model why it may not see something it was asked about, and nothing
+    // about what that something is.
+    if (gate.coversAny)
+      'withheld': 'Some sections or pages have a passcode, so they are not '
+          'listed. $_kNotHere',
   };
 }
 
@@ -1023,6 +1177,9 @@ class _PageWrite {
   }
 
   void add(List<Block> bs) {
+    // Each tool checks before it writes anything; this is the backstop, so a
+    // tool added later cannot forget.
+    _refuseLockedWindows(app, bs);
     begin();
     _added.addAll(bs);
   }
@@ -1203,6 +1360,7 @@ Map<String, Object?> _update(_PageWrite pw, Map<String, Object?> args) {
     }
     // Checked as the block it would become, before anything is touched.
     final candidate = Block.fromJson(b.toJson()..['content'] = content);
+    _refuseLockedWindows(pw.app, [candidate]);
     final check = checkBlockContent(candidate);
     if (check.errors.isNotEmpty) {
       throw McpToolError('${check.errors.join('; ')} — nothing was changed');
@@ -1210,7 +1368,18 @@ Map<String, Object?> _update(_PageWrite pw, Map<String, Object?> args) {
     warnings.addAll(check.warnings);
   }
   pw.begin();
-  if (content != null) b.content = content;
+  if (content != null) {
+    // A change of text is an edit like a typed one (spec §4.6), so tags and
+    // flashcard schedules follow their lines the way they do when typing —
+    // unless the caller sent tags of its own, which are then the truth.
+    if (b.type == BlockType.text && !(patch as Map).containsKey('tags')) {
+      final before = b.content['text'] as String? ?? '';
+      final after = content['text'] as String? ?? '';
+      NoteTag.rebase(content, before, after);
+      pw.app.study.remapCardStates(b.id, NoteTag.lineMoves(before, after));
+    }
+    b.content = content;
+  }
   final dx = args.containsKey('x') ? (args['x'] as num).toDouble() - b.x : 0.0;
   final dy = args.containsKey('y') ? (args['y'] as num).toDouble() - b.y : 0.0;
   if (dx != 0 || dy != 0) _shift(b, dx, dy);
@@ -1303,7 +1472,8 @@ List<TreeNode> _createPages(AppState app, String nb, String sectionId,
     List<({String title, int level})> specs,
     {String? afterPageId}) {
   _guardWritable(app, nb);
-  final nodes = _nodesOf(app, nb);
+  final gate = _Gate(app, nb);
+  final nodes = gate.nodes;
   final siblings = [
     for (final n in nodes)
       if (n.kind == NodeKind.page && n.parentId == sectionId) n
@@ -1316,7 +1486,10 @@ List<TreeNode> _createPages(AppState app, String nb, String sectionId,
           title: s.title,
           level: s.level)
   ];
+  final ids = {for (final n in made) n.id};
   if (afterPageId != null) {
+    final anchor = nodes.where((n) => n.id == afterPageId).firstOrNull;
+    if (anchor != null) gate.refuse(anchor);
     final groups = _groupsOf(nodes, sectionId);
     final at = groups.indexWhere((g) => g.any((n) => n.id == afterPageId));
     if (at < 0) {
@@ -1329,6 +1502,11 @@ List<TreeNode> _createPages(AppState app, String nb, String sectionId,
       ...made,
       for (final g in groups.skip(at + 1)) ...g,
     ];
+    gate.refuseCoverageChange([
+      for (final n in nodes)
+        if (n.kind != NodeKind.page || n.parentId != sectionId) n,
+      ...ordered,
+    ], made: ids);
     _writeOrder(app, nb, ordered);
   } else {
     var last = siblings.isEmpty
@@ -1336,6 +1514,11 @@ List<TreeNode> _createPages(AppState app, String nb, String sectionId,
         : siblings.map((n) => n.position).reduce((a, b) => a.compareTo(b) > 0 ? a : b);
     for (final n in made) {
       n.position = last = _positionAfter(last);
+    }
+    // Positions first, so the check sees the pages where they will land —
+    // last in the section, under whatever page is last there now.
+    gate.refuseCoverageChange([...nodes, ...made], made: ids);
+    for (final n in made) {
       app.importNode(nb, n);
     }
   }
@@ -1354,13 +1537,16 @@ List<Map<String, Object?>> _fillNewPage(
 }
 
 void _movePage(AppState app, String nb, String id, Map<String, Object?> args) {
-  final nodes = _nodesOf(app, nb);
+  final gate = _Gate(app, nb);
+  final nodes = gate.nodes;
   final page = nodes.firstWhere((n) => n.id == id);
   final afterPageId = args['afterPageId'] as String?;
   final askedSection = args['sectionId'] as String?;
   if (afterPageId == id) throw McpToolError('a page cannot go after itself');
   TreeNode? after;
   if (afterPageId != null) {
+    final anchor = nodes.where((n) => n.id == afterPageId).firstOrNull;
+    if (anchor != null) gate.refuse(anchor);
     after = nodes
         .where((n) => n.id == afterPageId && n.kind == NodeKind.page)
         .firstOrNull;
@@ -1370,6 +1556,8 @@ void _movePage(AppState app, String nb, String id, Map<String, Object?> args) {
     }
   }
   final target = askedSection ?? after?.parentId ?? page.parentId!;
+  final targetNode = nodes.where((n) => n.id == target).firstOrNull;
+  if (targetNode != null) gate.refuse(targetNode);
   if (!nodes.any((n) => n.id == target && n.kind == NodeKind.section)) {
     throw McpToolError('no section $target in the same notebook — moving '
         'between notebooks is not supported');
@@ -1394,10 +1582,18 @@ void _movePage(AppState app, String nb, String id, Map<String, Object?> args) {
   if (after != null && run.any((n) => n.id == after!.id)) {
     throw McpToolError('a page cannot go after its own subpage');
   }
+  // A subpage with a passcode of its own would travel with the run.
+  if (run.any((n) => gate.covers(n.id))) {
+    throw McpToolError('a subpage under that page has a passcode, and would '
+        'move with it. $_kNotHere Nothing was changed.');
+  }
+  // Worked out, not yet applied: [page] and its run are live nodes, and
+  // nothing may change until the result has been checked.
+  final level = {for (final n in run) n.id: n.level};
   if (args['level'] != null) {
     final delta = _levelArg(args['level']) - page.level;
     for (final n in run) {
-      n.level = (n.level + delta).clamp(0, 2);
+      level[n.id] = (n.level + delta).clamp(0, 2);
     }
   }
   final moving = {for (final n in run) n.id};
@@ -1420,8 +1616,27 @@ void _movePage(AppState app, String nb, String id, Map<String, Object?> args) {
     final i = rest.indexWhere((n) => nodes.indexOf(n) > nodes.indexOf(page));
     at = i < 0 ? rest.length : i;
   }
+  final ordered = [...rest.take(at), ...run, ...rest.skip(at)];
+  TreeNode moved(TreeNode n) => TreeNode(
+      id: n.id,
+      kind: n.kind,
+      parentId: target,
+      title: n.title,
+      position: n.position,
+      color: n.color,
+      level: level[n.id]!,
+      createdAt: n.createdAt);
+  gate.refuseCoverageChange([
+    for (final n in nodes)
+      if (n.kind != NodeKind.page ||
+          (n.parentId != target && !moving.contains(n.id)))
+        n,
+    for (final n in ordered) moving.contains(n.id) ? moved(n) : n,
+  ]);
   for (final n in run) {
-    n.parentId = target;
+    n
+      ..level = level[n.id]!
+      ..parentId = target;
   }
-  _writeOrder(app, nb, [...rest.take(at), ...run, ...rest.skip(at)]);
+  _writeOrder(app, nb, ordered);
 }

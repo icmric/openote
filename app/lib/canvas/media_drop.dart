@@ -160,12 +160,17 @@ Block? insertImageIntoTextAt(
   final text = target.content['text'] as String? ?? '';
   final at = _offsetInBlock(target, text, pagePt, dark: dark);
   app.pushUndo();
-  final (spliced, addedAt) = spliceImageOnOwnLine(text, at, ref);
+  final (spliced, _) = spliceImageOnOwnLine(text, at, ref);
   target.content['text'] = spliced;
   // A `![](sha256:…)` reference must sit alone on its line to render (it is
-  // matched line-anchored), so the splice inserts lines — and every tag at or
-  // below that point now decorates the wrong line unless it is re-based.
-  _rebaseTags(target, fromLine: addedAt.line, by: addedAt.linesAdded);
+  // matched line-anchored), so the splice inserts lines — and every tag and
+  // every flashcard at or below that point is now filed under the wrong line
+  // unless it is moved. The editor's own matching, so a dropped picture and a
+  // typed Enter can never disagree: it had a copy of its own that moved the
+  // tags and not the cards' schedules, and rebuilt each tag without its
+  // deadline, so a picture dropped above a dated task cleared the date.
+  NoteTag.rebase(target.content, text, spliced);
+  app.study.remapCardStates(target.id, NoteTag.lineMoves(text, spliced));
   // Auto-width measures the RAW markdown, and a 64-hex-character line would
   // pin the box to its maximum width the moment the image landed.
   target.content['autoWidth'] = false;
@@ -235,26 +240,6 @@ int _offsetInBlock(Block b, String text, Offset pagePt, {required bool dark}) {
     head + insert + tail,
     (line: refLine, linesAdded: '\n'.allMatches(insert).length),
   );
-}
-
-/// Shift tag line indices at or below [fromLine] down by [by].
-///
-/// Tags record a 0-based line index, and nothing re-bases them when lines are
-/// inserted. This is the first code that inserts whole lines programmatically,
-/// so it is the first place the omission would be visible — every tag below
-/// the picture would suddenly decorate the wrong sentence.
-void _rebaseTags(Block b, {required int fromLine, required int by}) {
-  if (by <= 0) return;
-  final tags = NoteTag.listFrom(b.content);
-  if (tags.isEmpty) return;
-  NoteTag.writeInto(b.content, [
-    for (final t in tags)
-      if (t.line >= fromLine)
-        NoteTag(
-            kind: t.kind, line: t.line + by, checked: t.checked, label: t.label)
-      else
-        t
-  ]);
 }
 
 /// Insert a non-image file as an attachment block.

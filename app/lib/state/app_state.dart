@@ -553,49 +553,26 @@ class AppState extends ChangeNotifier
   /// whose passcode actually governs it. Null when nothing above it is
   /// protected.
   ///
-  /// Walking UP rather than marking descendants is what makes protection apply
-  /// to pages added to a locked section later, without any bookkeeping.
+  /// The walk is [ProtectionTree]'s, shared with the AI helpers' door so the
+  /// two can never disagree about which pages a passcode covers — including
+  /// the subpage rule, which is the part that has gone wrong before.
   String? governingNode(String nodeId) {
     if (!_anyProtection) return null;
-    final byId = {for (final n in nodes) n.id: n};
-    String? cur = nodeId;
-    // Bounded: a corrupt parent cycle must not hang the page-open path.
-    for (var i = 0; cur != null && i < 64; i++) {
-      if (_protectedIds.contains(cur)) return cur;
-      cur = _protectionParent(byId[cur]);
-    }
-    return null;
+    return ProtectionTree(nodes, _protectedIds.contains).governing(nodeId);
   }
 
-  /// The node one step up the hierarchy the USER sees.
+  /// **Every node with a passcode on it in notebook [nb]** — open or not.
   ///
-  /// For everything except a sub-page that is `parentId`. A sub-page is the
-  /// exception, and it is why locking a page did not lock the pages indented
-  /// beneath it: sub-pages are not children in the data model at all. Every
-  /// page's `parentId` is its SECTION — `makeSubpageOf` sets
-  /// `parentId = target.parentId` — and the nesting the navigator draws is
-  /// [TreeNode.level] plus position order. So walking `parentId` from a
-  /// sub-page steps straight past its parent page to the section, and a
-  /// passcode on the parent governs nothing.
-  ///
-  /// The rule here is the one the rest of the app already uses for exactly
-  /// this relationship (`sidebar._pageEntriesFor`, `sortSection`): a page's
-  /// parent is the nearest PRECEDING page in the section, in position order,
-  /// with a strictly smaller level.
-  String? _protectionParent(TreeNode? n) {
-    if (n == null) return null;
-    if (n.kind != NodeKind.page || n.level == 0) return n.parentId;
-    final siblings = pagesOf(n.parentId ?? '');
-    final i = siblings.indexWhere((p) => p.id == n.id);
-    // Not found: an id from another notebook, or nodes mid-reload. Falling
-    // back to parentId keeps the walk terminating on something real.
-    if (i < 0) return n.parentId;
-    for (var j = i - 1; j >= 0; j--) {
-      if (siblings[j].level < n.level) return siblings[j].id;
-    }
-    // Indented with nothing shallower above it — malformed, but a real state
-    // an import can produce. The section still governs it.
-    return n.parentId;
+  /// The AI helpers' door reaches every notebook in the workspace, and
+  /// [governingNode] knows only the open one: [_protectedIds] is loaded per
+  /// notebook switch. So this reads the records themselves, which live in
+  /// workspace settings for every notebook at once.
+  Set<String> protectedNodeIdsOf(String nb) {
+    final prefix = 'protect:$nb:';
+    return {
+      for (final k in _repo.settingKeys())
+        if (k.startsWith(prefix)) k.substring(prefix.length)
+    };
   }
 
   /// Is [nodeId] currently hidden behind a passcode?
@@ -8517,17 +8494,29 @@ class AppState extends ChangeNotifier
 
   // ── Moving blocks about ────────────────────────────────────────────────
 
-  /// Shift an ink block's strokes with its box. Stroke coordinates are
-  /// page-absolute (Ink Spec §3), so moving the block alone leaves the drawing
-  /// where it was. The same arithmetic `moveSelectedBy` does, and it has to
-  /// stay the same: strokes are parallel `x` and `y` lists, not point pairs.
-  void _translateInk(Block b, double dy) {
-    for (final sj in (b.content['strokes'] as List? ?? const [])) {
+  /// Shift an ink block's strokes with its box, by (dx, dy). Stroke
+  /// coordinates are page-absolute (Ink Spec §3), so moving the block alone
+  /// leaves the drawing where it was. Nothing for any other block, or for no
+  /// move. Strokes are parallel `x` and `y` lists, not point pairs.
+  ///
+  /// The one place this arithmetic lives — a drag ([moveSelectedBy]), a
+  /// clamp ([clampBlockToPage]) and the title-band repair all move ink, and
+  /// each once had its own copy, or none.
+  ///
+  /// Through [InkStorage.strokesOf], because a block whose blob has not
+  /// arrived carries no working list, and an unchecked cast threw out of the
+  /// middle of a drag — leaving the blocks it had already reached moved, the
+  /// rest not, and `notifyListeners` never called.
+  void _translateInk(Block b, double dx, double dy) {
+    if (b.type != BlockType.ink || (dx == 0 && dy == 0)) return;
+    for (final sj in InkStorage.strokesOf(b.content)) {
       final m = sj as Map;
-      final ys = m['y'];
-      if (ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
+      final xs = m['x'], ys = m['y'];
+      if (dx != 0 && xs is List) m['x'] = [for (final v in xs) (v as num) + dx];
+      if (dy != 0 && ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
     }
-    // The canvas caches decoded strokes by `id#updatedAt`.
+    // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
+    // painted ink follows the block instead of lagging until a reload.
     b.updatedAt = nowMs();
   }
 
@@ -8734,19 +8723,34 @@ class AppState extends ChangeNotifier
   /// band already declared its height ([titleBandHeight]); nothing enforced it.
   /// The title is part of the page's layout, so the layout is where it is
   /// reserved.
+  ///
+  /// **A clamp is a move**, and handwriting has to come with it (v1.0.2 bug
+  /// 20, GitHub #20). A stroke's points are page-absolute (Ink Spec §3), so
+  /// setting an ink box's `x`/`y` here moved the box and left the drawing
+  /// where it was — the dashed outline jumped below the title band, or back
+  /// inside the sheet, and the strokes stayed put. That is the reported
+  /// "the selection box moves but the content does not", and since a box and
+  /// strokes that disagree re-fit the next time anything measures them,
+  /// likely the "things jump after deleting something" too.
   void clampBlockToPage(Block b) {
+    final x0 = b.x, y0 = b.y;
     if (b.x < 0) b.x = 0;
     if (b.y < contentTop) b.y = contentTop;
-    if (!pageProps.isPaged) return;
-    // On a sheet the right edge is real. A box dragged past it is content the
-    // user cannot see and will not print, so it is pulled back inside — and
-    // narrowed first if it is simply too wide to fit at all.
-    final paper = pageProps.paper;
-    final maxW = paper.width - sheetMargin * 2;
-    if (b.w > maxW) b.w = maxW;
-    final maxX = paper.width - sheetMargin - b.w;
-    if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
-    if (b.x < sheetMargin) b.x = sheetMargin;
+    if (pageProps.isPaged) {
+      // On a sheet the right edge is real. A box dragged past it is content
+      // the user cannot see and will not print, so it is pulled back inside —
+      // and narrowed first if it is simply too wide to fit at all. Never
+      // handwriting: its box is the extent of its strokes, so a narrower box
+      // over the same strokes is one that lies about them. Too wide to fit,
+      // it is pinned to the margin and runs off the right as it was drawn.
+      final paper = pageProps.paper;
+      final maxW = paper.width - sheetMargin * 2;
+      if (b.w > maxW && b.type != BlockType.ink) b.w = maxW;
+      final maxX = paper.width - sheetMargin - b.w;
+      if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
+      if (b.x < sheetMargin) b.x = sheetMargin;
+    }
+    _translateInk(b, b.x - x0, b.y - y0);
   }
 
   /// Push imported or legacy blocks out from under the title band.
@@ -8781,7 +8785,7 @@ class AppState extends ChangeNotifier
       if (b.type == BlockType.ink) {
         // If ink IS moved it must be moved properly: the strokes are absolute,
         // so shifting only the box walks the selection away from the drawing.
-        _translateInk(b, shift);
+        _translateInk(b, 0, shift);
       }
       b.y += shift;
       moved++;
@@ -9565,15 +9569,39 @@ class AppState extends ChangeNotifier
     final j = jsonDecode(snap) as Map<String, dynamic>;
     pageProps =
         PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
-    blocks = [
+    final restored = [
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
     ];
+    _carryCardSchedules(blocks, restored);
+    blocks = restored;
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
     docRevision++;
     markDirty(); // which notifies
+  }
+
+  /// **Flashcard schedules follow their lines through undo and redo.**
+  ///
+  /// A schedule is filed under `blockId:line`, and the edit being undone
+  /// moved it with its line (`StudyState.remapCardStates`). Undo puts the
+  /// text and its tags back, which live in the block, and left the schedules
+  /// where the edit had put them — so Enter above two reviewed cards and then
+  /// Ctrl+Z swapped their histories. The same matching in reverse, box by box,
+  /// puts them back.
+  void _carryCardSchedules(List<Block> from, List<Block> to) {
+    final was = {
+      for (final b in from)
+        if (b.type == BlockType.text) b.id: b.content['text'] as String? ?? ''
+    };
+    for (final b in to) {
+      if (b.type != BlockType.text) continue;
+      final before = was[b.id];
+      if (before == null) continue;
+      final after = b.content['text'] as String? ?? '';
+      study.remapCardStates(b.id, NoteTag.lineMoves(before, after));
+    }
   }
 
   void pushUndo() {
@@ -10390,21 +10418,7 @@ class AppState extends ChangeNotifier
       if (b.locked) continue;
       b.x += dx;
       b.y += dy;
-      if (b.type == BlockType.ink) {
-        // Through [InkStorage.strokesOf], because a block whose blob has not
-        // arrived carries no working list and an unchecked cast threw out of
-        // the middle of this loop — leaving the blocks it had already reached
-        // moved, the rest not, and `notifyListeners` never called, so the
-        // page did not repaint until something else happened to change.
-        for (final sj in InkStorage.strokesOf(b.content)) {
-          final m = (sj as Map);
-          m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
-          m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
-        }
-        // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
-        // painted ink follows the block instead of lagging until a reload.
-        b.updatedAt = nowMs();
-      }
+      _translateInk(b, dx, dy);
     }
     markDirty(); // which notifies
   }

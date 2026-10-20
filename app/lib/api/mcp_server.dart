@@ -90,9 +90,7 @@ class McpServer {
       // cross-origin requests; anything non-local is a rebinding attempt.
       // Ordinary MCP clients send none and pass.
       final origin = req.headers.value('origin');
-      if (origin != null &&
-          !origin.startsWith('http://localhost') &&
-          !origin.startsWith('http://127.0.0.1')) {
+      if (origin != null && !isLoopbackOrigin(origin)) {
         await _respond(req, HttpStatus.forbidden, {'error': 'bad origin'});
         return;
       }
@@ -208,6 +206,29 @@ class McpServer {
       default:
         return _rpcError(id, -32601, 'method not found: ${msg['method']}');
     }
+  }
+
+  /// **Whether a browser's [origin] is a page served from this machine** —
+  /// the DNS-rebinding defence (spec §4.3).
+  ///
+  /// Compared as a parsed host, never as a prefix. The prefix test this
+  /// replaced passed `http://localhost.evil.com`, and a name like that is
+  /// one anyone can register and point wherever they like. The bearer token
+  /// still stopped such a request, so this is the second wall, not the only
+  /// one; it should still be a wall.
+  ///
+  /// Strict about shape too: a real `Origin` header is `scheme://host[:port]`
+  /// and nothing more, so a user-info part, a path or a query means it is not
+  /// one a browser sent.
+  @visibleForTesting
+  static bool isLoopbackOrigin(String origin) {
+    final u = Uri.tryParse(origin);
+    if (u == null || u.scheme != 'http') return false;
+    if (u.userInfo.isNotEmpty || u.path.isNotEmpty || u.hasQuery ||
+        u.hasFragment) {
+      return false;
+    }
+    return u.host == 'localhost' || u.host == '127.0.0.1';
   }
 
   Map<String, Object?> _rpcResult(Object? id, Object result) =>

@@ -87,7 +87,9 @@ genuinely new *operations* (a new verb, not a new noun) justify new tools.
    Requests without `Authorization: Bearer <token>` are 401.
 3. **Origin validation**: any request carrying an `Origin` header that is
    not a localhost origin is rejected (DNS-rebinding defence, per the MCP
-   spec). Non-browser clients send no Origin and pass.
+   spec). Non-browser clients send no Origin and pass. "Localhost" is the
+   parsed host, exactly `localhost` or `127.0.0.1` over `http` — never a
+   prefix of the string, which `http://localhost.evil.com` would pass.
 4. **Loopback bind only**, never `0.0.0.0`. Remote access is out of scope
    until it can be designed as its own feature.
 5. Request bodies over **1 MB** are rejected; tool inputs inherit the
@@ -98,6 +100,20 @@ genuinely new *operations* (a new verb, not a new noun) justify new tools.
    the recorder seeing it. (This is also a consistency rule for future
    tools: a write tool that cannot route through the ordinary write path
    must not ship.)
+7. **Anything a passcode covers is closed**, in every notebook, whether or
+   not it is unlocked in the app: a section group, section or page with a
+   passcode, and everything the app counts as beneath it, subpages
+   included. It is not listed (a listing says, once and without a count,
+   that something was withheld), not searched, not read, and not changed.
+   No tool takes a passcode, so there is nothing to guess at. No write may
+   change what a passcode covers either — re-indenting, moving, adding or
+   deleting a page is refused if any page would come out from under one,
+   or go in under one — and no block may be a page window onto a covered
+   page. Like the gate itself, this closes Openote's door and makes no
+   claim about the file: a tool that can read the disk can read the
+   container (`state/page_protection.dart`), and the AI dialog says so.
+   (Consistency rule for future tools: resolve every node and page id
+   through the same gate, and check a tree change against its result.)
 
 ## 5. Tools (v1)
 

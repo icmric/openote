@@ -233,6 +233,18 @@ class _McpDialogState extends State<_McpDialog> {
                 'anything it adds is a normal edit: Ctrl+Z undoes it.',
                 style: TextStyle(fontSize: 12.5, height: 1.4),
               ),
+              const SizedBox(height: 6),
+              // Both halves, because the second is what keeps the first
+              // honest: a passcode locks Openote's doors, not the file
+              // (state/page_protection.dart), and Claude Code — one of the
+              // buttons below — can open files.
+              const Text(
+                'Anything with a passcode stays private: an AI helper can\'t '
+                'see it or change it, even while you have it unlocked. A '
+                'passcode locks Openote, not the file itself, so an AI tool '
+                'that can open files on your computer could still read it.',
+                style: TextStyle(fontSize: 12.5, height: 1.4),
+              ),
               const SizedBox(height: 10),
               SegmentedButton<bool>(
                 showSelectedIcon: false,

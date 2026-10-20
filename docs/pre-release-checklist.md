@@ -3,9 +3,9 @@
 > Run this by hand on the packaged build before every release. Budget **about
 > 35 minutes** for Pass 1. Passes 2 and 3 are conditional and usually add ten.
 
-`flutter test` runs 2 700-odd tests, and they are worth having, but every one
-of them runs in a headless test binding, in one process, on one machine, with
-a fake clock and a fake file picker. That leaves a whole category of failure
+`flutter test` is worth having, but every one of its tests runs in a
+headless test binding, in one process, on one machine, with a fake clock and
+a fake file picker. That leaves a whole category of failure
 they *cannot* see:
 
 - anything the compositor decides — a frame that stutters, a widget that
@@ -65,7 +65,7 @@ still tells you whether it is one bug or a bad build.
 | B4 | Drag the right edge of a box | It re-wraps as you drag; text does not jump or lose the caret. |
 | B5 | Middle-drag, and two-finger scroll on a trackpad | Both pan the page in every direction, smoothly, without snapping back. A left-drag on empty page still marquees. |
 | B6 | Ctrl+wheel | Zoom in and out around the pointer. The status-bar percentage tracks it. |
-| B7 | Marquee-drag across two boxes with the mouse | Both highlight; move them together as one. |
+| B7 | Marquee-drag around two boxes with the mouse | Both highlight; move them together as one. A box the marquee only grazes is left out — it wants about half of something. |
 | B8 | Ctrl+Z several times, then Ctrl+Y | Everything you just did undoes in order and redoes in order. |
 | B9 | On the real-sized notebook: hold a key down in the middle of a paragraph | The text keeps up with the key repeat. No visible pause on the toolbars or the sidebar. |
 
@@ -172,14 +172,13 @@ Skip the whole row if the release did not go near it.
 | Area | Action | Expected result |
 |---|---|---|
 | OneNote import | Import a real `.one`/notebook export | Progress is honest and the window stays responsive throughout. Pages, sections and ink arrive; nothing is silently dropped. |
-| Notebook lock | Protect a notebook, quit, reopen | The lock screen appears; the right password opens it, a wrong one does not; the files on disk are unreadable without it. |
+| Passcodes | Put a passcode on a section, quit, reopen | Opening a page in it asks for the passcode; the right one opens it, a wrong one does not. Search finds nothing inside it while it is locked. (It locks Openote, not the file — the dialog that sets one says so.) |
 | Study | Make flashcards from a page, run a session | Cards come from your own notes; the badge count matches; answers reveal and grade. |
 | Planner | Add a reminder and an exam date | It shows on the month grid, the badge counts it, and the alert fires. |
 | PDF | Insert a PDF as slides and as a printout | Pages render, scroll, and stay sharp when zoomed. |
 | Code cells | Run a JavaScript cell | It executes, prints output, and a bad script errors instead of hanging the app. |
 | Page windows / portals | Embed a region of another page | It renders live, is read-only, and click-through goes to the source. |
-| Templates | Apply a template to a new page | The layout arrives and is editable. |
-| AI access (MCP) | Turn it on and connect a client | It connects, and turning it off actually stops it. |
+| AI access (MCP) | Turn it on and connect a client | It connects, and turning it off actually stops it. Ask it about a section with a passcode: it cannot see or open it, even while the section is unlocked. |
 | Git sync | Join an existing repo | It clones, opens, and a subsequent edit pushes. |
 
 ---

@@ -91,8 +91,15 @@ Future<void> writeExportedMedia(
 ///
 /// Freeform layout flattens to reading order (top-to-bottom, then
 /// left-to-right); page.json remains the fidelity path.
+///
+/// [withheld] names pages whose titles must not appear — a page window onto
+/// one says only that its source has a passcode. The AI helpers' reader
+/// passes it (`api/mcp_tools.dart`); an export made by the person who owns
+/// the notes does not.
 String pageMarkdownOf(AppState app, String title, List<Block> blocks,
-    {Map<String, String>? assetsOut, Map<String, String>? mediaOut}) {
+    {Map<String, String>? assetsOut,
+    Map<String, String>? mediaOut,
+    bool Function(String pageId)? withheld}) {
   final ordered = [...blocks]..sort((a, b) {
       final dy = a.y.compareTo(b.y);
       return dy != 0 ? dy : a.x.compareTo(b.x);
@@ -176,7 +183,9 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         // silently dropping the block or inlining a stale copy.
         final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
         final dst = ref?['pageId'] as String?;
-        if (dst != null) {
+        if (dst != null && (withheld?.call(dst) ?? false)) {
+          buf.writeln('> Window onto a page with a passcode\n');
+        } else if (dst != null) {
           final title = app.nodes
                   .where((n) => n.id == dst)
                   .firstOrNull
