@@ -4,6 +4,34 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a passcode keeps AI helpers out
+
+- **An AI helper cannot see or change anything with a passcode.** It is not
+  listed, not searched, not opened and not changed — even while you have it
+  unlocked in Openote, because you unlocked it to read it yourself. Nor can
+  an AI helper be given a passcode, so there is nothing for it to guess.
+  Before, one set up on this computer could read and edit a locked page.
+- **The AI page says so**, and says plainly what a passcode does not do: it
+  locks Openote, not the notebook file, so an AI tool that can open files on
+  your computer could still read the file itself.
+
+### Fixed — flashcards keep their own history
+
+- **A flashcard keeps its review history when you add a line above it.**
+  Typing a new line above two cards written in a box gave the first card the
+  second's history, and the second started over as if never reviewed.
+- **Undo and redo carry the history with the card**, and so does dropping a
+  picture into the box above it.
+- **Dropping a picture into a box no longer clears a to-do's due date** on
+  the lines below it.
+
+### Fixed — handwriting stays inside its box at the edge of the page
+
+- **Put a selection down near the edge and the writing comes with it.**
+  Dragged up into the title area, or past the edge of a paper page, the box
+  was pulled back onto the page and the handwriting stayed where you had
+  dropped it.
+
 ### Added — drawings, and pictures that live in the writing
 
 - **SVG drawings work.** Drop one on a page, or Insert ▸ Image, and it is
@@ -32,7 +60,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the button above the selection. A text box, a graph, a picture, some
   handwriting, any combination — selecting one of them then selects all of
   them, and they move, copy, cut and delete as a unit. Ctrl+Shift+G takes a
-  group apart again.
+  group apart again. Both are on the menu and the button as well, because
+  neither shortcut is on a tablet held in one hand with a pen in the other.
+- **A written word can be one thing to pick up.** Every stroke is its own
+  mark now, so group the strokes of a word and it moves as one.
 - **Nothing moves either way.** A group is a relationship, not a container:
   every block keeps its own geometry, its own type and its own place on the
   page, so grouping and ungrouping are both free and an undo puts it back.
@@ -43,7 +74,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   it. Paste part of a group and you get a group of just that part; a group
   left with one member stops being a group.
 - **A notebook with no groups in it is written byte for byte as before**, so
-  this costs nothing until it is used.
+  this costs nothing until it is used. An older version of Openote keeps your
+  groups intact; it just moves each member on its own.
 
 ### Changed — the lasso selects, and stops rearranging
 
@@ -132,23 +164,6 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   pair is your colour and Automatic, which is the "a couple of words, not
   every word" case.
 
-### Added — things on the canvas stay joined
-
-- **Group and ungroup.** A stroke is its own block, so a written word is
-  several of them and the lasso was the only thing that gathered them — for
-  exactly as long as the selection lasted. Joined blocks are now one thing to
-  pick up: clicking any member selects all of them, and they move, copy, cut
-  and delete together. Ctrl+G joins, Ctrl+Shift+G takes apart, and both are in
-  the right-click menu and on the button above a selection, because neither
-  chord is on a tablet held in one hand with a pen in the other.
-  - A grouped text box is still typeable: the first click picks the group up,
-    the second opens the box under the pointer.
-  - A copy never joins the group it was copied from, and a group left with one
-    member is no longer a group.
-  - Membership is an envelope field (`groupId`, Data Model Spec §3.2), so an
-    older release carries it through untouched rather than destroying it — it
-    just will not move the other members for you.
-
 ### Added — Automatic text colour, and dark text on a slide
 
 - **There is a way back to the default colour.** The picker opens with
@@ -200,8 +215,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   used to join it wherever on the page it was, so annotating the top of a
   slide and then the bottom produced one piece of handwriting the size of the
   slide — which every selection box then caught. To treat several strokes as
-  one thing, circle them with the lasso: it gathers them into one piece and
-  hands it over selected.
+  one thing, group them.
 - **A selection of handwriting is still drawn as one box**, not one per
   stroke — which is what it looked like when a word was one piece, and the
   selection is one thing you are about to move.
@@ -209,7 +223,6 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   together and come back apart, so a page of handwriting takes the same room
   it took when a whole word was one piece — measured, 200 strokes went from
   26 KB to 123 KB when each became its own object, and they are back to 26 KB.
-  A group made with the lasso is stored as the one object it is.
 - **An imported picture keeps its real format.** Everything brought in from
   OneNote was labelled a PNG whatever it was, so exporting that notebook to a
   folder wrote JPEGs with a `.png` name. The format is read from the bytes,
