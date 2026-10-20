@@ -17,7 +17,6 @@
 // The v1.0.3 card rebuild gives every card a permanent id and ends this for
 // good. Until then, these are the schedules that rebuild will convert.
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
