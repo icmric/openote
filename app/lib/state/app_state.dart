@@ -8494,17 +8494,29 @@ class AppState extends ChangeNotifier
 
   // ── Moving blocks about ────────────────────────────────────────────────
 
-  /// Shift an ink block's strokes with its box. Stroke coordinates are
-  /// page-absolute (Ink Spec §3), so moving the block alone leaves the drawing
-  /// where it was. The same arithmetic `moveSelectedBy` does, and it has to
-  /// stay the same: strokes are parallel `x` and `y` lists, not point pairs.
-  void _translateInk(Block b, double dy) {
-    for (final sj in (b.content['strokes'] as List? ?? const [])) {
+  /// Shift an ink block's strokes with its box, by (dx, dy). Stroke
+  /// coordinates are page-absolute (Ink Spec §3), so moving the block alone
+  /// leaves the drawing where it was. Nothing for any other block, or for no
+  /// move. Strokes are parallel `x` and `y` lists, not point pairs.
+  ///
+  /// The one place this arithmetic lives — a drag ([moveSelectedBy]), a
+  /// clamp ([clampBlockToPage]) and the title-band repair all move ink, and
+  /// each once had its own copy, or none.
+  ///
+  /// Through [InkStorage.strokesOf], because a block whose blob has not
+  /// arrived carries no working list, and an unchecked cast threw out of the
+  /// middle of a drag — leaving the blocks it had already reached moved, the
+  /// rest not, and `notifyListeners` never called.
+  void _translateInk(Block b, double dx, double dy) {
+    if (b.type != BlockType.ink || (dx == 0 && dy == 0)) return;
+    for (final sj in InkStorage.strokesOf(b.content)) {
       final m = sj as Map;
-      final ys = m['y'];
-      if (ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
+      final xs = m['x'], ys = m['y'];
+      if (dx != 0 && xs is List) m['x'] = [for (final v in xs) (v as num) + dx];
+      if (dy != 0 && ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
     }
-    // The canvas caches decoded strokes by `id#updatedAt`.
+    // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
+    // painted ink follows the block instead of lagging until a reload.
     b.updatedAt = nowMs();
   }
 
@@ -8711,19 +8723,34 @@ class AppState extends ChangeNotifier
   /// band already declared its height ([titleBandHeight]); nothing enforced it.
   /// The title is part of the page's layout, so the layout is where it is
   /// reserved.
+  ///
+  /// **A clamp is a move**, and handwriting has to come with it (v1.0.2 bug
+  /// 20, GitHub #20). A stroke's points are page-absolute (Ink Spec §3), so
+  /// setting an ink box's `x`/`y` here moved the box and left the drawing
+  /// where it was — the dashed outline jumped below the title band, or back
+  /// inside the sheet, and the strokes stayed put. That is the reported
+  /// "the selection box moves but the content does not", and since a box and
+  /// strokes that disagree re-fit the next time anything measures them,
+  /// likely the "things jump after deleting something" too.
   void clampBlockToPage(Block b) {
+    final x0 = b.x, y0 = b.y;
     if (b.x < 0) b.x = 0;
     if (b.y < contentTop) b.y = contentTop;
-    if (!pageProps.isPaged) return;
-    // On a sheet the right edge is real. A box dragged past it is content the
-    // user cannot see and will not print, so it is pulled back inside — and
-    // narrowed first if it is simply too wide to fit at all.
-    final paper = pageProps.paper;
-    final maxW = paper.width - sheetMargin * 2;
-    if (b.w > maxW) b.w = maxW;
-    final maxX = paper.width - sheetMargin - b.w;
-    if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
-    if (b.x < sheetMargin) b.x = sheetMargin;
+    if (pageProps.isPaged) {
+      // On a sheet the right edge is real. A box dragged past it is content
+      // the user cannot see and will not print, so it is pulled back inside —
+      // and narrowed first if it is simply too wide to fit at all. Never
+      // handwriting: its box is the extent of its strokes, so a narrower box
+      // over the same strokes is one that lies about them. Too wide to fit,
+      // it is pinned to the margin and runs off the right as it was drawn.
+      final paper = pageProps.paper;
+      final maxW = paper.width - sheetMargin * 2;
+      if (b.w > maxW && b.type != BlockType.ink) b.w = maxW;
+      final maxX = paper.width - sheetMargin - b.w;
+      if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
+      if (b.x < sheetMargin) b.x = sheetMargin;
+    }
+    _translateInk(b, b.x - x0, b.y - y0);
   }
 
   /// Push imported or legacy blocks out from under the title band.
@@ -8758,7 +8785,7 @@ class AppState extends ChangeNotifier
       if (b.type == BlockType.ink) {
         // If ink IS moved it must be moved properly: the strokes are absolute,
         // so shifting only the box walks the selection away from the drawing.
-        _translateInk(b, shift);
+        _translateInk(b, 0, shift);
       }
       b.y += shift;
       moved++;
@@ -10391,21 +10418,7 @@ class AppState extends ChangeNotifier
       if (b.locked) continue;
       b.x += dx;
       b.y += dy;
-      if (b.type == BlockType.ink) {
-        // Through [InkStorage.strokesOf], because a block whose blob has not
-        // arrived carries no working list and an unchecked cast threw out of
-        // the middle of this loop — leaving the blocks it had already reached
-        // moved, the rest not, and `notifyListeners` never called, so the
-        // page did not repaint until something else happened to change.
-        for (final sj in InkStorage.strokesOf(b.content)) {
-          final m = (sj as Map);
-          m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
-          m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
-        }
-        // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
-        // painted ink follows the block instead of lagging until a reload.
-        b.updatedAt = nowMs();
-      }
+      _translateInk(b, dx, dy);
     }
     markDirty(); // which notifies
   }
