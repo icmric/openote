@@ -41,6 +41,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../model/models.dart';
 import '../store/notebook_writer.dart' show sha256Hex;
 
 /// How long an unlock lasts.
@@ -135,3 +136,86 @@ String _randomSalt() {
 
 String _digest(String passcode, String salt) =>
     sha256Hex(Uint8List.fromList(utf8.encode('$salt:$passcode')));
+
+/// **Which passcode, if any, covers each node of one notebook** — the walk
+/// behind the app's own gate (`AppState.governingNode`) and the AI helpers'
+/// one (`api/mcp_tools.dart`).
+///
+/// One walk for both because the rule has a trap in it that has been fallen
+/// into once already, and two copies would be two chances to fall into it
+/// again: the app and the AI's door must never disagree about which pages a
+/// passcode covers.
+///
+/// [nodes] are one notebook's, in navigator (position) order, which is the
+/// order subpage nesting is read from. [isProtected] says whether a passcode
+/// sits on a node itself.
+class ProtectionTree {
+  ProtectionTree(this._nodes, this._isProtected)
+      : _byId = {for (final n in _nodes) n.id: n};
+
+  final List<TreeNode> _nodes;
+  final bool Function(String nodeId) _isProtected;
+  final Map<String, TreeNode> _byId;
+
+  /// A section's pages in order, with each one's index — built the first
+  /// time a subpage in that section is asked about, so a tree asked one
+  /// question costs what the walk always cost, and one asked a hundred
+  /// (the AI door, filtering a whole notebook) costs little more.
+  final Map<String, (List<TreeNode>, Map<String, int>)> _sections = {};
+
+  /// The nearest protected node at or above [nodeId] — the one whose
+  /// passcode governs it — or null when nothing above it is protected.
+  ///
+  /// Walking UP rather than marking descendants is what makes protection
+  /// apply to pages added to a locked section later, without any
+  /// bookkeeping.
+  String? governing(String nodeId) {
+    String? cur = nodeId;
+    // Bounded: a corrupt parent cycle must not hang the page-open path.
+    for (var i = 0; cur != null && i < 64; i++) {
+      if (_isProtected(cur)) return cur;
+      cur = _parentOf(_byId[cur]);
+    }
+    return null;
+  }
+
+  /// The node one step up the hierarchy the USER sees.
+  ///
+  /// For everything except a sub-page that is `parentId`. A sub-page is the
+  /// exception, and it is why locking a page did not lock the pages indented
+  /// beneath it: sub-pages are not children in the data model at all. Every
+  /// page's `parentId` is its SECTION — `makeSubpageOf` sets
+  /// `parentId = target.parentId` — and the nesting the navigator draws is
+  /// [TreeNode.level] plus position order. So walking `parentId` from a
+  /// sub-page steps straight past its parent page to the section, and a
+  /// passcode on the parent governs nothing.
+  ///
+  /// The rule here is the one the rest of the app already uses for exactly
+  /// this relationship (`sidebar._pageEntriesFor`, `sortSection`): a page's
+  /// parent is the nearest PRECEDING page in the section, in position order,
+  /// with a strictly smaller level.
+  String? _parentOf(TreeNode? n) {
+    if (n == null) return null;
+    if (n.kind != NodeKind.page || n.level == 0) return n.parentId;
+    final (siblings, at) = _sectionOf(n.parentId ?? '');
+    final i = at[n.id];
+    // Not found: an id from another notebook, or nodes mid-reload. Falling
+    // back to parentId keeps the walk terminating on something real.
+    if (i == null) return n.parentId;
+    for (var j = i - 1; j >= 0; j--) {
+      if (siblings[j].level < n.level) return siblings[j].id;
+    }
+    // Indented with nothing shallower above it — malformed, but a real state
+    // an import can produce. The section still governs it.
+    return n.parentId;
+  }
+
+  (List<TreeNode>, Map<String, int>) _sectionOf(String sectionId) =>
+      _sections.putIfAbsent(sectionId, () {
+        final pages = [
+          for (final n in _nodes)
+            if (n.kind == NodeKind.page && n.parentId == sectionId) n
+        ];
+        return (pages, {for (var i = 0; i < pages.length; i++) pages[i].id: i});
+      });
+}

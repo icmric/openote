@@ -553,49 +553,26 @@ class AppState extends ChangeNotifier
   /// whose passcode actually governs it. Null when nothing above it is
   /// protected.
   ///
-  /// Walking UP rather than marking descendants is what makes protection apply
-  /// to pages added to a locked section later, without any bookkeeping.
+  /// The walk is [ProtectionTree]'s, shared with the AI helpers' door so the
+  /// two can never disagree about which pages a passcode covers — including
+  /// the subpage rule, which is the part that has gone wrong before.
   String? governingNode(String nodeId) {
     if (!_anyProtection) return null;
-    final byId = {for (final n in nodes) n.id: n};
-    String? cur = nodeId;
-    // Bounded: a corrupt parent cycle must not hang the page-open path.
-    for (var i = 0; cur != null && i < 64; i++) {
-      if (_protectedIds.contains(cur)) return cur;
-      cur = _protectionParent(byId[cur]);
-    }
-    return null;
+    return ProtectionTree(nodes, _protectedIds.contains).governing(nodeId);
   }
 
-  /// The node one step up the hierarchy the USER sees.
+  /// **Every node with a passcode on it in notebook [nb]** — open or not.
   ///
-  /// For everything except a sub-page that is `parentId`. A sub-page is the
-  /// exception, and it is why locking a page did not lock the pages indented
-  /// beneath it: sub-pages are not children in the data model at all. Every
-  /// page's `parentId` is its SECTION — `makeSubpageOf` sets
-  /// `parentId = target.parentId` — and the nesting the navigator draws is
-  /// [TreeNode.level] plus position order. So walking `parentId` from a
-  /// sub-page steps straight past its parent page to the section, and a
-  /// passcode on the parent governs nothing.
-  ///
-  /// The rule here is the one the rest of the app already uses for exactly
-  /// this relationship (`sidebar._pageEntriesFor`, `sortSection`): a page's
-  /// parent is the nearest PRECEDING page in the section, in position order,
-  /// with a strictly smaller level.
-  String? _protectionParent(TreeNode? n) {
-    if (n == null) return null;
-    if (n.kind != NodeKind.page || n.level == 0) return n.parentId;
-    final siblings = pagesOf(n.parentId ?? '');
-    final i = siblings.indexWhere((p) => p.id == n.id);
-    // Not found: an id from another notebook, or nodes mid-reload. Falling
-    // back to parentId keeps the walk terminating on something real.
-    if (i < 0) return n.parentId;
-    for (var j = i - 1; j >= 0; j--) {
-      if (siblings[j].level < n.level) return siblings[j].id;
-    }
-    // Indented with nothing shallower above it — malformed, but a real state
-    // an import can produce. The section still governs it.
-    return n.parentId;
+  /// The AI helpers' door reaches every notebook in the workspace, and
+  /// [governingNode] knows only the open one: [_protectedIds] is loaded per
+  /// notebook switch. So this reads the records themselves, which live in
+  /// workspace settings for every notebook at once.
+  Set<String> protectedNodeIdsOf(String nb) {
+    final prefix = 'protect:$nb:';
+    return {
+      for (final k in _repo.settingKeys())
+        if (k.startsWith(prefix)) k.substring(prefix.length)
+    };
   }
 
   /// Is [nodeId] currently hidden behind a passcode?
