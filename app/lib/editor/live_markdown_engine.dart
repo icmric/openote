@@ -1334,6 +1334,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// This is the one place the engine leans on Flutter's internal widget
   /// composition, which is why every caller treats a null answer as "don't
   /// know" rather than an error.
+  @override
+  bool pasteFromClipboard() {
+    final st = _editableState();
+    if (st == null) return false;
+    // The field's own paste action: formatters, undo and selection handling
+    // as though the keystroke had reached it (see the base declaration).
+    st.pasteText(SelectionChangedCause.keyboard);
+    return true;
+  }
+
   EditableTextState? _editableState() {
     final ctx = _focus.context;
     // `mounted` is load-bearing: an ancestor walk from a deactivated element

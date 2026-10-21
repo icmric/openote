@@ -142,6 +142,20 @@ abstract class OnoteEditSession {
   /// rather than assuming the request was granted.
   void Function(double extra)? requestExtraWidth;
 
+  /// **Paste the system clipboard, exactly as the keystroke would have.**
+  ///
+  /// For a Ctrl+V the shell had to intercept in order to decide between the
+  /// system clipboard and a box cut from the canvas — a decision that needs
+  /// an asynchronous clipboard read, by which time the keystroke is gone. The
+  /// shell swallows the key and calls this when the answer turns out to be
+  /// "the system clipboard after all", so the paste still goes through the
+  /// engine's own path: its input formatters (maths pasted into a paragraph
+  /// arrives as maths, a queued style wraps what lands) and its undo.
+  ///
+  /// False when the engine cannot — no field yet, or an engine with its own
+  /// selection model — and the caller then has nothing better to offer.
+  bool pasteFromClipboard() => false;
+
   /// The text offset under a point in global (screen) coordinates, or null if
   /// the engine can't answer right now.
   ///

@@ -7160,6 +7160,130 @@ class AppState extends ChangeNotifier
     removeSelected();
   }
 
+  /// **What the copied boxes read as inside a paragraph**, or null when one
+  /// of them has no writing to put there.
+  ///
+  /// The owner: *"if i cut a box, begin editing another box and attempt to
+  /// paste it within another box, it just pastes whatever is in my clipboard.
+  /// Id ideally like it to paste the contents of that box into the box im
+  /// currently editing."*
+  ///
+  /// So a box pasted into a box becomes its writing: a paragraph's own text
+  /// (tables and pictures included), a code box as a fence, an equation as
+  /// `$$…$$`, a picture as its reference on a line of its own. Several boxes
+  /// paste in the order they sit on the page, blank line between, which is
+  /// how they read down the page already.
+  ///
+  /// **Null for a box with nothing to write**: handwriting, a graph, a board,
+  /// a page window, an attachment, a flashcard. There is no honest text for
+  /// those, and pasting the ones that do have text while quietly dropping the
+  /// rest would lose work. ALL or nothing — the caller says so and pastes
+  /// them on the canvas instead, which is where they can go.
+  ///
+  /// Atoms get fresh ids (Data Model §2 rule 3: an import mints), because the
+  /// payload is copied into the destination block beside its reference.
+  ({String text, Map<String, dynamic> atoms})? blockClipboardAsText() {
+    final raw = _blockClipboard;
+    if (raw == null) return null;
+    final List<Block> list;
+    try {
+      list = [
+        for (final j in (jsonDecode(raw) as List))
+          Block.fromJson((j as Map).cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return null;
+    }
+    if (list.isEmpty) return null;
+    // Reading order, the same sort the Markdown projection uses.
+    list.sort((a, b) {
+      final dy = a.y.compareTo(b.y);
+      return dy != 0 ? dy : a.x.compareTo(b.x);
+    });
+    final atoms = <String, dynamic>{};
+    final parts = <String>[];
+    for (final b in list) {
+      final part = _blockAsText(b, atoms);
+      if (part == null) return null;
+      if (part.trim().isNotEmpty) parts.add(part.trimRight());
+    }
+    if (parts.isEmpty) return null;
+    return (text: parts.join('\n\n'), atoms: atoms);
+  }
+
+  /// One box's writing, collecting any atoms into [atoms] under fresh ids.
+  /// Null when the box has none.
+  String? _blockAsText(Block b, Map<String, dynamic> atoms) {
+    switch (b.type) {
+      case BlockType.text:
+        var text = b.content['text'] as String? ?? '';
+        for (final a in InlineAtom.allIn(b.content).values) {
+          final fresh = newId();
+          atoms[fresh] = InlineAtom(id: fresh, type: a.type, content: a.content)
+              .toJson();
+          text = text.replaceAll(
+              '${InlineAtom.scheme}${a.id}', '${InlineAtom.scheme}$fresh');
+        }
+        return text;
+      case BlockType.code:
+        final lang = b.content['language'] as String? ?? '';
+        final src = b.content['source'] as String? ?? '';
+        return '```$lang\n$src\n```';
+      case BlockType.math:
+        final latex = b.content['latex'] as String? ?? '';
+        return latex.isEmpty ? '' : '\$\$\n$latex\n\$\$';
+      case BlockType.image:
+        // The in-flow form, which is the one shape a picture has on a page.
+        final blob = b.content['blob'] as String? ?? '';
+        if (blob.isEmpty) return '';
+        final w = b.w.round(), h = (b.h ?? 0).round();
+        final size = h > 0 ? ' =${w}x$h' : '';
+        return '![]($blob$size)';
+      case BlockType.table:
+        // A table BLOCK is the importer's shape; the app converts it to a
+        // paragraph carrying an atom on open, and that is what to paste.
+        final asText = tableBlockAsText(b, madeIn: kAppVersion);
+        return asText == null ? null : _blockAsText(asText, atoms);
+      case BlockType.ink:
+      case BlockType.graph:
+      case BlockType.board:
+      case BlockType.embed:
+      case BlockType.file:
+      case BlockType.flashcard:
+      case BlockType.substitute:
+      case BlockType.frame:
+        return null;
+      case BlockType.unknown:
+        // A box written by a NEWER Openote. Its `rawType` and content are
+        // carried through untouched (Data Model §3.2), and inventing text for
+        // something we cannot read would be the one way to lose it — so this
+        // refuses, and the caller pastes it on the canvas, where it survives.
+        return null;
+    }
+  }
+
+  /// **Paste the copied boxes INTO the paragraph being edited**, as writing.
+  /// False when there is nothing to paste or one of them has no text form
+  /// ([blockClipboardAsText]), so the caller can fall back.
+  bool pasteBlocksIntoText() {
+    final ae = activeEditor;
+    if (ae == null || ae.block.type != BlockType.text) return false;
+    final projected = blockClipboardAsText();
+    if (projected == null) return false;
+    // Atoms land in the destination block, beside the reference that names
+    // them — otherwise the paste would write a pointer to a payload nothing
+    // can reach.
+    if (projected.atoms.isNotEmpty) {
+      final existing = ae.block.content['atoms'];
+      ae.block.content['atoms'] = {
+        if (existing is Map) ...existing.cast<String, dynamic>(),
+        ...projected.atoms,
+      };
+    }
+    insertTextAtActiveCursor(projected.text);
+    return true;
+  }
+
   void pasteBlocks({Offset? at}) {
     final raw = _blockClipboard;
     if (raw == null) return;

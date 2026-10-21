@@ -373,9 +373,8 @@ Block insertPastedText(AppState app, String text, Offset at) {
 /// a clipboard holding both an image and text reports the image, because
 /// that is what would paste.
 Future<({PasteResult kind, String? text})> probeClipboard() async {
-  final clipboard = SystemClipboard.instance;
-  if (clipboard == null) return (kind: PasteResult.nothing, text: null);
-  final reader = await clipboard.read();
+  final reader = await _readClipboard();
+  if (reader == null) return (kind: PasteResult.nothing, text: null);
   for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
     if (reader.canProvide(fmt)) return (kind: PasteResult.image, text: null);
   }
@@ -397,9 +396,8 @@ Future<({PasteResult kind, String? text})> probeClipboard() async {
 /// rather than a block: pasting a screenshot into the text box you are typing
 /// in must land IN the text, not as a picture floating over it.
 Future<({Uint8List bytes, String mime})?> readClipboardImage() async {
-  final clipboard = SystemClipboard.instance;
-  if (clipboard == null) return null;
-  final reader = await clipboard.read();
+  final reader = await _readClipboard();
+  if (reader == null) return null;
   for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
     if (!reader.canProvide(fmt)) continue;
     final bytes = await _readFile(reader, fmt);
@@ -407,6 +405,23 @@ Future<({Uint8List bytes, String mime})?> readClipboardImage() async {
     return (bytes: bytes, mime: _mimeOf(fmt));
   }
   return null;
+}
+
+/// **The clipboard, or null when it cannot be read right now.**
+///
+/// Defensive for the same reasons `AppState.readSystemClipboardText` is, and
+/// it was not: an unsupported platform, a channel not yet up, a headless
+/// test, or — the one that happens — another application holding the
+/// clipboard open on Windows. Every caller here already treats "nothing on
+/// the clipboard" as an ordinary answer, so a read that throws became an
+/// unhandled exception out of a Ctrl+V that should simply have done nothing.
+Future<ClipboardReader?> _readClipboard() async {
+  try {
+    return await SystemClipboard.instance?.read();
+  } catch (e) {
+    debugPrint('[openote] could not read the clipboard: $e');
+    return null;
+  }
 }
 
 String _mimeOf(FileFormat fmt) {
