@@ -107,17 +107,44 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     });
   }
 
-  void _done() {
-    final hex = _toHex(_color);
+  void _done() => _apply(_color);
+
+  void _apply(Color c) {
+    final hex = _toHex(c);
     widget.app.rememberCustomColor(hex);
     Navigator.pop(context, hex);
+  }
+
+  /// **A swatch is a choice, not a proposal.**
+  ///
+  /// The owner: *"i dont like that i have to click the colour and then apply,
+  /// id like to just click the colour and then have it automatically apply.
+  /// There isnt a preview and its easily undone so in my view no need to
+  /// stage the change."* Quite right — the dialog shows the colour on a
+  /// swatch and nothing else, so the second click bought nothing and cost one
+  /// per colour change.
+  ///
+  /// The mixer is the exception, and it is the owner's too: *"unless they have
+  /// already expanded the 'mix your own colour' menu, in which case it should
+  /// set the colour in there but not automatically close the dialouge box
+  /// (unless they then click the same box again while its still selected, in
+  /// which case close and apply it)."* Someone who has opened the mixer is
+  /// using the swatches as starting points to adjust, so closing on the first
+  /// one would throw away the thing they opened it for — and clicking the
+  /// same one twice is an unambiguous "no, that one".
+  void _pick(Color c) {
+    if (!_customOpen || _color.toARGB32() == c.toARGB32()) {
+      _apply(c);
+      return;
+    }
+    _setColor(c);
   }
 
   @override
   Widget build(BuildContext context) {
     Widget swatch(Color c, {double size = 24}) => InkWell(
           mouseCursor: WidgetStateMouseCursor.clickable,
-          onTap: () => _setColor(c),
+          onTap: () => _pick(c),
           borderRadius: BorderRadius.circular(4),
           child: Container(
             width: size,
@@ -341,7 +368,12 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        // Still here with the mixer shut, where every swatch applies on the
+        // click: it is the way to keep the colour you arrived with, and a
+        // button that appears and disappears is worse than one that is
+        // sometimes redundant.
         FilledButton(onPressed: _done, child: const Text('Apply')),
       ],
     );
