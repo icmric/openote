@@ -239,7 +239,19 @@ class _PageCanvasState extends State<PageCanvas> {
   /// The page point the pinch holds still — decided when the second finger
   /// landed. See [CanvasController.zoomAnchored].
   Offset _pinchAnchorPage = Offset.zero;
-  double _pzLastScale = 1.0;
+
+  /// The zoom a trackpad pan/pinch STARTED at.
+  ///
+  /// `PointerPanZoomUpdateEvent.scale` is cumulative from the gesture's own
+  /// start, so the absolute target is this times that — the same reasoning
+  /// `CanvasController.zoomTo` was written for. This path used to multiply
+  /// `e.scale / _pzLastScale` into the scale and re-base `_pzLastScale` every
+  /// sample, which is exactly the compounding that was taken out of the touch
+  /// pinch: rounding carried forward, and because the scale is CLAMPED, ratio
+  /// spent past a limit was consumed and never returned. Measured: a pinch
+  /// out past the maximum and back to where it began left the page at 0.15 —
+  /// minimum zoom — instead of 1.0.
+  double _pzBaseScale = 1.0;
 
   /// The pointer of a trackpad pan/pinch a block has claimed for itself
   /// (a graph, panning its own window) — null once nothing has. Latched
@@ -998,6 +1010,28 @@ class _PageCanvasState extends State<PageCanvas> {
     // the page by itself (bug 8), and with a pinch under way that is a second
     // navigation fighting this one. See [AppState.pinching].
     app.pinching = true;
+    // **Whatever had the gesture ENDS here**, rather than being abandoned
+    // mid-flight.
+    //
+    // This is the second door to the stale `draggingBlock` the grid-forever
+    // report came through — *"caused a grid to appear permenantly on all
+    // pages ... Disapeared after a restart"* — and `_selectCancel` only
+    // closed the first. A finger landing on handwriting sets
+    // `_DragMode.moveSelection` and `setDragging(true)`; the second finger
+    // clears `_mode`, so when the fingers come up NORMALLY — nothing
+    // cancelled, so `_selectCancel` never runs — `_selectUp` takes its
+    // `default` branch and never puts the flag down. One pinch that happened
+    // to start on a stroke, and the alignment grid is over every page for the
+    // rest of the session.
+    //
+    // Here rather than in the two callers because this is the moment the
+    // takeover happens, and a third caller added later would forget.
+    if (_mode == _DragMode.moveSelection) {
+      app.settleSelected();
+      _moveUndoPushed = false;
+    }
+    _mode = _DragMode.none;
+    app.setDragging(false);
   }
 
   /// One pinch sample. True when it did the zooming, so each caller knows
@@ -2213,16 +2247,25 @@ class _PageCanvasState extends State<PageCanvas> {
       // on every `onPointerPanZoomUpdate` would silently start panning the
       // page mid-gesture the instant something unrelated cleared the set.
       onPointerPanZoomStart: (e) {
-        _pzLastScale = 1.0;
+        _pzBaseScale = controller.scale;
         _panZoomClaimedBy = app.claimedPointers.contains(e.pointer)
             ? e.pointer
             : null;
       },
       onPointerPanZoomUpdate: (e) {
         if (_panZoomClaimedBy == e.pointer) return;
-        if (e.scale != 1.0) {
-          controller.zoomAt(e.localPosition, e.scale / _pzLastScale);
-          _pzLastScale = e.scale;
+        // Absolute, from the gesture's own start — see [_pzBaseScale].
+        //
+        // **`scale == 1.0` is applied like any other value**, which the
+        // relative form could not do: there it meant "a factor of one, so
+        // nothing to do", and skipping it was right. Here it means "back to
+        // the zoom this gesture began at" — the last sample of a pinch that
+        // returns to where it started is exactly 1.0, and skipping it left
+        // the page one sample short of home. A pure two-finger PAN reports
+        // 1.0 throughout and is unaffected: the target then equals the
+        // current scale and `zoomTo` has nothing to change.
+        if (e.scale > 0) {
+          controller.zoomTo(e.localPosition, _pzBaseScale * e.scale);
         }
         if (e.panDelta != Offset.zero) controller.panBy(e.panDelta);
         setState(() {});

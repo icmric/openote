@@ -430,6 +430,10 @@ void main() {
       app.undo();
       expect(app.editingBlockId, host.id);
       expect(app.selectedBlockId, host.id);
+      expect(app.selectedIds, contains(host.id),
+          reason: 'the three fields `select` sets together stay together — '
+              '`BlockView.selected` reads selectedIds, so a box being typed '
+              'into that is not in there has no move bar and no handles');
     });
 
     test('NEGATIVE CONTROL: a box that is not in the step does not reopen',

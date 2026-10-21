@@ -9939,7 +9939,15 @@ class AppState extends ChangeNotifier
             (b) => b.id == wasEditing && b.type == BlockType.text)
         ? wasEditing
         : null;
-    if (editingBlockId != null) selectedBlockId = editingBlockId;
+    if (editingBlockId != null) {
+      // The same three fields [select] sets together, because the rest of the
+      // app reads them as a set: `BlockView.selected` is
+      // `selectedIds.contains(id)`, so naming the block without putting it in
+      // there leaves a box that is being typed into and is not selected —
+      // no move bar, no handles, and the command bar speaking for nothing.
+      selectedIds.addAll(groupMembers(editingBlockId!));
+      selectedBlockId = editingBlockId;
+    }
     docRevision++;
     markDirty(); // which notifies
   }
