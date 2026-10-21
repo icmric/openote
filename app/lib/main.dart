@@ -11,6 +11,7 @@ import 'core/startup_args.dart';
 import 'media/video_playback.dart';
 import 'state/app_state.dart';
 import 'store/repository.dart';
+import 'theme/appearances.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
 
@@ -181,8 +182,11 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       supportedLocales: kOnoteLocales,
       localeListResolutionCallback: onoteResolveLocale,
       debugShowCheckedModeBanner: false,
-      theme: onoteTheme(Brightness.light),
-      darkTheme: onoteTheme(Brightness.dark),
+      // These pre-AppState shells wear the registry's default pair — the same
+      // two themes they have always worn, now resolved through the catalogue
+      // rather than past it.
+      theme: themesForMode(ThemeMode.system, appearances.first).light,
+      darkTheme: themesForMode(ThemeMode.system, appearances.first).dark,
       home: const Scaffold(
         body: Center(
           child: Column(
@@ -255,8 +259,11 @@ class _BlockedWorkspaceState extends State<_BlockedWorkspace> {
       supportedLocales: kOnoteLocales,
       localeListResolutionCallback: onoteResolveLocale,
       debugShowCheckedModeBanner: false,
-      theme: onoteTheme(Brightness.light),
-      darkTheme: onoteTheme(Brightness.dark),
+      // These pre-AppState shells wear the registry's default pair — the same
+      // two themes they have always worn, now resolved through the catalogue
+      // rather than past it.
+      theme: themesForMode(ThemeMode.system, appearances.first).light,
+      darkTheme: themesForMode(ThemeMode.system, appearances.first).dark,
       home: Scaffold(
         body: Center(
           child: ConstrainedBox(
@@ -362,7 +369,7 @@ class _StartupError extends StatelessWidget {
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
       localeListResolutionCallback: onoteResolveLocale,
-      theme: onoteTheme(Brightness.light),
+      theme: themesForMode(ThemeMode.system, appearances.first).light,
       home: Scaffold(
         body: Center(
           child: ConstrainedBox(
@@ -402,6 +409,7 @@ class OpenoteApp extends StatefulWidget {
 
 class _OpenoteAppState extends State<OpenoteApp> {
   ThemeMode? _builtMode;
+  String? _builtAppearance;
   Locale? _builtLocale;
   Widget? _built;
 
@@ -410,16 +418,18 @@ class _OpenoteAppState extends State<OpenoteApp> {
     return ListenableBuilder(
       listenable: widget.app,
       builder: (context, _) {
-        // Rebuild the root MaterialApp ONLY when the theme mode changes.
-        // Content updates ride AppShell's own listener — rebuilding the whole
-        // tree from the root on every notify (each keystroke, drag frame)
-        // doubled per-frame build work.
+        // Rebuild the root MaterialApp ONLY when the theme mode or the
+        // appearance changes. Content updates ride AppShell's own listener —
+        // rebuilding the whole tree from the root on every notify (each
+        // keystroke, drag frame) doubled per-frame build work.
         if (_built != null &&
             _builtMode == widget.app.themeMode &&
+            _builtAppearance == widget.app.appearance.id &&
             _builtLocale == widget.app.uiLocale) {
           return _built!;
         }
         _builtMode = widget.app.themeMode;
+        _builtAppearance = widget.app.appearance.id;
         _builtLocale = widget.app.uiLocale;
         return _built = MaterialApp(
           title: 'Openote',
@@ -434,8 +444,11 @@ class _OpenoteAppState extends State<OpenoteApp> {
           // is set here only when the student has picked one in Settings.
           locale: widget.app.uiLocale,
           debugShowCheckedModeBanner: false,
-          theme: onoteTheme(Brightness.light),
-          darkTheme: onoteTheme(Brightness.dark),
+          // The catalogue resolves the pair from the chosen appearance; with
+          // today's two entries this is the identical light and dark themes
+          // this MaterialApp has always been built with.
+          theme: themesForMode(widget.app.themeMode, widget.app.appearance).light,
+          darkTheme: themesForMode(widget.app.themeMode, widget.app.appearance).dark,
           themeMode: widget.app.themeMode, // Settings: Auto / Light / Dark
           home: AppShell(app: widget.app),
         );

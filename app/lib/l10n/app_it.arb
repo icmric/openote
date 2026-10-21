@@ -391,6 +391,7 @@
   "settingsThemeDark": "Scuro",
   "settingsThemeLight": "Chiaro",
   "settingsThemeSystem": "Sistema",
+  "settingsThemeAppearance": "Aspetto",
   "settingsTitle": "Impostazioni",
   "settingsUpToDate": "Sei aggiornato ({version} è la versione più recente).",
   "settingsVersion": "Openote {version}",

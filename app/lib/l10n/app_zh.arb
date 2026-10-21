@@ -391,6 +391,7 @@
   "settingsThemeDark": "深色",
   "settingsThemeLight": "浅色",
   "settingsThemeSystem": "跟随系统",
+  "settingsThemeAppearance": "外观",
   "settingsTitle": "设置",
   "settingsUpToDate": "已是最新版本（{version} 就是最新版）。",
   "settingsVersion": "Openote {version}",

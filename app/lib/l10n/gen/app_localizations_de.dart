@@ -1400,6 +1400,9 @@ class LDe extends L {
   String get settingsTheme => 'Design';
 
   @override
+  String get settingsThemeAppearance => 'Erscheinungsbild';
+
+  @override
   String get settingsThemeDark => 'Dunkel';
 
   @override

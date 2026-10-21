@@ -1401,6 +1401,9 @@ class LIt extends L {
   String get settingsTheme => 'Tema';
 
   @override
+  String get settingsThemeAppearance => 'Aspetto';
+
+  @override
   String get settingsThemeDark => 'Scuro';
 
   @override

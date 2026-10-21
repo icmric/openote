@@ -391,6 +391,7 @@
   "settingsThemeDark": "Dunkel",
   "settingsThemeLight": "Hell",
   "settingsThemeSystem": "System",
+  "settingsThemeAppearance": "Erscheinungsbild",
   "settingsTitle": "Einstellungen",
   "settingsUpToDate": "Alles aktuell ({version} ist die neueste Version).",
   "settingsVersion": "Openote {version}",
