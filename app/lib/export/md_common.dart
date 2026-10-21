@@ -39,10 +39,21 @@ final _wikiLink = RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]');
 final _colorWrap =
     RegExp(r'\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? (.*?)\}\}', dotAll: true);
 
+/// A highlight colour run with nothing of the kind inside it — the INNERMOST
+/// one, so each pass of the loop below peels a whole run rather than matching
+/// from one run's opener to another's closer.
+final _highColourWrap = RegExp(
+    r'\{\{=[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? '
+    r'((?:(?!\{\{[#=])(?!\}\})[\s\S])*)\}\}');
+
 /// Project stored text into strict CommonMark for `.md` export:
 ///  * `{{#RRGGBB text}}` colour spans → their inner text (the colour extension
 ///    isn't standard Markdown, so we degrade to plain text rather than leak the
 ///    braces);
+///  * `{{=RRGGBB text}}` highlights → `==text==`, which is what a highlight
+///    with no colour on it is already written as here and what every other
+///    Markdown tool with highlighting understands. The colour is lost and the
+///    highlight is not, which is the most of it that survives;
 ///  * `[[Title|id]]` wiki-links → `[Title](onote://page/id)`; `[[Title]]` →
 ///    `[Title]` (Data Model Spec §5.2 strict-Markdown mapping).
 String markdownInline(String text) {
@@ -52,7 +63,12 @@ String markdownInline(String text) {
   // `big {{#b word}}` in the export. Each pass removes a level.
   var out = text;
   for (var i = 0; i < 8; i++) {
-    final next = out.replaceAllMapped(_colorWrap, (m) => m.group(1) ?? '');
+    // Highlights first, innermost out: a nested one has to become its own
+    // `==…==` before the run around it is matched, or the outer pattern would
+    // read from its opener to the inner run's closer.
+    var next = out.replaceAllMapped(
+        _highColourWrap, (m) => '==${m.group(1) ?? ''}==');
+    next = next.replaceAllMapped(_colorWrap, (m) => m.group(1) ?? '');
     if (next == out) break;
     out = next;
   }

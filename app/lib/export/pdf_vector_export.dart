@@ -934,7 +934,7 @@ String _stripOnce(String s) {
     RegExp(r'~~(.+?)~~'),
     RegExp(r'==(.+?)=='),
     RegExp(r'`(.+?)`'),
-    RegExp(r'\{\{#[0-9A-Fa-f]{6,8} (.+?)\}\}'),
+    RegExp(r'\{\{[#=][0-9A-Fa-f]{6,8} (.+?)\}\}'),
     RegExp(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]'),
   ]) {
     out = out.replaceAllMapped(re, (m) => m.group(1) ?? '');

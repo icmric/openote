@@ -1960,6 +1960,7 @@ class LiveMarkdownController extends TextEditingController {
         case MdInline.highlight:
         case MdInline.underline:
         case MdInline.colour:
+        case MdInline.highlightColour:
           inner = inlineRunStyle(c, cBase,
               resolved: cBase, dark: dark, within: within);
         case MdInline.wikiLink:

@@ -50,6 +50,15 @@ enum MdInline {
   code,
   strike,
   highlight,
+
+  /// A highlight in a chosen colour: `{{=RRGGBB text}}`.
+  ///
+  /// The colour span's shape (`{{#RRGGBB text}}`) with `=` where `#` is, so
+  /// the two differ in one character and nothing about the length rules, the
+  /// optional alpha or the branch order changes. `==x==` stays and means the
+  /// default yellow: it is in notes already and every other Markdown tool
+  /// understands it.
+  highlightColour,
   underline,
   subscript,
   superscript,
@@ -169,8 +178,11 @@ const String _under = r'(\+\+(.+?)\+\+)';
 // coloured run, whose syntax has a space in it: colouring a superscript 2
 // gives `^{{#e53935 2}}^`, and without this the `^` were left as text.
 // Non-capturing throughout, so no group number moves.
+/// A colour or highlight run, as something else's inner text may contain it
+/// — `x^{{#e53935 2}}^` and `H~{{=F7E27A 2}}~O`. Either kind: they differ in
+/// one character and a subscript cannot tell them apart.
 const String _colourToken =
-    r'\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? [^\s{}]+\}\}';
+    r'\{\{[#=][0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? [^\s{}]+\}\}';
 const String _sub = r'(~(?!~)((?:' + _colourToken + r'|[^\s~])+)~(?!~))';
 const String _sup = r'(\^((?:' + _colourToken + r'|[^\s^])+)\^)';
 // Maths, with Pandoc's flanking rule — the opening `$` must be followed by a
@@ -213,9 +225,30 @@ const String _mathPadded =
 // or any character that does not start `}}`. One level, which is what the
 // toolbar can produce; the inner run's own text may not contain `}}`.
 const String _colour =
-    r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) '
-    r'((?:\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? (?:(?!\}\})[^\n])+\}\}'
-    r'|(?!\}\})[^\n])+?)\}\})';
+    r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) ' + _braceBody + r'\}\})';
+
+/// The body of a `{{…}}` run: either ONE whole nested run of either kind, or
+/// any character that does not start `}}`.
+///
+/// **Either kind**, so a colour may hold a highlight and a highlight a
+/// colour: highlighting a word that is already coloured writes
+/// `{{=hex {{#hex word}}}}`, and a body that only allowed its own kind
+/// stopped at the inner run's `}}` — the outer run then did not match at all
+/// and its braces were drawn as text, which is the failure GitHub #17 was
+/// about. Measured by `style_combinations_test`: both orders, which it checks
+/// for every pair of styles.
+///
+/// One level, which is what the toolbar can produce; the inner run's own text
+/// may not contain `}}`.
+const String _braceBody =
+    r'((?:\{\{[#=][0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? (?:(?!\}\})[^\n])+\}\}'
+    r'|(?!\}\})[^\n])+?)';
+
+/// `{{=RRGGBB text}}` — [_colour]'s shape, `=` for `#`, and the same
+/// one-level body so that highlighting part of a highlighted phrase reads
+/// whole rather than closing on the first `}}`.
+const String _highColour =
+    r'(\{\{=([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) ' + _braceBody + r'\}\})';
 
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
 
@@ -258,6 +291,7 @@ const _order = <MapEntry<MdInline, int>>[
   MapEntry(MdInline.wikiLink, 3), // outer, label, id
   MapEntry(MdInline.extLink, 3), // outer, label, url
   MapEntry(MdInline.colour, 3), // outer, hex, text
+  MapEntry(MdInline.highlightColour, 3), // outer, hex, text
   MapEntry(MdInline.boldItalic, 2),
   MapEntry(MdInline.bold, 2),
   MapEntry(MdInline.italic, 2),
@@ -294,6 +328,7 @@ String _patternFor(MdInline k) => switch (k) {
       MdInline.wikiLink => _wiki,
       MdInline.extLink => _link,
       MdInline.colour => _colour,
+      MdInline.highlightColour => _highColour,
       MdInline.boldItalic => _bi,
       MdInline.bold => _b,
       MdInline.italic => _i,
@@ -385,10 +420,11 @@ MdMatch classifyInline(RegExpMatch m) {
               label: m.group(base + 1),
               target: m.group(base + 2));
         case MdInline.colour:
+        case MdInline.highlightColour:
           final hex = m.group(base + 1)!;
           return MdMatch(
               kind: e.key,
-              openLen: hex.length + 4, // '{{#' + hex + ' '
+              openLen: hex.length + 4, // '{{#' or '{{=', the hex, and a space
               closeLen: 2,
               inner: m.group(base + 2)!,
               target: hex);
@@ -441,6 +477,7 @@ bool inlineKindNests(MdInline k) => switch (k) {
       MdInline.underline ||
       MdInline.strike ||
       MdInline.highlight ||
+      MdInline.highlightColour ||
       MdInline.colour ||
       MdInline.subscript ||
       MdInline.superscript ||

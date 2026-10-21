@@ -38,6 +38,7 @@ import 'package:openote/store/repository.dart';
 import 'support/sqlite.dart';
 
 const _red = 0xFFE53935;
+const _highBlue = 0xFF7AE2F7;
 
 /// Each style, how it is written, and the mark it leaves on a style.
 final _styles = <String, String Function(String)>{
@@ -49,6 +50,7 @@ final _styles = <String, String Function(String)>{
   'strike': (s) => '~~$s~~',
   'highlight': (s) => '==$s==',
   'colour': (s) => '{{#e53935 $s}}',
+  'highlightColour': (s) => '{{=7ae2f7 $s}}',
   'code': (s) => '`$s`',
   'sup': (s) => '^$s^',
   'sub': (s) => '~$s~',
@@ -68,6 +70,7 @@ Set<String> _marks(TextStyle s, double baseSize) {
   if (d != null && d.contains(TextDecoration.underline)) out.add('underline');
   if (d != null && d.contains(TextDecoration.lineThrough)) out.add('strike');
   if (s.backgroundColor?.toARGB32() == 0xFFF7E27A) out.add('highlight');
+  if (s.backgroundColor?.toARGB32() == _highBlue) out.add('highlightColour');
   final shadows = s.shadows ?? const <Shadow>[];
   if (s.color?.toARGB32() == _red ||
       shadows.any((x) => x.color.toARGB32() == _red)) {
@@ -87,6 +90,9 @@ Set<String> _marks(TextStyle s, double baseSize) {
 /// both ends. Code is literal — `` `**x**` `` shows its asterisks, by design.
 bool _contradiction(String outer, String inner) =>
     {outer, inner}.containsAll({'sup', 'sub'}) ||
+    // One background per run: the inner highlight is the one you see, so the
+    // outer one cannot also be measured on the same text.
+    {outer, inner}.containsAll({'highlight', 'highlightColour'}) ||
     (outer == 'strike' && inner == 'sub') ||
     (outer == 'sub' && inner == 'strike') ||
     outer == 'code';

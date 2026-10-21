@@ -6038,8 +6038,13 @@ class AppState extends ChangeNotifier
     return (r.start, r.end);
   }
 
-  /// **The colour run whose visible text is exactly [s, e)**, at any depth —
-  /// or null when the selection is not, by itself, a coloured run.
+  /// **The run of [kind] whose visible text is exactly [s, e)**, at any
+  /// depth — or null when the selection is not, by itself, such a run.
+  ///
+  /// [kind] is `colour` or `highlightColour`: the two are written the same
+  /// way (`{{#hex …}}` and `{{=hex …}}`) and want exactly the same search,
+  /// so they share it. Looking for one never finds the other, which is what
+  /// lets a word be coloured AND highlighted, each changed on its own.
   ///
   /// Descends the way [_runAround] does for the other marks: a colour run is
   /// found whatever is nested inside it or around it. "Exactly" is judged on
@@ -6048,7 +6053,8 @@ class AppState extends ChangeNotifier
   /// selected is that colour run, and `{{#c big word}}` with `word` selected
   /// is not, and gets a colour of its own inside it.
   static ({int open, int innerStart, int innerEnd, int end})? _colourRunFor(
-      TextEditingController c, String t, int s, int e) {
+      TextEditingController c, String t, int s, int e,
+      [MdInline kind = MdInline.colour]) {
     final lineStart = lineStartOf(t, s);
     final lineEnd = math.max(lineStart, lineEndOf(t, e));
     ({int open, int innerStart, int innerEnd, int end})? found;
@@ -6059,7 +6065,7 @@ class AppState extends ChangeNotifier
         final innerStart = base + m.start + k.openLen;
         final innerEnd = base + m.end - k.closeLen;
         if (s < innerStart || e > innerEnd) continue;
-        if (k.kind == MdInline.colour) {
+        if (k.kind == kind) {
           final (vs, ve) = _visible(c, innerStart, innerEnd);
           if (vs == s && ve == e) {
             // Keep the innermost: it is the colour on the screen.
@@ -6081,10 +6087,14 @@ class AppState extends ChangeNotifier
     return found;
   }
 
-  // Matches a whole wrapper as the entire selection: {{#hex inner}}.
-  static final _colorWholeRe = RegExp(
-      r'^\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\}\}$',
-      dotAll: true);
+  // Matches a whole wrapper as the entire selection: {{#hex inner}} for a
+  // colour, {{=hex inner}} for a highlight.
+  static final _wholeRunRe = {
+    for (final sigil in ['#', '='])
+      sigil: RegExp(
+          '^\\{\\{$sigil([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\\}\\}\$',
+          dotAll: true)
+  };
 
   /// **Colour the selection**, or clear it back to the default with
   /// `'auto'`.
@@ -6095,16 +6105,48 @@ class AppState extends ChangeNotifier
   /// imedietley clear how to set it to the auto colour"* — there was no
   /// way at all, and no way back off a colour except undo.
   void applyTextColor(String hex, {bool remember = true}) {
-    final ae = activeEditor;
-    if (ae == null) return;
     // A flick is not a choice: it leaves the pair exactly as it is, so
     // the toolbar goes on showing the colour somebody picked and
     // pressing the chord again comes back here with the same two to
     // swap between.
-    if (remember) {
+    if (remember && activeEditor != null) {
       if (!_sameColour(hex, lastColor)) prevColor = lastColor;
       lastColor = hex;
     }
+    _applyBraceRun(hex, sigil: '#', kind: MdInline.colour);
+  }
+
+  /// **Highlight the selection in [hex]**, or clear it with `'auto'`.
+  ///
+  /// Found while fixing GitHub #17 rather than reported: text colour has a
+  /// full picker and the highlighter was one hard-coded yellow, for an app
+  /// whose owner says *"Colour is a really important thing to me that we get
+  /// right"* and whose students highlight to triage a reading list.
+  ///
+  /// `==x==` still means the default yellow — it is in notes already and
+  /// every other Markdown tool understands it — and a chosen colour is
+  /// `{{=RRGGBB text}}`, the colour span's own shape with `=` for `#`. So
+  /// this is [applyTextColor] with one character changed, and the two share
+  /// every case below: re-highlight rather than nest, clear by taking the
+  /// markers away, and a selection that spans a whole wrapper rewritten in
+  /// place.
+  void applyHighlightColor(String hex, {bool remember = true}) {
+    if (remember && activeEditor != null && hex != 'auto') lastHighlight = hex;
+    _applyBraceRun(hex, sigil: '=', kind: MdInline.highlightColour);
+  }
+
+  /// The highlight colour the picker opens on. Not
+  /// `lastColor`'s pair: a highlight and an ink colour that chased each other
+  /// would be two features fighting over one field.
+  String lastHighlight = 'F7E27A';
+
+  /// The body of [applyTextColor] and [applyHighlightColor]. [sigil] is the
+  /// character after `{{` and [kind] the run it makes, which are the only
+  /// two things that differ.
+  void _applyBraceRun(String hex,
+      {required String sigil, required MdInline kind}) {
+    final ae = activeEditor;
+    if (ae == null) return;
     // `{{#…}}` in a code cell is not a colour, it is somebody's source.
     // The same guard [wrapSelection] carries, for the same reason.
     if (ae.block.type != BlockType.text) {
@@ -6141,7 +6183,7 @@ class AppState extends ChangeNotifier
     // its own: "no colour" has to find the run it is removing exactly as
     // precisely as a recolour does.
     final clearing = hex == 'auto';
-    final run = _colourRunFor(c, t, s, e);
+    final run = _colourRunFor(c, t, s, e, kind);
     if (run != null) {
       pushUndo();
       if (clearing) {
@@ -6152,7 +6194,7 @@ class AppState extends ChangeNotifier
         c.selection =
             TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
       } else {
-        final newOpen = '{{#$hex ';
+        final newOpen = '{{$sigil$hex ';
         c.text = t.replaceRange(run.open, run.innerStart, newOpen);
         final shift = newOpen.length - (run.innerStart - run.open);
         c.selection =
@@ -6165,7 +6207,7 @@ class AppState extends ChangeNotifier
 
     // Case B: the selection spans an ENTIRE wrapper — {{#oldhex inner}} —
     // e.g. selecting the coloured word including its markers. Rewrite it.
-    final whole = _colorWholeRe.firstMatch(t.substring(s, e));
+    final whole = _wholeRunRe[sigil]!.firstMatch(t.substring(s, e));
     if (whole != null) {
       pushUndo();
       final inner = whole.group(2)!;
@@ -6174,8 +6216,8 @@ class AppState extends ChangeNotifier
         c.selection =
             TextSelection(baseOffset: s, extentOffset: s + inner.length);
       } else {
-        c.text = t.replaceRange(s, e, '{{#$hex $inner}}');
-        final openLen = hex.length + 4; // '{{#' + hex + ' '
+        c.text = t.replaceRange(s, e, '{{$sigil$hex $inner}}');
+        final openLen = hex.length + 4; // '{{' + sigil + hex + ' '
         c.selection = TextSelection(
             baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
       }
@@ -6192,8 +6234,8 @@ class AppState extends ChangeNotifier
     }
     pushUndo();
     final selText = t.substring(s, e);
-    c.text = t.replaceRange(s, e, '{{#$hex $selText}}');
-    final openLen = hex.length + 4; // '{{#' + hex + ' '
+    c.text = t.replaceRange(s, e, '{{$sigil$hex $selText}}');
+    final openLen = hex.length + 4; // '{{' + sigil + hex + ' '
     c.selection = TextSelection(
         baseOffset: s + openLen, extentOffset: s + openLen + selText.length);
     _commitActiveEditor();
@@ -6203,7 +6245,14 @@ class AppState extends ChangeNotifier
   /// The colour the whole selection already carries, or null when it has
   /// none — or when the selection spans more than one, which is what stops a
   /// flick deciding on behalf of two.
-  String? get _selectionColor {
+  String? get _selectionColor => _selectionRunHex(MdInline.colour);
+
+  /// The highlight colour the whole selection carries, or null. What the
+  /// toolbar's highlight button shows, and what tells it whether there is a
+  /// highlight to take off.
+  String? get selectionHighlight => _selectionRunHex(MdInline.highlightColour);
+
+  String? _selectionRunHex(MdInline kind) {
     final ae = activeEditor;
     if (ae == null) return null;
     final c = ae.controller;
@@ -6212,10 +6261,43 @@ class AppState extends ChangeNotifier
     final t = c.text;
     final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
         math.max(sel.baseOffset, sel.extentOffset));
-    final run = _colourRunFor(c, t, s, e);
+    final run = _colourRunFor(c, t, s, e, kind);
     if (run == null) return null;
-    // '{{#' + the hex + ' '
+    // '{{' + the sigil + the hex + ' '
     return t.substring(run.open + 3, run.innerStart - 1);
+  }
+
+  /// **Is the selection highlighted at all** — in a colour, or with the
+  /// plain `==x==` the toolbar button has always written?
+  /// Either kind, from the ONE scan the toolbar already does for every other
+  /// button: [marksAtCaret] descends and records each kind it passes, so a
+  /// highlight nested inside a colour lights the button like anything else.
+  /// Asking [selectionHighlight] as well would be a second line scan on
+  /// every build of the command bar, which is keyed on this.
+  bool get selectionIsHighlighted {
+    final marks = marksAtCaret();
+    return marks.contains(MdInline.highlight) ||
+        marks.contains(MdInline.highlightColour);
+  }
+
+  /// The highlighter button: highlight in [lastHighlight], or take the
+  /// highlight off if there is one.
+  ///
+  /// No chord of its own — Ctrl+= is subscript, and the marker ladders are
+  /// the grammar's (see [markerChordLadders]), so `==` still toggles a plain
+  /// highlight from the keyboard exactly as it did.
+  ///
+  /// One button for both, because "highlight this" and "stop highlighting
+  /// this" are the same intention and nobody looks for two controls. The
+  /// plain `==x==` form is toggled by the mark machinery that has always
+  /// handled it, so a note written before colours came along toggles off
+  /// exactly as it used to.
+  void toggleHighlight() {
+    if (marksAtCaret().contains(MdInline.highlight)) {
+      wrapSelection('==');
+      return;
+    }
+    applyHighlightColor(selectionHighlight != null ? 'auto' : lastHighlight);
   }
 
   /// Two colours differing only in case or a leading `#` are one colour.
