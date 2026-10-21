@@ -128,6 +128,42 @@ void main() {
           '${c.line}:${c.front}'
       ];
 
+  group('a picture dropped while the caret is moving', () {
+    test('declines rather than writing into the box you just left', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `editingBlockId` is set by the CLICK and the controller registers on
+      // the next build, so for a frame the two name different boxes — and
+      // while the caret moves from one box to another, the registration is
+      // still the one you left. Splicing the picture into the registered
+      // editor would put it in that box; writing `content` instead would be
+      // written over by the open controller. So this window answers "not
+      // this box" and the caller gives the picture one of its own.
+      final other = Block(
+          type: BlockType.text,
+          x: 600,
+          y: 600,
+          w: 300,
+          content: {'text': 'somewhere else'});
+      app.addBlock(other, recordUndo: false);
+      final c = LiveMarkdownController(text: 'somewhere else', dark: false);
+      addTearDown(c.dispose);
+      app.setActiveEditor(c, other, 'text');
+      // The caret has been asked to move to the box being dropped on, but
+      // nothing has rebuilt yet.
+      app.editingBlockId = boxId;
+
+      final b = box();
+      final made = insertImageIntoTextAt(
+          app, _png, 'image/png', Offset(b.x + 4, b.y + 2),
+          dark: false);
+      expect(made, isNull, reason: 'the caller puts it in a new box');
+      expect(c.text, 'somewhere else',
+          reason: 'and NOT into the box the editor was still registered for');
+      expect(box().content['text'], _twoCards, reason: 'nor into this one');
+      app.cancelPendingSave();
+    });
+  });
+
   group('a programmatic insert, not a keystroke', () {
     test('a box pasted above two cards carries their schedules', () {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

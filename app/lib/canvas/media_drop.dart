@@ -151,11 +151,24 @@ Block? insertImageIntoTextAt(
 
   // Editing that very block? Then the caret is the truth, and AppState already
   // owns undo + commit + notify for that path.
-  if (app.editingBlockId == target.id) {
+  //
+  // **Asked of the registered editor, not of `editingBlockId`.** The two are
+  // one frame apart: the click sets `editingBlockId`, and `TextBlockView`
+  // registers the controller when it next builds. In between — and while the
+  // caret is moving from one box to another, where the registration is still
+  // the box you left — `editingBlockId` names this block while `activeEditor`
+  // names another one, and `insertTextAtActiveCursor` would splice the
+  // picture into THAT box's text. The branch below is no good either: the
+  // open controller holds the live text and would write over anything put
+  // into `content` behind it. So the honest answer in that window is "not
+  // this box", and the caller puts the picture in a box of its own.
+  final ae = app.activeEditor;
+  if (ae != null && ae.block.id == target.id) {
     app.insertTextAtActiveCursor('\n$ref\n');
     target.content['autoWidth'] = false;
     return target;
   }
+  if (app.editingBlockId == target.id) return null;
 
   final text = target.content['text'] as String? ?? '';
   final at = _offsetInBlock(target, text, pagePt, dark: dark);
