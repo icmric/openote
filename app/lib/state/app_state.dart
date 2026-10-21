@@ -9414,6 +9414,12 @@ class AppState extends ChangeNotifier
       if (_unlocked.containsKey(pageId)) {
         _unlocked[copy.id] = _unlocked[pageId];
       }
+      // **Except under "Every time it is opened", where the copy asks.** That
+      // policy's unlock lives in [_visitUnlocks] and lasts one visit, and the
+      // `selectPage` below is a visit to a different page — so there is
+      // nothing to carry, and carrying it would be carrying it past the one
+      // thing it is scoped to. The sentence above is about the three CACHED
+      // policies; this is the fourth behaving as it says on the dialog.
       _gateRevision++;
     }
 

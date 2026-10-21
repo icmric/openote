@@ -213,6 +213,40 @@ void main() {
     app.cancelPendingSave();
   });
 
+  testWidgets('the copy asks under "Every time it is opened"', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The other three policies cache an unlock and the copy inherits it — it
+    // is as readable as the page you just read. This one does not: its unlock
+    // lasts one visit to one page, and duplicating navigates to a different
+    // page, which is the thing it is scoped against. So the copy asks, which
+    // is what the dialog said it would do.
+    final src = page('Diary', [text('private')]);
+    await app.selectPage(src.id);
+    app.protectNode(src.id, '1234', UnlockPolicy.always);
+    expect(app.unlockNode(src.id, '1234'), isTrue);
+    expect(app.isLocked(src.id), isFalse, reason: 'precondition: open now');
+
+    final copyId = (await app.duplicatePage(src.id))!;
+    expect(app.isLocked(copyId), isTrue, reason: 'every time it is opened');
+    expect(app.unlockNode(copyId, '1234'), isTrue,
+        reason: 'and the same passcode opens it');
+    expect(app.isLocked(copyId), isFalse);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a cached unlock DOES come across with the copy', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final src = page('Diary', [text('private')]);
+    await app.selectPage(src.id);
+    app.protectNode(src.id, '1234', UnlockPolicy.session);
+    expect(app.unlockNode(src.id, '1234'), isTrue);
+
+    final copyId = (await app.duplicatePage(src.id))!;
+    expect(app.isLocked(copyId), isFalse,
+        reason: 'as unlocked as what it was copied from');
+    app.cancelPendingSave();
+  });
+
   testWidgets('and it is offered on a page, but not on a section group',
       (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
