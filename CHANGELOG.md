@@ -4,6 +4,58 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — highlight in any colour
+
+- **The highlighter has a colour picker**, like the text colour beside it.
+  The button highlights in the colour you last chose, or takes the highlight
+  off again; the little arrow opens the full picker. It was one fixed yellow.
+- **A highlight and a text colour are separate**, so a word can have both and
+  you can change either one without disturbing the other.
+- **In dark mode your colour is softened rather than swapped**, so the words
+  on top of it stay readable and the colour is still the one you picked.
+- Highlights written as `==like this==` still mean the usual yellow, and still
+  work everywhere they did.
+
+### Added — pictures behave like pictures
+
+- **Clicking a picture selects it**, so you can copy, cut or delete it the way
+  you would anything else. It shows as selected while it is.
+- **Backspace next to a picture deletes the picture**, all of it. It used to
+  take one character off the end of the reference behind it, which made the
+  picture disappear and left a long code in its place.
+- **A picture keeps its own line.** Typing next to one, deleting back into
+  one, or pasting one into the middle of a sentence used to break it the same
+  way; now the picture stays whole and what you type goes above or below it.
+
+### Added — paste a box into a box
+
+- **Cut a box, click into another box, and paste**: its writing lands at the
+  caret instead of whatever else was on the clipboard. Several boxes come in
+  the order they sat on the page, a code box comes as code, an equation as an
+  equation, and a picture or a table comes with it properly.
+- **Boxes with no writing in them are left alone** — handwriting, a graph, a
+  board, a page window, an attachment. Those still paste onto the canvas,
+  which is where they can go.
+- **Ctrl+V no longer errors** when another program is holding the clipboard.
+
+### Fixed — a passcode covers page windows too
+
+- **A window onto a page with a passcode asks for the passcode**, and asks
+  again each time you open the page it is on. Before, dragging a locked page
+  onto another page showed its contents, and so did picking it in Insert ▸
+  Page window. Unlocking a section to read it does not open its windows
+  elsewhere, and opening a window does not unlock the section.
+
+### Fixed — touch
+
+- **Dragging a finger across a box scrolls the page**, instead of selecting
+  its words — a box covers most of a page, so there was almost nowhere left
+  to scroll from. A mouse still selects, and once the caret is in a box a
+  finger drag still picks out words.
+- **Pinch to zoom comes back where it started.** It drifted as you pinched,
+  and pinching past the furthest zoom and back left the page at a different
+  size than it began.
+
 ### Fixed — a passcode keeps AI helpers out
 
 - **An AI helper cannot see or change anything with a passcode.** It is not

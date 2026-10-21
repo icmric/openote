@@ -100,7 +100,7 @@ PDFs or images."* Use a real lecture deck if you have one.
 
 ---
 
-## 4. Styles on top of styles
+## 4. Styles on top of styles, and highlighting
 
 GitHub #17. The rule is that any style works inside any other, in either
 order.
@@ -115,6 +115,17 @@ order.
       colour; it does not gain a second one.
 - [ ] **Backspace at the end of a bold red word** deletes the last letter and
       nothing else.
+- [ ] **Highlight a word, then open the arrow beside the highlighter and pick
+      a colour.** The word is highlighted in it, and the button's bar shows
+      which colour it will use next time.
+- [ ] **Press the highlighter again on that word.** The highlight comes off.
+- [ ] **Colour a word AND highlight it.** Both show, and taking one off leaves
+      the other.
+- [ ] **In dark mode**, is a highlight colour still readable with text on top?
+      This one is a judgement call and yours is the one that counts.
+- [ ] **Export a page with a coloured highlight to Markdown.** The highlight
+      is there as `==text==`; the colour is not, which is the most Markdown
+      can carry.
 
 ---
 
@@ -132,13 +143,26 @@ v1.0.2 bug 16. Quick to check, and it is your revision record.
 
 ---
 
-## 6. Pictures
+## 6. Pictures and pasting
 
 - [ ] **Drop an SVG on the page**, and use Insert ▸ Image for another. Both are
       drawings, sharp at any zoom, and still sharp in a PDF export.
 - [ ] **Drop a picture onto empty page.** It arrives in a box you can type in
       under it, and you can cut and paste it like text.
 - [ ] **Your existing pictures** open, move and export as they always did.
+- [ ] **Click a picture inside a box.** It is selected — Ctrl+C, Ctrl+X and
+      Delete all act on the whole picture.
+- [ ] **Put the caret just after a picture and press Backspace.** The whole
+      picture goes, not part of its reference. Same for Delete just before one.
+- [ ] **Type right after a picture, and right before one.** What you type ends
+      up on its own line; the picture stays a picture.
+- [ ] **Copy a picture and paste it into the middle of a sentence.** It gets a
+      line of its own rather than breaking.
+- [ ] **Cut a whole box, click into another box, and paste.** Its writing
+      arrives at the caret. Try one with a table in it, and one with a
+      picture.
+- [ ] **Cut some handwriting and try the same.** Nothing is pasted into the
+      box, and it still pastes on the canvas.
 
 ---
 
@@ -203,7 +227,48 @@ Connections ▸ AI access**.
 
 ---
 
-## 12. Things I already know about
+## 12. Touch, on a tablet
+
+The two parts that were fixed are deterministic and tested; whether the
+result *feels* right is not something a test can say, and that is most of
+what is wanted here.
+
+- [ ] **Drag a finger across a text box.** The page scrolls. It used to select
+      the box's words, which on a tablet left almost nowhere to scroll from.
+- [ ] **Tap a box.** It still opens for typing — a short scroll that ends on a
+      box must not open it, and a tap must.
+- [ ] **With the caret in a box, drag a finger across its words.** They are
+      selected: that is how you select without a keyboard.
+- [ ] **Pinch out, then pinch back to where your fingers started.** The page
+      comes back to the zoom it began at. Then pinch out past the furthest
+      zoom, hold, and come back — still the same.
+- [ ] **Is the zoom smooth now?** It compounded its own rounding before. This
+      is a feel question and yours is the answer.
+- [ ] **Drag boxes around at several zoom levels** — right out, right in. You
+      remembered this being "definitely funky"; I could not reproduce it (every
+      drag path divides by the zoom), so if it is still wrong I need to know
+      what you see: does the box lag the finger, overshoot it, or jump?
+- [ ] **One finger on empty page scrolls**, two fingers pan and zoom, and a
+      pen still draws.
+
+---
+
+## 13. Page windows and passcodes
+
+- [ ] **Put a passcode on a section**, then drag one of its pages onto another
+      page. You are asked for the passcode before any window is made, and
+      Cancel makes nothing.
+- [ ] **Insert ▸ Page window** on that locked page: asked before the page is
+      drawn to pick an area from, and locked pages show a padlock in the list.
+- [ ] **Leave the page the window is on and come back.** The window asks
+      again.
+- [ ] **Unlock the section in the navigator**, then look at the window. It
+      still asks — the two are separate doors, deliberately.
+- [ ] **A window onto a page with no passcode** is not asked about at all.
+
+---
+
+## 14. Things I already know about
 
 Not for you to test — recorded here so you are not surprised by them.
 
@@ -211,12 +276,6 @@ Not for you to test — recorded here so you are not surprised by them.
   pieces of ink whose strokes were never copied into it, so the page opens
   and draws nothing there. You are redoing it; the steps are in
   [app/assets/demo/README.md](app/assets/demo/README.md).
-- **A page window onto a page with a passcode shows that page.** Drag a
-  locked page from the navigator onto another page, or pick it in Insert ▸
-  Page window, and its contents appear without the passcode being asked
-  for. Found while closing the same door for AI helpers; it has been true
-  since page windows arrived. Not fixed yet — it is your call whether it
-  goes in this release.
 - **A flashcard's history can still slip if its line is edited on another
   device.** Schedules are kept on each device under the card's line number,
   so a line added above a card elsewhere arrives without the schedule
