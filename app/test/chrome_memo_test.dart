@@ -46,7 +46,8 @@ import 'support/sqlite.dart';
 /// member's RESULT never reaches the screen from that widget — check before
 /// you add one.
 const _actionsOnly = {
-  'applyTextColor', 'blankOutSelection', 'insertFlashcard', 'makeCardAtCaret',
+  'applyTextColor', 'applyHighlightColor', 'toggleHighlight',
+  'blankOutSelection', 'insertFlashcard', 'makeCardAtCaret',
   'recolorSelectedInk', 'redo', 'refresh', 'rememberCustomColor',
   'setPenButton',
   'setInkShape',

@@ -780,10 +780,9 @@ TextStyle inlineRunStyle(MdMatch c, TextStyle acc,
     case MdInline.strike:
       return _decorated(acc, TextDecoration.lineThrough, resolved);
     case MdInline.highlight:
-      return acc.copyWith(
-          backgroundColor: dark
-              ? OnoteColors.brass700.withValues(alpha: .45)
-              : const Color(0xFFF7E27A));
+      return acc.copyWith(backgroundColor: defaultHighlight(dark));
+    case MdInline.highlightColour:
+      return acc.copyWith(backgroundColor: inlineHighlightColour(c.target!, dark));
     case MdInline.colour:
       return _inked(acc, inlineHexColour(c.target!));
     case MdInline.subscript:
@@ -795,7 +794,10 @@ TextStyle inlineRunStyle(MdMatch c, TextStyle acc,
           fontFamily: 'JetBrains Mono',
           fontFamilyFallback: onoteFontFallback,
           fontSize: (resolved.fontSize ?? 14) * 0.9,
-          backgroundColor: within.contains(MdInline.highlight)
+          // A highlight of either kind is the background here: code's own
+          // grey would paint over what somebody chose to highlight.
+          backgroundColor: within.contains(MdInline.highlight) ||
+                  within.contains(MdInline.highlightColour)
               ? null
               : (dark ? OnoteColors.night100 : OnoteColors.paper100));
       return within.contains(MdInline.colour)
@@ -804,6 +806,28 @@ TextStyle inlineRunStyle(MdMatch c, TextStyle acc,
     default:
       return acc;
   }
+}
+
+/// **The yellow `==x==` means**, which is also what the picker opens on.
+///
+/// Dark mode gets a translucent wash rather than the flat yellow: a solid
+/// highlight behind pale text is unreadable, and alpha keeps the text's own
+/// contrast whatever is under it.
+Color defaultHighlight(bool dark) => dark
+    ? OnoteColors.brass700.withValues(alpha: .45)
+    : const Color(0xFFF7E27A);
+
+/// A chosen highlight colour, as `{{=RRGGBB …}}` carries it.
+///
+/// **Toned down in dark mode by alpha**, not by picking a different colour:
+/// the colour is the writer's and must stay recognisable, while a fully
+/// opaque one behind pale text cannot be read. A colour that already carries
+/// its own alpha is taken as written — somebody said exactly what they
+/// wanted.
+Color inlineHighlightColour(String hex, bool dark) {
+  final c = inlineHexColour(hex);
+  if (!dark || hex.length > 6) return c;
+  return c.withValues(alpha: .45);
 }
 
 /// A link's words: its ink, underlined on top of any line already there.
@@ -906,6 +930,7 @@ void _inlineInto(
       // and `{{#e53935 **x**}}` are both bold red, rather than bold with
       // `{{#e53935 x}}` written in it. See [inlineKindNests].
       case MdInline.colour:
+      case MdInline.highlightColour:
       case MdInline.boldItalic:
       case MdInline.bold:
       case MdInline.italic:

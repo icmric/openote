@@ -296,10 +296,11 @@ documented extensions:
 
 | | |
 |---|---|
-| `==highlight==` | |
+| `==highlight==` | the default yellow |
 | `++underline++` | |
 | `~sub~` and `^sup^` | Pandoc's, and subject to Pandoc's no-whitespace rule |
 | `{{#RRGGBB text}}` | a colour span; `RRGGBBAA` is also accepted |
+| `{{=RRGGBB text}}` | a highlight in that colour, the same shape with `=` for `#`. Exports as `==text==`: the highlight survives, the colour does not |
 | `[[wiki-links]]` | exported as `[title](onote://notebook/page#block)` in strict-Markdown mode |
 | `$…$` and `$$…$$` | inline and display maths |
 | `![alt](sha256:<hash>)` | an in-flow picture, §5.2.1 |

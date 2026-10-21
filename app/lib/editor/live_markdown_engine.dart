@@ -29,6 +29,7 @@ import 'onote_text_editor.dart';
 import 'unicode_input.dart';
 import '../ui/context_menus.dart';
 import '../ui/link_dialog.dart';
+import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import '../ui/save_picture.dart';
 
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
@@ -1005,6 +1006,33 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// so that stays that function's stricter job) but never strictly INSIDE
   /// one, because there is nothing else at those offsets to place a caret
   /// for.
+  /// **The first click into a box selects a picture it lands on** — the
+  /// same as a click on one once the box is open (`_EditImage.onPick`). Only
+  /// a click ON the picture: one beside it on its line is a caret after it.
+  ///
+  /// The picture stands on its line's first code unit, so that one character's
+  /// box is exactly where it is drawn.
+  bool _pickPictureAt(int at, Offset tapGlobal) {
+    final pic = controller.pictureAround(at);
+    if (pic == null) return false;
+    final st = _editableState();
+    if (st == null) return false;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize) return false;
+      final local = r.globalToLocal(tapGlobal);
+      final hit = r
+          .getBoxesForSelection(
+              TextSelection(baseOffset: pic.start, extentOffset: pic.start + 1))
+          .any((b) => b.toRect().contains(local));
+      if (!hit) return false;
+    } catch (_) {
+      return false;
+    }
+    controller.pickObject(pic.start, pic.end, pic.line);
+    return true;
+  }
+
   bool _enterMathOnFirstClickInside(int at, Offset tapGlobal) {
     if (_mathStart != null) return false; // one is already open
     final run = controller.mathRunNear(at);
@@ -1306,6 +1334,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// This is the one place the engine leans on Flutter's internal widget
   /// composition, which is why every caller treats a null answer as "don't
   /// know" rather than an error.
+  @override
+  bool pasteFromClipboard() {
+    final st = _editableState();
+    if (st == null) return false;
+    // The field's own paste action: formatters, undo and selection handling
+    // as though the keystroke had reached it (see the base declaration).
+    st.pasteText(SelectionChangedCause.keyboard);
+    return true;
+  }
+
   EditableTextState? _editableState() {
     final ctx = _focus.context;
     // `mounted` is load-bearing: an ancestor walk from a deactivated element
@@ -1424,7 +1462,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
       if (want != null) {
         pendingCaretGlobal = null;
         final at = offsetAtGlobal(want);
-        if (at != null) {
+        if (at != null && _pickPictureAt(at, want)) {
+          // A click on a picture selects it, on the first click as on any
+          // other: the box was closed, so its own tap never ran.
+        } else if (at != null) {
           controller.selection = TextSelection.collapsed(offset: at);
           // The first click into a block that was not being edited comes
           // through here rather than through `InlineMathAtom`'s own tap — a
@@ -1713,8 +1754,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
       if (site.wiki && (site.url?.isNotEmpty ?? false))
         ContextMenuButtonItem(
           label: 'Show as a page window',
-          onPressed: () {
+          onPressed: () async {
             editable.hideToolbar();
+            // A page with a passcode asks for it first (bug 33).
+            if (!await confirmWindowOnto(context, app, site.url!) ||
+                !context.mounted) {
+              return;
+            }
             _showLinkAsWindow(site);
           },
         ),

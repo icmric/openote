@@ -598,8 +598,12 @@ class _AppShellState extends State<AppShell> {
           // Future, so by the time the answer came back the field had already
           // inserted the raw text — and inserting the wrapped form as well
           // pasted the equation TWICE.
-          _pasteImageIntoEditor();
-          return false; // never swallow the keystroke
+          //
+          // A box CUT from the canvas is different, and it is why this can
+          // swallow the keystroke: the blocks are in hand, so the decision
+          // needs no clipboard read and can be made before the field types
+          // anything. See [_pasteIntoEditor].
+          return _pasteIntoEditor();
         }
       }
       return false;
@@ -1190,6 +1194,50 @@ class _AppShellState extends State<AppShell> {
   /// image and text still pastes the text if the image read fails. In the
   /// normal case the image read wins the race by a frame and the text branch
   /// finds nothing to do.
+  /// Ctrl+V inside a box.
+  ///
+  /// A box cut or copied from the canvas pastes its WRITING here (the owner:
+  /// *"Id ideally like it to paste the contents of that box into the box im
+  /// currently editing"*) — but only when those boxes are the newer of the
+  /// two clipboards, by the same rule the canvas uses: the system still holds
+  /// exactly the text it held when they were copied, so nothing has been
+  /// copied since. Anything newer than that is what the person just chose.
+  ///
+  /// True swallows the keystroke, which only happens once the text is in.
+  /// Everything else returns false and the field's own paste runs: plain
+  /// text, and a picture through [_pasteImageIntoEditor], whose clipboard
+  /// read cannot be awaited here (see the caller).
+  bool _pasteIntoEditor() {
+    if (!app.canPasteBlocks || app.blockClipboardAsText() == null) {
+      _pasteImageIntoEditor();
+      return false;
+    }
+    // Synchronous as far as the field is concerned: a `Future` resolved
+    // before this frame's keystroke reaches the engine would still be too
+    // late, so the probe decides and the insert happens in its callback,
+    // while the keystroke itself is swallowed either way. Swallowing is safe
+    // because the fallback below does the plain-text paste itself.
+    unawaited(() async {
+      final probe = await probeClipboard();
+      if (!mounted) return;
+      final theirs = probe.kind == PasteResult.text ? probe.text : null;
+      if (await app.blockClipboardIsNewer(theirs) && mounted) {
+        if (app.pasteBlocksIntoText()) return;
+      }
+      if (!mounted) return;
+      // Not the boxes after all: do what the field would have done.
+      // Through the engine's own paste, so the formatters that turn pasted
+      // maths into maths still run and the undo step is the field's.
+      if (theirs != null && theirs.isNotEmpty) {
+        if (app.activeSession?.pasteFromClipboard() ?? false) return;
+        app.insertTextAtActiveCursor(theirs);
+      } else {
+        await _pasteImageIntoEditor();
+      }
+    }());
+    return true;
+  }
+
   Future<void> _pasteImageIntoEditor() async {
     final ae = app.activeEditor;
     if (ae == null) return;

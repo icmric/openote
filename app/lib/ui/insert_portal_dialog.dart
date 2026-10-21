@@ -7,6 +7,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
+import 'protect_dialog.dart' show confirmWindowOnto;
 
 /// Insert a live page window (EMBED-2): pick a page, then drag out the area of
 /// it to show — on a real rendering of the page, because choosing a region of
@@ -100,13 +101,24 @@ class _InsertPortalDialogState extends State<_InsertPortalDialog> {
         dense: true,
         visualDensity: VisualDensity.compact,
         contentPadding: EdgeInsets.only(left: 8.0 + n.level * 16, right: 8),
-        leading: const Icon(Icons.description_outlined, size: 15),
+        leading: Icon(
+            app.governingNode(n.id) == null
+                ? Icons.description_outlined
+                : Icons.lock_outline,
+            size: 15),
         title: Text(n.id == app.pageId ? '$title  (this page)' : title,
             style: const TextStyle(fontSize: 13)),
-        onTap: () => setState(() {
-          _pageId = n.id;
-          _sel = null;
-        }),
+        onTap: () async {
+          // The next step draws the page to pick an area from, so a page
+          // with a passcode asks for it first (bug 33).
+          if (!await confirmWindowOnto(context, app, n.id) || !mounted) {
+            return;
+          }
+          setState(() {
+            _pageId = n.id;
+            _sel = null;
+          });
+        },
       ));
     }
     return Column(

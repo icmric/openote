@@ -31,11 +31,32 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// Zoom keeping the given screen point fixed (style guide §8.2).
-  void zoomAt(Offset screenFocal, double factor) {
+  void zoomAt(Offset screenFocal, double factor) =>
+      zoomTo(screenFocal, scale * factor);
+
+  /// **Zoom to an absolute scale**, keeping [screenFocal] fixed.
+  ///
+  /// What a pinch wants. Asking for a FACTOR per sample compounds: a pinch
+  /// multiplied `d / lastD` into the scale on every move and re-based `lastD`
+  /// each time, so each sample's rounding was carried into the next and the
+  /// gesture drifted — the owner's *"zoom is jumpy"*. Worse, [scale] is
+  /// clamped and the base was re-based anyway, so pinching past the limit
+  /// consumed ratio that was never applied: fingers back where they started
+  /// left the page at a different zoom, and a pinch out and back in did not
+  /// return. Measured from the pinch's own start, both go away — the scale is
+  /// a pure function of how far apart the fingers are now.
+  void zoomTo(Offset screenFocal, double target) {
     _stopFollowing();
-    final newScale = (scale * factor).clamp(minScale, maxScale);
+    final next = target.clamp(minScale, maxScale);
+    if (next == scale) {
+      // Still notify: the focal point may have moved even where the scale
+      // could not, and a pinch at the limit must not freeze the page.
+      clampToPage();
+      notifyListeners();
+      return;
+    }
     final pageFocal = screenToPage(screenFocal);
-    scale = newScale;
+    scale = next;
     offset = screenFocal - pageFocal * scale;
     clampToPage();
     notifyListeners();

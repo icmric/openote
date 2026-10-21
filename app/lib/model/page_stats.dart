@@ -312,6 +312,7 @@ String _inlineText(String line) {
         // essay would count it once.
         out.write(' • ');
       case MdInline.colour:
+      case MdInline.highlightColour:
       case MdInline.boldItalic:
       case MdInline.bold:
       case MdInline.italic:

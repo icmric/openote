@@ -537,6 +537,7 @@ class AppState extends ChangeNotifier
   void reloadProtection() {
     _protectedIds.clear();
     _unlocked.clear();
+    _windowUnlocks.clear();
     if (notebookId == null) return;
     final prefix = 'protect:${notebookId!}:';
     for (final k in _repo.settingKeys()) {
@@ -630,10 +631,69 @@ class AppState extends ChangeNotifier
 
   /// Forget every unlock now — the "Lock now" action, and what shutdown does.
   void lockAll() {
-    if (_unlocked.isEmpty) return;
+    if (_unlocked.isEmpty && _windowUnlocks.isEmpty) return;
     _unlocked.clear();
+    _windowUnlocks.clear();
     _gateRevision++;
     notifyListeners();
+  }
+
+  // ── Windows onto pages with a passcode (v1.0.2 bug 33) ──────────────────
+  //
+  // A page window draws its source live, and nothing asked about the
+  // passcode: drag a locked page from the navigator onto any other page and
+  // its contents were there. The owner's rule for the fix: *"it requires a
+  // passcode to be able to view it before we insert/select a portion of the
+  // page to show, then require it again every time the page is opened to
+  // unlock the view."*
+  //
+  // So a window keeps its own unlocks, separate from [_unlocked], and they
+  // last for one visit to the page the window is on. Unlocking the section
+  // in the navigator does not open its windows elsewhere, and opening a
+  // window does not unlock the section: the two are different doors.
+
+  /// Passcode roots whose pages windows may show, on this visit to the page
+  /// they are on. Keyed by root, so one passcode opens every window onto the
+  /// pages it covers.
+  final Set<String> _windowUnlocks = {};
+
+  /// **Whether a window may show page [sourcePageId] now.**
+  ///
+  /// Always for a page with no passcode over it, and for the page you are
+  /// looking at — a window onto part of its own page shows nothing you cannot
+  /// already see beside it.
+  bool windowShows(String sourcePageId) {
+    if (sourcePageId == pageId) return true;
+    if (node(sourcePageId) == null) {
+      // In the recycle bin, a page is out of the tree, so nothing says which
+      // section it sat in — and that section may have a passcode. Unable to
+      // tell, a window shows one only where nothing in the notebook has one.
+      return !_anyProtection;
+    }
+    final root = governingNode(sourcePageId);
+    return root == null || _windowUnlocks.contains(root);
+  }
+
+  /// Try [passcode] for the windows onto [sourcePageId], for the rest of this
+  /// visit to the open page. Returns false — and changes nothing — when it
+  /// does not match.
+  bool unlockWindowsOnto(String sourcePageId, String passcode) {
+    final root = governingNode(sourcePageId);
+    if (root == null) return true;
+    final rec = protectionFor(root);
+    if (rec == null || !rec.matches(passcode)) return false;
+    _windowUnlocks.add(root);
+    _gateRevision++;
+    notifyListeners();
+    return true;
+  }
+
+  /// The name the passcode prompt for a window onto [sourcePageId] shows: the
+  /// thing whose passcode it is, which may be the section rather than the page.
+  String windowLockTitle(String sourcePageId) {
+    final root = governingNode(sourcePageId) ?? sourcePageId;
+    final t = nodes.where((n) => n.id == root).firstOrNull?.title.trim() ?? '';
+    return t.isEmpty ? 'This page' : t;
   }
 
   // ── Git as a sync transport (PLANNING: "git/github integration") ──────
@@ -5978,8 +6038,13 @@ class AppState extends ChangeNotifier
     return (r.start, r.end);
   }
 
-  /// **The colour run whose visible text is exactly [s, e)**, at any depth —
-  /// or null when the selection is not, by itself, a coloured run.
+  /// **The run of [kind] whose visible text is exactly [s, e)**, at any
+  /// depth — or null when the selection is not, by itself, such a run.
+  ///
+  /// [kind] is `colour` or `highlightColour`: the two are written the same
+  /// way (`{{#hex …}}` and `{{=hex …}}`) and want exactly the same search,
+  /// so they share it. Looking for one never finds the other, which is what
+  /// lets a word be coloured AND highlighted, each changed on its own.
   ///
   /// Descends the way [_runAround] does for the other marks: a colour run is
   /// found whatever is nested inside it or around it. "Exactly" is judged on
@@ -5988,7 +6053,8 @@ class AppState extends ChangeNotifier
   /// selected is that colour run, and `{{#c big word}}` with `word` selected
   /// is not, and gets a colour of its own inside it.
   static ({int open, int innerStart, int innerEnd, int end})? _colourRunFor(
-      TextEditingController c, String t, int s, int e) {
+      TextEditingController c, String t, int s, int e,
+      [MdInline kind = MdInline.colour]) {
     final lineStart = lineStartOf(t, s);
     final lineEnd = math.max(lineStart, lineEndOf(t, e));
     ({int open, int innerStart, int innerEnd, int end})? found;
@@ -5999,7 +6065,7 @@ class AppState extends ChangeNotifier
         final innerStart = base + m.start + k.openLen;
         final innerEnd = base + m.end - k.closeLen;
         if (s < innerStart || e > innerEnd) continue;
-        if (k.kind == MdInline.colour) {
+        if (k.kind == kind) {
           final (vs, ve) = _visible(c, innerStart, innerEnd);
           if (vs == s && ve == e) {
             // Keep the innermost: it is the colour on the screen.
@@ -6021,10 +6087,14 @@ class AppState extends ChangeNotifier
     return found;
   }
 
-  // Matches a whole wrapper as the entire selection: {{#hex inner}}.
-  static final _colorWholeRe = RegExp(
-      r'^\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\}\}$',
-      dotAll: true);
+  // Matches a whole wrapper as the entire selection: {{#hex inner}} for a
+  // colour, {{=hex inner}} for a highlight.
+  static final _wholeRunRe = {
+    for (final sigil in ['#', '='])
+      sigil: RegExp(
+          '^\\{\\{$sigil([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\\}\\}\$',
+          dotAll: true)
+  };
 
   /// **Colour the selection**, or clear it back to the default with
   /// `'auto'`.
@@ -6035,16 +6105,48 @@ class AppState extends ChangeNotifier
   /// imedietley clear how to set it to the auto colour"* — there was no
   /// way at all, and no way back off a colour except undo.
   void applyTextColor(String hex, {bool remember = true}) {
-    final ae = activeEditor;
-    if (ae == null) return;
     // A flick is not a choice: it leaves the pair exactly as it is, so
     // the toolbar goes on showing the colour somebody picked and
     // pressing the chord again comes back here with the same two to
     // swap between.
-    if (remember) {
+    if (remember && activeEditor != null) {
       if (!_sameColour(hex, lastColor)) prevColor = lastColor;
       lastColor = hex;
     }
+    _applyBraceRun(hex, sigil: '#', kind: MdInline.colour);
+  }
+
+  /// **Highlight the selection in [hex]**, or clear it with `'auto'`.
+  ///
+  /// Found while fixing GitHub #17 rather than reported: text colour has a
+  /// full picker and the highlighter was one hard-coded yellow, for an app
+  /// whose owner says *"Colour is a really important thing to me that we get
+  /// right"* and whose students highlight to triage a reading list.
+  ///
+  /// `==x==` still means the default yellow — it is in notes already and
+  /// every other Markdown tool understands it — and a chosen colour is
+  /// `{{=RRGGBB text}}`, the colour span's own shape with `=` for `#`. So
+  /// this is [applyTextColor] with one character changed, and the two share
+  /// every case below: re-highlight rather than nest, clear by taking the
+  /// markers away, and a selection that spans a whole wrapper rewritten in
+  /// place.
+  void applyHighlightColor(String hex, {bool remember = true}) {
+    if (remember && activeEditor != null && hex != 'auto') lastHighlight = hex;
+    _applyBraceRun(hex, sigil: '=', kind: MdInline.highlightColour);
+  }
+
+  /// The highlight colour the picker opens on. Not
+  /// `lastColor`'s pair: a highlight and an ink colour that chased each other
+  /// would be two features fighting over one field.
+  String lastHighlight = 'F7E27A';
+
+  /// The body of [applyTextColor] and [applyHighlightColor]. [sigil] is the
+  /// character after `{{` and [kind] the run it makes, which are the only
+  /// two things that differ.
+  void _applyBraceRun(String hex,
+      {required String sigil, required MdInline kind}) {
+    final ae = activeEditor;
+    if (ae == null) return;
     // `{{#…}}` in a code cell is not a colour, it is somebody's source.
     // The same guard [wrapSelection] carries, for the same reason.
     if (ae.block.type != BlockType.text) {
@@ -6081,7 +6183,7 @@ class AppState extends ChangeNotifier
     // its own: "no colour" has to find the run it is removing exactly as
     // precisely as a recolour does.
     final clearing = hex == 'auto';
-    final run = _colourRunFor(c, t, s, e);
+    final run = _colourRunFor(c, t, s, e, kind);
     if (run != null) {
       pushUndo();
       if (clearing) {
@@ -6092,7 +6194,7 @@ class AppState extends ChangeNotifier
         c.selection =
             TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
       } else {
-        final newOpen = '{{#$hex ';
+        final newOpen = '{{$sigil$hex ';
         c.text = t.replaceRange(run.open, run.innerStart, newOpen);
         final shift = newOpen.length - (run.innerStart - run.open);
         c.selection =
@@ -6105,7 +6207,7 @@ class AppState extends ChangeNotifier
 
     // Case B: the selection spans an ENTIRE wrapper — {{#oldhex inner}} —
     // e.g. selecting the coloured word including its markers. Rewrite it.
-    final whole = _colorWholeRe.firstMatch(t.substring(s, e));
+    final whole = _wholeRunRe[sigil]!.firstMatch(t.substring(s, e));
     if (whole != null) {
       pushUndo();
       final inner = whole.group(2)!;
@@ -6114,8 +6216,8 @@ class AppState extends ChangeNotifier
         c.selection =
             TextSelection(baseOffset: s, extentOffset: s + inner.length);
       } else {
-        c.text = t.replaceRange(s, e, '{{#$hex $inner}}');
-        final openLen = hex.length + 4; // '{{#' + hex + ' '
+        c.text = t.replaceRange(s, e, '{{$sigil$hex $inner}}');
+        final openLen = hex.length + 4; // '{{' + sigil + hex + ' '
         c.selection = TextSelection(
             baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
       }
@@ -6132,8 +6234,8 @@ class AppState extends ChangeNotifier
     }
     pushUndo();
     final selText = t.substring(s, e);
-    c.text = t.replaceRange(s, e, '{{#$hex $selText}}');
-    final openLen = hex.length + 4; // '{{#' + hex + ' '
+    c.text = t.replaceRange(s, e, '{{$sigil$hex $selText}}');
+    final openLen = hex.length + 4; // '{{' + sigil + hex + ' '
     c.selection = TextSelection(
         baseOffset: s + openLen, extentOffset: s + openLen + selText.length);
     _commitActiveEditor();
@@ -6143,7 +6245,14 @@ class AppState extends ChangeNotifier
   /// The colour the whole selection already carries, or null when it has
   /// none — or when the selection spans more than one, which is what stops a
   /// flick deciding on behalf of two.
-  String? get _selectionColor {
+  String? get _selectionColor => _selectionRunHex(MdInline.colour);
+
+  /// The highlight colour the whole selection carries, or null. What the
+  /// toolbar's highlight button shows, and what tells it whether there is a
+  /// highlight to take off.
+  String? get selectionHighlight => _selectionRunHex(MdInline.highlightColour);
+
+  String? _selectionRunHex(MdInline kind) {
     final ae = activeEditor;
     if (ae == null) return null;
     final c = ae.controller;
@@ -6152,10 +6261,43 @@ class AppState extends ChangeNotifier
     final t = c.text;
     final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
         math.max(sel.baseOffset, sel.extentOffset));
-    final run = _colourRunFor(c, t, s, e);
+    final run = _colourRunFor(c, t, s, e, kind);
     if (run == null) return null;
-    // '{{#' + the hex + ' '
+    // '{{' + the sigil + the hex + ' '
     return t.substring(run.open + 3, run.innerStart - 1);
+  }
+
+  /// **Is the selection highlighted at all** — in a colour, or with the
+  /// plain `==x==` the toolbar button has always written?
+  /// Either kind, from the ONE scan the toolbar already does for every other
+  /// button: [marksAtCaret] descends and records each kind it passes, so a
+  /// highlight nested inside a colour lights the button like anything else.
+  /// Asking [selectionHighlight] as well would be a second line scan on
+  /// every build of the command bar, which is keyed on this.
+  bool get selectionIsHighlighted {
+    final marks = marksAtCaret();
+    return marks.contains(MdInline.highlight) ||
+        marks.contains(MdInline.highlightColour);
+  }
+
+  /// The highlighter button: highlight in [lastHighlight], or take the
+  /// highlight off if there is one.
+  ///
+  /// No chord of its own — Ctrl+= is subscript, and the marker ladders are
+  /// the grammar's (see [markerChordLadders]), so `==` still toggles a plain
+  /// highlight from the keyboard exactly as it did.
+  ///
+  /// One button for both, because "highlight this" and "stop highlighting
+  /// this" are the same intention and nobody looks for two controls. The
+  /// plain `==x==` form is toggled by the mark machinery that has always
+  /// handled it, so a note written before colours came along toggles off
+  /// exactly as it used to.
+  void toggleHighlight() {
+    if (marksAtCaret().contains(MdInline.highlight)) {
+      wrapSelection('==');
+      return;
+    }
+    applyHighlightColor(selectionHighlight != null ? 'auto' : lastHighlight);
   }
 
   /// Two colours differing only in case or a leading `#` are one colour.
@@ -7100,6 +7242,130 @@ class AppState extends ChangeNotifier
     removeSelected();
   }
 
+  /// **What the copied boxes read as inside a paragraph**, or null when one
+  /// of them has no writing to put there.
+  ///
+  /// The owner: *"if i cut a box, begin editing another box and attempt to
+  /// paste it within another box, it just pastes whatever is in my clipboard.
+  /// Id ideally like it to paste the contents of that box into the box im
+  /// currently editing."*
+  ///
+  /// So a box pasted into a box becomes its writing: a paragraph's own text
+  /// (tables and pictures included), a code box as a fence, an equation as
+  /// `$$…$$`, a picture as its reference on a line of its own. Several boxes
+  /// paste in the order they sit on the page, blank line between, which is
+  /// how they read down the page already.
+  ///
+  /// **Null for a box with nothing to write**: handwriting, a graph, a board,
+  /// a page window, an attachment, a flashcard. There is no honest text for
+  /// those, and pasting the ones that do have text while quietly dropping the
+  /// rest would lose work. ALL or nothing — the caller says so and pastes
+  /// them on the canvas instead, which is where they can go.
+  ///
+  /// Atoms get fresh ids (Data Model §2 rule 3: an import mints), because the
+  /// payload is copied into the destination block beside its reference.
+  ({String text, Map<String, dynamic> atoms})? blockClipboardAsText() {
+    final raw = _blockClipboard;
+    if (raw == null) return null;
+    final List<Block> list;
+    try {
+      list = [
+        for (final j in (jsonDecode(raw) as List))
+          Block.fromJson((j as Map).cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return null;
+    }
+    if (list.isEmpty) return null;
+    // Reading order, the same sort the Markdown projection uses.
+    list.sort((a, b) {
+      final dy = a.y.compareTo(b.y);
+      return dy != 0 ? dy : a.x.compareTo(b.x);
+    });
+    final atoms = <String, dynamic>{};
+    final parts = <String>[];
+    for (final b in list) {
+      final part = _blockAsText(b, atoms);
+      if (part == null) return null;
+      if (part.trim().isNotEmpty) parts.add(part.trimRight());
+    }
+    if (parts.isEmpty) return null;
+    return (text: parts.join('\n\n'), atoms: atoms);
+  }
+
+  /// One box's writing, collecting any atoms into [atoms] under fresh ids.
+  /// Null when the box has none.
+  String? _blockAsText(Block b, Map<String, dynamic> atoms) {
+    switch (b.type) {
+      case BlockType.text:
+        var text = b.content['text'] as String? ?? '';
+        for (final a in InlineAtom.allIn(b.content).values) {
+          final fresh = newId();
+          atoms[fresh] = InlineAtom(id: fresh, type: a.type, content: a.content)
+              .toJson();
+          text = text.replaceAll(
+              '${InlineAtom.scheme}${a.id}', '${InlineAtom.scheme}$fresh');
+        }
+        return text;
+      case BlockType.code:
+        final lang = b.content['language'] as String? ?? '';
+        final src = b.content['source'] as String? ?? '';
+        return '```$lang\n$src\n```';
+      case BlockType.math:
+        final latex = b.content['latex'] as String? ?? '';
+        return latex.isEmpty ? '' : '\$\$\n$latex\n\$\$';
+      case BlockType.image:
+        // The in-flow form, which is the one shape a picture has on a page.
+        final blob = b.content['blob'] as String? ?? '';
+        if (blob.isEmpty) return '';
+        final w = b.w.round(), h = (b.h ?? 0).round();
+        final size = h > 0 ? ' =${w}x$h' : '';
+        return '![]($blob$size)';
+      case BlockType.table:
+        // A table BLOCK is the importer's shape; the app converts it to a
+        // paragraph carrying an atom on open, and that is what to paste.
+        final asText = tableBlockAsText(b, madeIn: kAppVersion);
+        return asText == null ? null : _blockAsText(asText, atoms);
+      case BlockType.ink:
+      case BlockType.graph:
+      case BlockType.board:
+      case BlockType.embed:
+      case BlockType.file:
+      case BlockType.flashcard:
+      case BlockType.substitute:
+      case BlockType.frame:
+        return null;
+      case BlockType.unknown:
+        // A box written by a NEWER Openote. Its `rawType` and content are
+        // carried through untouched (Data Model §3.2), and inventing text for
+        // something we cannot read would be the one way to lose it — so this
+        // refuses, and the caller pastes it on the canvas, where it survives.
+        return null;
+    }
+  }
+
+  /// **Paste the copied boxes INTO the paragraph being edited**, as writing.
+  /// False when there is nothing to paste or one of them has no text form
+  /// ([blockClipboardAsText]), so the caller can fall back.
+  bool pasteBlocksIntoText() {
+    final ae = activeEditor;
+    if (ae == null || ae.block.type != BlockType.text) return false;
+    final projected = blockClipboardAsText();
+    if (projected == null) return false;
+    // Atoms land in the destination block, beside the reference that names
+    // them — otherwise the paste would write a pointer to a payload nothing
+    // can reach.
+    if (projected.atoms.isNotEmpty) {
+      final existing = ae.block.content['atoms'];
+      ae.block.content['atoms'] = {
+        if (existing is Map) ...existing.cast<String, dynamic>(),
+        ...projected.atoms,
+      };
+    }
+    insertTextAtActiveCursor(projected.text);
+    return true;
+  }
+
   void pasteBlocks({Offset? at}) {
     final raw = _blockClipboard;
     if (raw == null) return;
@@ -8038,6 +8304,8 @@ class AppState extends ChangeNotifier
   Future<void> selectPage(String? id) async {
     _rememberView(); // keep your place when flicking between pages (§7a.5)
     await flushSave();
+    // A window onto a locked page asks again on every visit (bug 33).
+    if (id != pageId) _windowUnlocks.clear();
     pageId = id;
     select(null);
     _undo.clear();

@@ -12,6 +12,7 @@ import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
+import '../markdown/md_render.dart' show inlineHighlightColour;
 import '../math/evaluate.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
@@ -206,6 +207,12 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.canUndo,
         app.canRedo,
         app.lastColor,
+        // The highlighter's swatch, and whether its button is lit. Rendered,
+        // so the guard test is right to want them named — without them the
+        // row keeps the memoised frame and picking a highlight colour
+        // appears to do nothing.
+        app.lastHighlight,
+        app.selectionIsHighlighted,
         app.penButton,
         app.penInk,
         app.highlighterInk,
@@ -771,11 +778,13 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     // text will actually come out as, the same way the pen's own swatch does
     // (see [currentInkColor]). Painting it as the near-black it usually
     // becomes would advertise black while the text came out light.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // The highlighter's own swatch, drawn as the highlight will actually come
+    // out — alpha and all, which in dark mode is most of what it looks like.
+    final curHighlight = inlineHighlightColour(app.lastHighlight, dark);
     final lcv = int.tryParse(app.lastColor, radix: 16) ?? 0;
     final curColor = app.lastColor == 'auto'
-        ? (Theme.of(context).brightness == Brightness.dark
-            ? OnoteColors.moon100
-            : OnoteColors.graphite700)
+        ? (dark ? OnoteColors.moon100 : OnoteColors.graphite700)
         : app.lastColor.length == 8
             ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
             : Color(0xFF000000 | lcv);
@@ -806,8 +815,52 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           () => app.wrapSelection('~~'), MdInline.strike),
       fmt(Icons.code, l.barInlineCode, () => app.wrapSelection('`'),
           MdInline.code),
-      fmt(Icons.border_color, l.barHighlight, () => app.wrapSelection('=='),
-          MdInline.highlight),
+      // Highlight — a split button like the text colour beside it: the main
+      // area highlights in the current colour (or takes the highlight off),
+      // the arrow opens the picker. It was one fixed yellow, which for an app
+      // whose students highlight to triage a reading list is half a feature.
+      Tooltip(
+        message: l.barHighlight,
+        child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
+          borderRadius: BorderRadius.circular(6),
+          onTap: canFormat ? app.toggleHighlight : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.border_color,
+                  size: 18,
+                  color: !canFormat
+                      ? context.surfaces.textSecondary
+                      : app.selectionIsHighlighted
+                          ? Theme.of(context).colorScheme.primary
+                          : null),
+              Container(
+                  width: 18,
+                  height: 3,
+                  margin: const EdgeInsets.only(top: 1),
+                  color:
+                      canFormat ? curHighlight : context.surfaces.textSecondary),
+            ]),
+          ),
+        ),
+      ),
+      InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        borderRadius: BorderRadius.circular(4),
+        onTap: canFormat
+            ? () async {
+                // No Automatic entry: a highlight has no "whatever contrasts
+                // with the page" answer — it IS the thing behind the text.
+                // Taking one off is the button beside this one.
+                final hex = await showOnoteColorPicker(context, app,
+                    initial: app.lastHighlight, allowAuto: false);
+                if (hex != null) app.applyHighlightColor(hex);
+              }
+            : null,
+        child: Icon(Icons.arrow_drop_down,
+            size: 18, color: canFormat ? null : context.surfaces.textSecondary),
+      ),
       const _Div(),
       fmt(Icons.title, l.barHeading1, () => app.toggleLinePrefix('# ')),
       _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),

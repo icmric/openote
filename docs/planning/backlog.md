@@ -342,6 +342,59 @@ rather than left as the reason a layout changed.
     ([v1.0.2 §25](v1.0.2.md#25-the-command-bar) option C). Its home is a
     Keyboard group split out of Help, where the shortcut reference already is.
 
+### 1.18 Say when a note holds something this build cannot read · **M**
+
+The owner, on shipping `{{=RRGGBB text}}` for coloured highlights knowing an
+older Openote shows the braces as text:
+
+> *"Its fine if older versions just show the raw markdown, thats annoying but
+> not a breaking bug, and no one is at this stage forced to stay on an older
+> version due to lack of support AFAIK. That is the best case scenario for not
+> handling something in an older version ... however ideally it should always
+> just display the raw text like that if its something small or otherwise
+> easily shown as raw text, otherwise just get hidden but kept and not touched
+> so that when they update it all appears. Maybe displaying a message like
+> 'unknown element, check for an available update' would be helpful instead of
+> fully hiding it, although that adds a lot of complexity and i dont think is
+> worth doing for this release as it is something i want to plan out the
+> implementation more before doing."*
+
+**So the rule, in the order it is wanted**, and it is worth writing down
+because it is already most of what the format does:
+
+1. **Small and readable as text → show the raw text.** What an inline run
+   does today: a build with no `{{=…}}` draws the characters. Annoying,
+   never lossy, and it costs nothing.
+2. **Otherwise → keep it, draw nothing, change nothing.** What a block does
+   today: `Block.rawType` and `unknownFields` carry a type this build has
+   never heard of through every read and write (Data Model §3.2), and the
+   canvas draws "Unsupported block: …".
+3. **Better than silence → say an update would show it.** Not built, and the
+   part that needs designing.
+
+**What makes (3) more than a string.** There is no inventory of what a file
+can contain, so nothing can currently tell "a thing from the future" from
+"a thing we chose not to draw" (`frame`, a `file` with no viewer) or from a
+typo. The pieces it would need:
+
+- **A format feature list in the container.** `notebook_meta` already carries
+  `features: []`, written and never read. A writer adding a new construct
+  records its name; a reader that does not know a name there knows, before it
+  opens a page, that something in this notebook is newer than it is.
+- **One notice per notebook, not per block.** A deck annotated on a newer
+  build could be fifty unknown blocks, and fifty cards saying the same
+  sentence is worse than the silence. The status bar is where "this notebook
+  was written by a newer Openote" already goes (`notebookIsReadOnly`), and
+  that wording is the precedent to match.
+- **A decision about inline runs**, which is where it gets hard: an unknown
+  `{{?hex x}}` is indistinguishable from somebody typing braces, so the
+  honest answer there may stay (1) for ever.
+
+Until then the two rules that hold are (1) and (2), and every new construct
+should be able to say which one it relies on. The coloured highlight relies
+on (1); `board`, `graph` and `substitute` each relied on (2) when they
+shipped.
+
 ---
 
 ## 2. Structural, blocked on a decision
