@@ -62,6 +62,37 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// **One sample of a pinch**: put [anchorPage] under [screenFocal] at
+  /// [target].
+  ///
+  /// [zoomTo] cannot do this, and the difference is the whole of *"it does
+  /// zoom but it does not zoom clearly or well"*. It derives its anchor from
+  /// whatever is under the focal point AT THAT MOMENT, which for a pinch is a
+  /// different piece of page on every sample — the fingers move, so the
+  /// midpoint moves, so the thing being held still keeps changing identity.
+  /// The page therefore does not travel with the fingers (the pan half of the
+  /// gesture is thrown away) while the zoom centre wanders, and at the page
+  /// edges [clampToPage] shifts the offset that the NEXT sample reads its
+  /// anchor from, so the wander accumulates.
+  ///
+  /// Here the anchor is a page point decided once, when the second finger
+  /// landed, and every sample is computed from it: the scale from how far
+  /// apart the fingers are now, the offset so that one page point sits under
+  /// where the fingers are now. Zoom and pan fall out of the same two
+  /// numbers, nothing compounds, and clamping is re-derived rather than
+  /// accumulated.
+  ///
+  /// Unlike [zoomTo] this moves the page even when the scale cannot change,
+  /// which is what lets two fingers pan at the zoom limits instead of the
+  /// page freezing under them.
+  void zoomAnchored(Offset screenFocal, Offset anchorPage, double target) {
+    _stopFollowing();
+    scale = target.clamp(minScale, maxScale);
+    offset = screenFocal - anchorPage * scale;
+    clampToPage();
+    notifyListeners();
+  }
+
   /// Restore an exact view (used by PDF export).
   void jumpTo(double s, Offset o) {
     _stopFollowing();

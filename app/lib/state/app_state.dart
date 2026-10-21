@@ -4811,6 +4811,21 @@ class AppState extends ChangeNotifier
   /// culling, marquee hit-testing, and content bounds).
   final Map<String, Size> renderSizes = {};
 
+  /// **A two-finger pinch is under way, so blocks stand down.**
+  ///
+  /// A finger dragged over a box pans the page (v1.0.2 bug 8) and the box's
+  /// own `Listener` does that panning, because the box claimed the pointer
+  /// and the canvas never sees it. With a second finger down that is a second
+  /// navigation fighting the pinch — one finger panning at screen speed while
+  /// the other zooms — which is the owner's *"it getting confused with
+  /// multiple inputs and just registering one or the other as it jumps all
+  /// over the place"*.
+  ///
+  /// Set by `PageCanvas` for the life of the gesture. Not a notifier: it is
+  /// read inside a pointer handler that is already running, and a rebuild per
+  /// finger-down would be a cost with nothing to show.
+  bool pinching = false;
+
   /// Pointer ids claimed by block widgets this gesture, so the canvas-level
   /// handler ignores them (see BlockView / PageCanvas).
   final Set<int> claimedPointers = {};

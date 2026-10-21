@@ -327,6 +327,14 @@ class _BlockViewState extends State<BlockView> {
         !editing &&
         !_pressTookGroup &&
         !_locked) {
+      // **Not while a pinch is on.** Two fingers mean navigation, and the
+      // canvas is already doing it from both of them — panning from this one
+      // as well is two navigations at once, which is what made zooming jump
+      // around. See [AppState.pinching].
+      if (app.pinching) {
+        _touchPanning = false;
+        return;
+      }
       if (!_touchPanning && (e.position - from).distance < 4) return;
       _touchPanning = true;
       widget.controller.panBy(e.delta);
@@ -417,6 +425,10 @@ class _BlockViewState extends State<BlockView> {
   /// which is the owner's *"tie the original click point of the box to the
   /// cursor position"* for all grab points at once.
   void _drag(DragUpdateDetails d) {
+    // A pinch has taken over: two fingers are navigating, and one of them
+    // happens to be on this bar. Moving the box as well would move it under
+    // the zoom. See [AppState.pinching].
+    if (app.pinching) return;
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
