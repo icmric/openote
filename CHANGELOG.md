@@ -4,6 +4,55 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a page you locked can be unlocked again
+
+- **"Every time it is opened" works.** If you chose that when setting a
+  passcode, the page could never be opened again — the right passcode was
+  accepted and the lock screen came straight back. The other three choices
+  were unaffected. It has been that way since passcodes arrived.
+- **The warning when you lock something is shorter, and says beta.** It still
+  tells you the two things that matter — anyone with your notebook file can
+  read the page, and a forgotten passcode cannot be recovered — but it no
+  longer reads as though that is permanent. Real encryption is planned.
+
+### Fixed — a dragged box keeps up with the cursor
+
+- **Boxes move with the pointer at every zoom level.** Zoomed out they ran
+  ahead of it, zoomed in they lagged behind — the further from 100% the worse
+  it got. Resize handles had the same fault and are fixed with it.
+
+### Fixed — touch zoom
+
+- **Two fingers zoom even when one is on a box**, which on a page of notes is
+  most of the time. Before, one finger scrolled and the other zoomed, and the
+  page lurched between them instead of zooming at all.
+- **The zoom holds the point you started on** instead of drifting as your
+  fingers move, and the page travels with them, so a pinch that also slides
+  does both. Pinching slowly used to be worse than pinching quickly; now they
+  are the same.
+- **Two fingers still pan at the furthest zoom in or out**, where the page
+  used to freeze under them.
+
+### Fixed — pasting a box into a box
+
+- **The caret ends up after what you pasted.** Pasting a box that ends in a
+  picture left it inside the picture's reference, where the next key you
+  pressed would turn the picture back into a long code.
+- **One Ctrl+Z undoes the paste**, and it takes the pasted picture's or
+  table's data with it. Undo used to need more than one press, and could
+  leave the data behind.
+- **Ctrl+V pastes the box you cut** even when your clipboard also holds a
+  picture with text beside it — copied from a web page or a document, which is
+  the usual case. It pasted the picture instead.
+- **Undo while writing in a box no longer closes the box.**
+
+### Changed — clicking a colour applies it
+
+- **The colour pickers apply on the click.** Pick a colour and it is used;
+  there is no second button to press. If you have opened "Mix your own
+  colour", a swatch loads into the mixer instead so you can adjust it — and
+  clicking the same one again applies it.
+
 ### Added — highlight in any colour
 
 - **The highlighter has a colour picker**, like the text colour beside it.
