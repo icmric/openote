@@ -1394,6 +1394,9 @@ class LEs extends L {
   String get settingsTheme => 'Tema';
 
   @override
+  String get settingsThemeAppearance => 'Apariencia';
+
+  @override
   String get settingsThemeDark => 'Oscuro';
 
   @override

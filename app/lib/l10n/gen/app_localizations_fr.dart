@@ -1401,6 +1401,9 @@ class LFr extends L {
   String get settingsTheme => 'Thème';
 
   @override
+  String get settingsThemeAppearance => 'Apparence';
+
+  @override
   String get settingsThemeDark => 'Sombre';
 
   @override

@@ -2309,6 +2309,12 @@ abstract class L {
   /// **'Theme'**
   String get settingsTheme;
 
+  /// Row label: which built-in appearance the app wears (theme catalogue).
+  ///
+  /// In en, this message translates to:
+  /// **'Appearance'**
+  String get settingsThemeAppearance;
+
   /// Theme choice: pale text on a dark page.
   ///
   /// In en, this message translates to:

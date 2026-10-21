@@ -54,6 +54,7 @@ import '../update/app_update.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
 import '../math/math_editor.dart';
+import '../theme/appearances.dart';
 import '../theme/tokens.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
@@ -5601,6 +5602,27 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// The concrete appearance the student has chosen, from the built-in
+  /// catalogue ([appearances]). Separate from [themeMode], which stays
+  /// exactly what it was: Auto/Light/Dark says WHICH family serves, this
+  /// says which appearance WITHIN that family — today one of two, later the
+  /// True Black and high-contrast entries #12 asks for. The default is the
+  /// light appearance, which is what the app has always opened in.
+  OnoteAppearance appearance = appearances.first;
+
+  /// Choose an appearance, if it is in the catalogue. Returns false and
+  /// changes nothing for an unknown id, so a settings string from a
+  /// different version cannot leave the app holding an appearance it cannot
+  /// paint with — the same defensive read [init] applies on the way in.
+  bool setAppearance(String id) {
+    final a = appearances.where((x) => x.id == id).firstOrNull;
+    if (a == null || a == appearance) return a == appearance;
+    appearance = a;
+    _repo.setSetting('appearanceId', a.id);
+    notifyListeners();
+    return true;
+  }
+
   /// The language, when the student has picked one; **null means follow the
   /// computer**, which is the default and what almost everybody wants.
   ///
@@ -6967,6 +6989,10 @@ class AppState extends ChangeNotifier
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
+    // An appearance id this build does not know (a newer Openote wrote it)
+    // falls back to the default rather than crashing — appearanceById's own
+    // rule, same as the themeMode read above it.
+    appearance = appearanceById(_repo.getSetting('appearanceId') as String?);
     uiLocale = parseLocale(_repo.getSetting('uiLocale') as String?);
     final nsw = _repo.getSetting('navSectionsW');
     if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);

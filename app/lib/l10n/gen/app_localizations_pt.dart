@@ -1395,6 +1395,9 @@ class LPt extends L {
   String get settingsTheme => 'Tema';
 
   @override
+  String get settingsThemeAppearance => 'Aparência';
+
+  @override
   String get settingsThemeDark => 'Escuro';
 
   @override

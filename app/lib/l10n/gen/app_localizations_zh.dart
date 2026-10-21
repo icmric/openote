@@ -1339,6 +1339,9 @@ class LZh extends L {
   String get settingsTheme => '主题';
 
   @override
+  String get settingsThemeAppearance => '外观';
+
+  @override
   String get settingsThemeDark => '深色';
 
   @override
