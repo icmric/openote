@@ -309,4 +309,163 @@ void main() {
       expect(app.blocks.length, before + 1);
     });
   });
+
+  // -- Where the caret ends up -------------------------------------------
+  //
+  // The owner, on the paste shipped in v1.0.2: *"the image got pasted in
+  // twice, I also had to press undo a couple of times before anything
+  // happened ... so it seems like there is a bug with extracting content and
+  // pasting it in."*
+  //
+  // The projection was right; the caret was not. `insertTextAtActiveCursor`
+  // set the text and then the caret in TWO value assignments, and the
+  // controller's guards read the selection — so the first assignment (whose
+  // selection Flutter's own `.text` setter invalidates) could not move the
+  // caret, and the second computed it against text the guards had since
+  // changed. Measured before the fix: pasting a box ending in a picture left
+  // the caret at the START of that picture's reference, one keystroke from
+  // "the image disapears but the hash appears".
+  group('the caret after a paste', () {
+    /// A picture reference the way a box holds one.
+    String pic(String tail, {String size = '=90x60'}) =>
+        '![](sha256:${'ab' * 32}$tail $size)';
+
+    test('lands after the pasted writing', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      cut([add(BlockType.text, {'text': 'osmosis'})]);
+      final host = editing('Notes: ', caret: 7);
+      expect(app.pasteBlocksIntoText(), isTrue);
+      expect(app.activeEditor!.controller.text, 'Notes: osmosis');
+      expect(app.activeEditor!.controller.selection.baseOffset, 14);
+      expect(host.content['text'], 'Notes: osmosis');
+    });
+
+    test('and after it when the picture rule had to add a line break', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The host is a picture on its own line and the caret is at its end, so
+      // the pasted words have to be given a line of their own — which shifts
+      // every offset after the break, the caret included.
+      cut([add(BlockType.text, {'text': 'just words'})]);
+      final ref = pic('');
+      editing(ref, caret: ref.length);
+      expect(app.pasteBlocksIntoText(), isTrue);
+      final c = app.activeEditor!.controller;
+      expect(c.text, '$ref\njust words');
+      expect(c.selection.baseOffset, c.text.length,
+          reason: 'after the pasted words, not one short of them');
+    });
+
+    test('never INSIDE the reference of a pasted picture', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // This is the one that mattered: the caret landed at `o.start` of the
+      // picture it had just pasted. Typing there splices a character into the
+      // reference, it stops matching, and the picture becomes its own hash.
+      final src = pic('cd', size: '=120x80');
+      cut([
+        add(BlockType.text, {'text': 'some words\n$src'})
+      ]);
+      final hostRef = pic('ff');
+      editing(hostRef, caret: hostRef.length);
+      expect(app.pasteBlocksIntoText(), isTrue);
+      final c = app.activeEditor!.controller;
+      expect(c.text, '$hostRef\nsome words\n$src');
+      expect(c.selection.baseOffset, c.text.length);
+      // And both pictures are whole.
+      expect(RegExp(r'!\[\]\(sha256:').allMatches(c.text), hasLength(2));
+    });
+  });
+
+  // -- One undo step, and it takes the payloads with it ------------------
+  group('undoing a paste', () {
+    test('gives back the text AND the atoms the paste brought', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The undo point used to be taken INSIDE the insert, which runs after
+      // the atoms are written — so the snapshot Ctrl+Z restored already had
+      // the pasted payloads in it, and undo left a table's data behind in the
+      // destination block for good.
+      const atomId = 'atom-1';
+      cut([
+        add(BlockType.text, {
+          'text': 'see ![t](${InlineAtom.scheme}$atomId) there',
+          'atoms': {
+            atomId: const InlineAtom(
+                id: atomId,
+                type: 'table',
+                content: {'rows': <dynamic>[]}).toJson(),
+          },
+        })
+      ]);
+      final host = editing('Notes: ', caret: 7);
+      expect(app.pasteBlocksIntoText(), isTrue);
+      expect(InlineAtom.allIn(host.content), isNotEmpty,
+          reason: 'precondition: the payload came with it');
+
+      app.undo();
+      final back = app.blocks.firstWhere((b) => b.id == host.id);
+      expect(back.content['text'], 'Notes: ');
+      expect(InlineAtom.allIn(back.content), isEmpty,
+          reason: 'no payload left pointing at nothing');
+    });
+
+    test('is ONE step, not two', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      cut([add(BlockType.text, {'text': 'osmosis'})]);
+      final host = editing('Notes: ', caret: 7);
+      final deep = app.canUndo;
+      expect(app.pasteBlocksIntoText(), isTrue);
+      app.undo();
+      expect(app.blocks.firstWhere((b) => b.id == host.id).content['text'],
+          'Notes: ');
+      expect(app.canUndo, deep, reason: 'the paste added exactly one step');
+    });
+
+    test('keeps the caret in the box you were writing in', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Ctrl+Z inside a box is this stack's step now, so it must not throw
+      // you out of the box — `TextBlockView` re-seeds the open session from
+      // the restored block.
+      cut([add(BlockType.text, {'text': 'osmosis'})]);
+      final host = editing('Notes: ', caret: 7);
+      expect(app.pasteBlocksIntoText(), isTrue);
+      app.undo();
+      expect(app.editingBlockId, host.id);
+      expect(app.selectedBlockId, host.id);
+    });
+
+    test('NEGATIVE CONTROL: a box that is not in the step does not reopen',
+        () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Undoing back past the box's own creation: there is nothing to edit,
+      // and `editingBlockId` must not survive as a name for a box that is
+      // no longer on the page.
+      app.pushUndo(); // a page without the box
+      final host = editing('Notes: ', caret: 7);
+      expect(app.editingBlockId, host.id, reason: 'precondition');
+      app.undo();
+      expect(app.blocks.any((b) => b.id == host.id), isFalse,
+          reason: 'the step being restored never had it');
+      expect(app.editingBlockId, isNull);
+    });
+  });
+
+  // -- Which clipboard is the newer one ----------------------------------
+  group('the newer-clipboard check', () {
+    test('compares the plain text the clipboard holds, on both sides',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `probeClipboard` reports `text: null` for a clipboard holding an
+      // IMAGE — correctly, because an image is what would paste — but the
+      // snapshot taken when the boxes were copied reads the plain text
+      // unconditionally. Feeding this the kind's `text` therefore compared
+      // null against the text that was really there, ruled the boxes stale,
+      // and pasted the clipboard's picture instead of the box just cut. It
+      // takes `plainText` now: the same question on both sides.
+      app.readSystemClipboardText = () async => 'what was there';
+      cut([add(BlockType.text, {'text': 'osmosis'})]);
+      expect(await app.blockClipboardIsNewer('what was there'), isTrue);
+      expect(await app.blockClipboardIsNewer(null), isFalse,
+          reason: 'null is not "the same text"; it is a different clipboard');
+      expect(await app.blockClipboardIsNewer('something newer'), isFalse);
+    });
+  });
 }

@@ -327,6 +327,14 @@ class _BlockViewState extends State<BlockView> {
         !editing &&
         !_pressTookGroup &&
         !_locked) {
+      // **Not while a pinch is on.** Two fingers mean navigation, and the
+      // canvas is already doing it from both of them — panning from this one
+      // as well is two navigations at once, which is what made zooming jump
+      // around. See [AppState.pinching].
+      if (app.pinching) {
+        _touchPanning = false;
+        return;
+      }
       if (!_touchPanning && (e.position - from).distance < 4) return;
       _touchPanning = true;
       widget.controller.panBy(e.delta);
@@ -390,7 +398,37 @@ class _BlockViewState extends State<BlockView> {
       HardwareKeyboard.instance.isControlPressed ||
       HardwareKeyboard.instance.isMetaPressed;
 
+  /// **[d.delta] is in PAGE units, and every caller owes it that.**
+  ///
+  /// This used to divide by the zoom, and the box then moved at the wrong
+  /// speed at every zoom but 1: the owner, *"if i am zoomed out the boxes
+  /// will move considerably faster than my mouse when dragging them, and move
+  /// slower than my mouse when zoomed in on them."* Measured: 750 page units
+  /// travelled at 0.4x where 300 keeps up with the cursor.
+  ///
+  /// A `BlockView` is built inside the canvas's
+  /// `Transform(transform: controller.matrix)`, and a gesture recognizer
+  /// reports `DragUpdateDetails.delta` from `PointerEvent.localDelta` — local
+  /// to the detector, so the framework's own hit-test transform has ALREADY
+  /// divided it by the zoom. Dividing again double-counts.
+  ///
+  /// The division is right elsewhere, which is what made it look right here:
+  /// `PageCanvas`'s own `Listener` sits outside the transform and measures in
+  /// screen pixels. So the coordinate system cannot be inferred from "we are
+  /// in the canvas" — it is a property of the widget the gesture is attached
+  /// to, and this one is inside. Anything handing a SCREEN delta to this
+  /// (the long-press path, which reports a cumulative global offset) converts
+  /// first; `_longPressMove` does it by reading the local offset instead.
+  ///
+  /// Nothing has to remember where the box was grabbed: moving it BY the
+  /// pointer's travel keeps every point of it under whatever was over it,
+  /// which is the owner's *"tie the original click point of the box to the
+  /// cursor position"* for all grab points at once.
   void _drag(DragUpdateDetails d) {
+    // A pinch has taken over: two fingers are navigating, and one of them
+    // happens to be on this bar. Moving the box as well would move it under
+    // the zoom. See [AppState.pinching].
+    if (app.pinching) return;
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
@@ -399,11 +437,11 @@ class _BlockViewState extends State<BlockView> {
     // Read per MOVE, not at drag start: the whole point is that pressing or
     // releasing the key part way through a drag changes what happens next.
     app.snapOverride = _modeOverrideHeld;
-    final scale = widget.controller.scale;
-    app.moveSelectedBy(d.delta.dx / scale, d.delta.dy / scale);
+    app.moveSelectedBy(d.delta.dx, d.delta.dy);
     // Alignment guides (CANVAS-7). Computed after the move so the guide
     // reflects where the block actually is, and the snap nudges it flush.
-    app.updateAlignGuides(scale);
+    // The scale is the guide's own tolerance, not a conversion.
+    app.updateAlignGuides(widget.controller.scale);
   }
 
   void _dragEnd(DragEndDetails d) {
@@ -456,7 +494,9 @@ class _BlockViewState extends State<BlockView> {
     _bodyDragMoves = false;
   }
 
-  /// Long-press reports a cumulative offset, not a delta.
+  /// Long-press reports a cumulative offset, not a delta — and the LOCAL one
+  /// is read, so the delta handed to [_drag] is in page units like every
+  /// other caller's.
   Offset _lastLongPress = Offset.zero;
 
   void _longPressStart(LongPressStartDetails d) {
@@ -465,8 +505,8 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _longPressMove(LongPressMoveUpdateDetails d) {
-    final delta = d.offsetFromOrigin - _lastLongPress;
-    _lastLongPress = d.offsetFromOrigin;
+    final delta = d.localOffsetFromOrigin - _lastLongPress;
+    _lastLongPress = d.localOffsetFromOrigin;
     _drag(DragUpdateDetails(globalPosition: d.globalPosition, delta: delta));
   }
 
@@ -604,17 +644,18 @@ class _BlockViewState extends State<BlockView> {
       app.pushUndo();
       _resizeUndoPushed = true;
     }
-    final scale = widget.controller.scale;
+    // Page units, for the reason [_drag] gives: the grips are inside the
+    // canvas's transform, so their deltas already are.
     final oldW = b.w;
     final oldH = b.h ?? app.renderSizes[b.id]?.height;
 
     if (width) {
       // Manual resize locks the width (text boxes stop auto-growing).
       if (b.type == BlockType.text) b.content['autoWidth'] = false;
-      b.w = (b.w + d.delta.dx / scale).clamp(80.0, 4000.0);
+      b.w = (b.w + d.delta.dx).clamp(80.0, 4000.0);
     }
     if (height && oldH != null) {
-      b.h = (oldH + d.delta.dy / scale).clamp(40.0, 4000.0);
+      b.h = (oldH + d.delta.dy).clamp(40.0, 4000.0);
     }
 
     if (b.type == BlockType.ink) {

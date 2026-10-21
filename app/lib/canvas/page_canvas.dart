@@ -235,6 +235,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// STARTED — not last sample. See [CanvasController.zoomTo].
   double? _pinchBaseDist;
   double _pinchBaseScale = 1;
+
+  /// The page point the pinch holds still — decided when the second finger
+  /// landed. See [CanvasController.zoomAnchored].
+  Offset _pinchAnchorPage = Offset.zero;
   double _pzLastScale = 1.0;
 
   /// The pointer of a trackpad pan/pinch a block has claimed for itself
@@ -989,6 +993,11 @@ class _PageCanvasState extends State<PageCanvas> {
     final pts = _touches.values.toList();
     _pinchBaseDist = (pts[0] - pts[1]).distance;
     _pinchBaseScale = controller.scale;
+    _pinchAnchorPage = controller.screenToPage((pts[0] + pts[1]) / 2);
+    // Blocks stand down for the rest of the gesture: a finger on a box pans
+    // the page by itself (bug 8), and with a pinch under way that is a second
+    // navigation fighting this one. See [AppState.pinching].
+    app.pinching = true;
   }
 
   /// One pinch sample. True when it did the zooming, so each caller knows
@@ -1002,7 +1011,8 @@ class _PageCanvasState extends State<PageCanvas> {
     final pts = _touches.values.toList();
     final d = (pts[0] - pts[1]).distance;
     if (d <= 0) return false;
-    controller.zoomTo((pts[0] + pts[1]) / 2, _pinchBaseScale * d / base);
+    controller.zoomAnchored((pts[0] + pts[1]) / 2, _pinchAnchorPage,
+        _pinchBaseScale * d / base);
     setState(() {});
     return true;
   }
@@ -1030,6 +1040,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _endOrRebasePinch() {
     if (_touches.length < 2) {
       _pinchBaseDist = null;
+      app.pinching = false;
     } else {
       _beginPinch();
     }
@@ -1171,6 +1182,26 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.pan;
       return;
     }
+    // **Every finger is counted, claimed or not.** A block claims its
+    // pointers so the canvas keeps its hands off that gesture, and this used
+    // to be read before the touch was recorded — so a pinch with one finger
+    // on a box was never a pinch at all. The canvas saw ONE finger and panned
+    // with it, the box saw its own and panned with that, and the owner got
+    // *"it getting confused with multiple inputs and just registering one or
+    // the other as it jumps all over the place"*. Two fingers always mean
+    // navigation, and a box is most of the page, so this is the common case
+    // rather than a corner of it.
+    //
+    // The claim still decides what ONE finger does. It is only overruled by
+    // the second one.
+    if (e.kind == PointerDeviceKind.touch) {
+      _touches[e.pointer] = e.localPosition;
+      if (_touches.length == 2) {
+        _beginPinch();
+        _mode = _DragMode.none;
+        return;
+      }
+    }
     if (claimed) return; // a block, the title band or the bar owns this one
 
     final pagePt = controller.screenToPage(e.localPosition);
@@ -1197,15 +1228,6 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return;
     }
-    if (e.kind == PointerDeviceKind.touch) {
-      _touches[e.pointer] = e.localPosition;
-      if (_touches.length == 2) {
-        _beginPinch();
-        _mode = _DragMode.none;
-        return;
-      }
-    }
-
     final inkHit = _hitInk(pagePt);
     if (inkHit != null) {
       if (!app.selectedIds.contains(inkHit)) {
@@ -1225,7 +1247,11 @@ class _PageCanvasState extends State<PageCanvas> {
   void _selectMove(PointerMoveEvent e) {
     if (_touches.containsKey(e.pointer)) {
       _touches[e.pointer] = e.localPosition;
-      if (_touches.length == 2 && _pinchMove()) return;
+      // Two or more: the pinch owns the gesture, whoever claimed the press.
+      if (_touches.length >= 2) {
+        _pinchMove();
+        return;
+      }
     }
     final delta = e.localPosition - _lastScreen;
     _lastScreen = e.localPosition;
@@ -1918,9 +1944,21 @@ class _PageCanvasState extends State<PageCanvas> {
         onPointerDown: (e) {
           // The scroll bar claims its pointers; the pen must not draw a
           // stroke behind it.
-          if (app.claimedPointers.remove(e.pointer)) return;
+          final inkClaimed = app.claimedPointers.remove(e.pointer);
           _noteStylus(e);
           _noteEraser(e.localPosition);
+          // **A second finger is navigation** whatever is in your hand, and
+          // whatever claimed the first one — see the note in [_selectDown].
+          // Checked before the claim, so a pinch with a finger on a box is
+          // still a pinch, and before the pen's own handling, so the first
+          // finger's half-drawn stroke goes rather than being left on the
+          // page as a stray mark.
+          if (e.kind == PointerDeviceKind.touch && _touches.isNotEmpty) {
+            _cancelWetStroke();
+            _touchDown(e);
+            return;
+          }
+          if (inkClaimed) return;
           // Something selected is something picked up, and a drag on it moves
           // it whatever is in your hand. A press anywhere else has just put it
           // down. See [_selectionTakes].
@@ -1929,20 +1967,13 @@ class _PageCanvasState extends State<PageCanvas> {
             _inkDown(e);
             return;
           }
-          _touches[e.pointer] = e.localPosition;
-          if (_touches.length > 1) {
-            // The first finger may already be mid-stroke; a pinch is not a
-            // drawing, so drop it rather than leaving a stray mark.
-            _cancelWetStroke();
-            _touchDown(e);
-            return;
-          }
+          // One finger: draw with it, or navigate with it, as the setting and
+          // the pen's presence decide. `_touchDraws` counts the touches
+          // already down, so it is asked with this one NOT yet recorded.
           if (_touchDraws()) {
-            _touches.remove(e.pointer); // it's a drawing pointer, not a gesture
             _inkDown(e);
           } else {
-            _touches.remove(e.pointer); // _touchDown re-adds and sets up pinch
-            _touchDown(e);
+            _touchDown(e); // records it, and sets up the pinch it may become
           }
         },
         onPointerMove: (e) {
@@ -1981,6 +2012,12 @@ class _PageCanvasState extends State<PageCanvas> {
             app.setDragging(false);
           }
           _touches.remove(e.pointer);
+          // A cancelled finger ends the pinch like a lifted one. Without this
+          // `app.pinching` stayed true and every block on the page went on
+          // refusing to navigate — the shape of the stale-flag bug
+          // `_selectCancel` was written for, which is where a cancelled touch
+          // comes from in the first place.
+          _endOrRebasePinch();
           _gestureErase = false;
           _noteEraser(null);
           _cancelWetStroke();

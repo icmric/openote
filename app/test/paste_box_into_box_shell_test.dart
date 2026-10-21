@@ -164,6 +164,66 @@ void main() {
     expect(c.text, 'Notes: ');
   });
 
+  testWidgets('Ctrl+Z inside a box undoes the paste in one press', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The owner: *"I also had to press undo a couple of times before anything
+    // happened."* Ctrl+Z in a box used to reach the field's own
+    // `UndoHistory`, which restores a value by assigning it back and then
+    // asserts the controller holds exactly what it assigned — and this
+    // controller rewrites what it is given, so the two drifted apart and a
+    // press could do nothing at all. It is the app's own step now.
+    final source = text('osmosis is diffusion');
+    final host = text('Notes: ', y: 400);
+    await shell(t, [source, host]);
+    app.select(source.id);
+    await ctrl(t, LogicalKeyboardKey.keyX);
+
+    final c = await openBox(t, host);
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+    await ctrl(t, LogicalKeyboardKey.keyV);
+    expect(c.text, 'Notes: osmosis is diffusion', reason: 'precondition');
+
+    await ctrl(t, LogicalKeyboardKey.keyZ);
+    await t.pumpAndSettle();
+    expect(app.blocks.firstWhere((b) => b.id == host.id).content['text'],
+        'Notes: ', reason: 'one press');
+    // And the caret is still in the box, seeded from the restored block.
+    expect(app.editingBlockId, host.id);
+    expect(t.widget<TextField>(boxField().first).controller!.text, 'Notes: ');
+
+    // Redo puts it back, through the same stack.
+    await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await t.sendKeyEvent(LogicalKeyboardKey.keyY);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(app.blocks.firstWhere((b) => b.id == host.id).content['text'],
+        'Notes: osmosis is diffusion');
+  });
+
+  testWidgets('and Ctrl+Z after typing undoes the typing, not the box',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The step the app pushes per 700 ms burst (`TextBlockView`) is what
+    // Ctrl+Z now reaches, so a burst of typing comes off in one press and the
+    // box stays open.
+    final host = text('Notes: ');
+    await shell(t, [host]);
+    final c = await openBox(t, host);
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+    await t.pumpAndSettle();
+    await t.enterText(boxField().first, 'Notes: osmosis');
+    await t.pumpAndSettle();
+    expect(app.blocks.firstWhere((b) => b.id == host.id).content['text'],
+        'Notes: osmosis', reason: 'precondition');
+
+    await ctrl(t, LogicalKeyboardKey.keyZ);
+    await t.pumpAndSettle();
+    expect(app.blocks.firstWhere((b) => b.id == host.id).content['text'],
+        'Notes: ');
+    expect(app.editingBlockId, host.id, reason: 'still writing in it');
+  });
+
   testWidgets('a box with no writing in it is not pasted into a box',
       (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');

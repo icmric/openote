@@ -229,27 +229,36 @@ Connections ▸ AI access**.
 
 ## 12. Touch, on a tablet
 
-The two parts that were fixed are deterministic and tested; whether the
-result *feels* right is not something a test can say, and that is most of
-what is wanted here.
+What was fixed is deterministic and tested; whether the result *feels* right
+is not something a test can say, and that is most of what is wanted here.
 
-- [ ] **Drag a finger across a text box.** The page scrolls. It used to select
-      the box's words, which on a tablet left almost nowhere to scroll from.
-- [ ] **Tap a box.** It still opens for typing — a short scroll that ends on a
-      box must not open it, and a tap must.
+- [ ] **Pinch with both fingers ON a text box.** It zooms. This is the big one:
+      the canvas never saw a finger that had landed on a box, so one finger
+      scrolled while the other zoomed — *"it jumps all over the place"*. A box
+      covers most of a page, so this was almost every pinch.
+- [ ] **Pinch SLOWLY.** It should now be no worse than pinching quickly. The
+      zoom centre used to wander a little per sample, so more samples meant
+      more wander, which is why speed helped.
+- [ ] **Pinch while also sliding both fingers across.** It zooms and scrolls
+      together, about the point you started on.
+- [ ] **Pinch past the furthest zoom in, and the furthest out, then slide.**
+      The page still moves under your fingers rather than freezing.
+- [ ] **Pinch out, then back to where your fingers started.** The page comes
+      back to the zoom it began at.
+- [ ] **Pinch with a drawing tool selected**, and with one finger already
+      part-way through a stroke. It zooms, and no stray mark is left.
+- [ ] **Drag a finger across a text box.** The page still scrolls (that was
+      the last round's fix, and the pinch work must not have taken it back).
+- [ ] **Tap a box.** It still opens for typing.
 - [ ] **With the caret in a box, drag a finger across its words.** They are
       selected: that is how you select without a keyboard.
-- [ ] **Pinch out, then pinch back to where your fingers started.** The page
-      comes back to the zoom it began at. Then pinch out past the furthest
-      zoom, hold, and come back — still the same.
-- [ ] **Is the zoom smooth now?** It compounded its own rounding before. This
-      is a feel question and yours is the answer.
-- [ ] **Drag boxes around at several zoom levels** — right out, right in. You
-      remembered this being "definitely funky"; I could not reproduce it (every
-      drag path divides by the zoom), so if it is still wrong I need to know
-      what you see: does the box lag the finger, overshoot it, or jump?
-- [ ] **One finger on empty page scrolls**, two fingers pan and zoom, and a
-      pen still draws.
+- [ ] **One finger on empty page scrolls**, and a pen still draws.
+- [ ] **Drag boxes around at several zoom levels.** Fixed since you last
+      looked: this was not a touch problem at all. The box moved at the wrong
+      speed because its drag delta was divided by the zoom twice — so at 40%
+      it ran 2.5x ahead of the pointer and at 200% it lagged. It should now
+      sit under the cursor wherever you grabbed it. Check a resize handle too;
+      it had the same fault.
 
 ---
 
@@ -268,7 +277,35 @@ what is wanted here.
 
 ---
 
-## 14. Things I already know about
+## 14. Pasting, undo and the colour pickers
+
+- [ ] **Cut a box that ends in a picture, click into another box at the end of
+      a line, and paste.** The caret lands AFTER the picture, and typing
+      straight away leaves the picture alone. It used to land inside the
+      picture's reference, one keystroke from the hash appearing.
+- [ ] **Then press Ctrl+Z once.** The whole paste goes, the box stays open,
+      and the caret is still in it.
+- [ ] **Paste a box carrying a table, and undo that.** The table's data goes
+      with it rather than being left in the box.
+- [ ] **Copy a picture from a web page or a Word document** (so the clipboard
+      holds a picture AND text), then cut a box and paste it into another box.
+      You get the box, not the picture.
+- [ ] **Type a sentence in a box and press Ctrl+Z.** The burst comes off and
+      the box stays open. Ctrl+Y and Ctrl+Shift+Z both redo.
+- [ ] **Ctrl+Z in the navigator's search box** still undoes your typing there,
+      not your last page edit.
+- [ ] **Pick a highlight colour, and a text colour.** One click each — no
+      Apply. Then open "Mix your own colour" and click a swatch: it loads into
+      the mixer instead, and clicking the same swatch again applies it.
+- [ ] **Lock a section with "Every time it is opened"**, then open a page
+      inside it and enter the passcode. It opens. Move to another page in the
+      same section: asked again.
+- [ ] **Read the warning on the lock dialog.** Short enough to actually read,
+      and it should not read as though encryption is never coming.
+
+---
+
+## 15. Things I already know about
 
 Not for you to test — recorded here so you are not surprised by them.
 
