@@ -1006,6 +1006,33 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// so that stays that function's stricter job) but never strictly INSIDE
   /// one, because there is nothing else at those offsets to place a caret
   /// for.
+  /// **The first click into a box selects a picture it lands on** — the
+  /// same as a click on one once the box is open (`_EditImage.onPick`). Only
+  /// a click ON the picture: one beside it on its line is a caret after it.
+  ///
+  /// The picture stands on its line's first code unit, so that one character's
+  /// box is exactly where it is drawn.
+  bool _pickPictureAt(int at, Offset tapGlobal) {
+    final pic = controller.pictureAround(at);
+    if (pic == null) return false;
+    final st = _editableState();
+    if (st == null) return false;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize) return false;
+      final local = r.globalToLocal(tapGlobal);
+      final hit = r
+          .getBoxesForSelection(
+              TextSelection(baseOffset: pic.start, extentOffset: pic.start + 1))
+          .any((b) => b.toRect().contains(local));
+      if (!hit) return false;
+    } catch (_) {
+      return false;
+    }
+    controller.pickObject(pic.start, pic.end, pic.line);
+    return true;
+  }
+
   bool _enterMathOnFirstClickInside(int at, Offset tapGlobal) {
     if (_mathStart != null) return false; // one is already open
     final run = controller.mathRunNear(at);
@@ -1425,7 +1452,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
       if (want != null) {
         pendingCaretGlobal = null;
         final at = offsetAtGlobal(want);
-        if (at != null) {
+        if (at != null && _pickPictureAt(at, want)) {
+          // A click on a picture selects it, on the first click as on any
+          // other: the box was closed, so its own tap never ran.
+        } else if (at != null) {
           controller.selection = TextSelection.collapsed(offset: at);
           // The first click into a block that was not being edited comes
           // through here rather than through `InlineMathAtom`'s own tap — a

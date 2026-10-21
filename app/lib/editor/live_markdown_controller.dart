@@ -509,7 +509,8 @@ class LiveMarkdownController extends TextEditingController {
 
   @override
   set value(TextEditingValue newValue) {
-    super.value = _snapOutOfHiddenMarkers(_guardObjects(newValue));
+    super.value = _snapOutOfHiddenMarkers(
+        _keepObjectLinesWhole(_guardObjects(newValue)));
   }
 
   String? _objectsFor;
@@ -558,6 +559,17 @@ class LiveMarkdownController extends TextEditingController {
     // Pictures and flashcards take a whole line and are not in `_runs` at all
     // - `_lineRuns` returns before it reaches them. They are drawn with the
     // same placeholder arithmetic and have exactly the same hole.
+    out.addAll(_lineObjects(t));
+    _objectsFor = t;
+    return _objectsCache = out;
+  }
+
+  /// **The objects that take a whole line** — an in-flow picture, and a card
+  /// written into the prose — as ranges covering the whole line, indent
+  /// included. Each is drawn only while its reference is the whole of its
+  /// line, which is what [_keepObjectLinesWhole] protects.
+  static List<({int start, int end})> _lineObjects(String t) {
+    final out = <({int start, int end})>[];
     var pos = 0;
     for (final line in t.split('\n')) {
       final img = _imageLineRe.firstMatch(line);
@@ -571,8 +583,136 @@ class LiveMarkdownController extends TextEditingController {
       }
       pos += line.length + 1;
     }
-    _objectsFor = t;
-    return _objectsCache = out;
+    return out;
+  }
+
+  /// **A picture, or a card, keeps its line to itself** — whatever arrives
+  /// beside it.
+  ///
+  /// Both are drawn only while their reference is the whole of its line, so
+  /// text that lands next to one turns it back into its source: a hash where
+  /// the picture was. Typing just after a picture, deleting a selection up to
+  /// one so that its line joins the line above, pasting a copied picture into
+  /// the middle of a sentence — each broke it the same way. So an edit that
+  /// leaves one sharing its line is given the line break that keeps it whole:
+  /// what was typed after a picture goes on the next line, what was typed
+  /// before it on the line above, and a line that would have joined it stays
+  /// where it was.
+  ///
+  /// Two cases, both narrow on purpose, because this runs on every edit:
+  ///
+  ///  * an object that was **already a whole line**, right beside the edit;
+  ///  * an edit that inserted **exactly one picture reference** — a paste of
+  ///    one that was copied, which is what selecting a picture is for.
+  ///
+  /// Never anything else. A note opened with a reference in mid-sentence — an
+  /// import, an older build — is left exactly as it was written, and an edit
+  /// that rewrites an object's inside (a picture resized, a card retyped)
+  /// leaves it a whole line and so is not touched either.
+  TextEditingValue _keepObjectLinesWhole(TextEditingValue next) {
+    final a = value.text, b = next.text;
+    if (a == b) return next;
+    // The edit, as "a[p, ea) became b[p, eb)" — the same reading as
+    // [_guardObjects].
+    final shorter = a.length < b.length ? a.length : b.length;
+    var p = 0;
+    while (p < shorter && a.codeUnitAt(p) == b.codeUnitAt(p)) {
+      p++;
+    }
+    var ea = a.length, eb = b.length;
+    while (ea > p && eb > p && a.codeUnitAt(ea - 1) == b.codeUnitAt(eb - 1)) {
+      ea--;
+      eb--;
+    }
+
+    // Where a line break goes, in b.
+    final breaks = <int>{};
+    void isolate(int rs, int re) {
+      final ls = rs == 0 ? 0 : b.lastIndexOf('\n', rs - 1) + 1;
+      var le = b.indexOf('\n', re);
+      if (le < 0) le = b.length;
+      if (b.substring(ls, rs).trim().isNotEmpty) breaks.add(rs);
+      if (b.substring(re, le).trim().isNotEmpty) breaks.add(re);
+    }
+
+    // 1. A whole-line object the edit happened right beside.
+    for (final o in _lineObjects(a)) {
+      final before = ea <= o.start; // the edit is above or to the left of it
+      final after = p >= o.end; //    ...or below or to the right
+      if (!before && !after) continue; // it reached inside — not this rule's
+      if (p != o.end && ea != o.start) continue; // not right beside it
+      final shift = before ? eb - ea : 0;
+      final rs = o.start + shift, re = o.end + shift;
+      if (re > b.length || b.substring(rs, re) != a.substring(o.start, o.end)) {
+        continue;
+      }
+      isolate(rs, re);
+    }
+
+    // 2. Exactly one picture reference, pasted.
+    final inserted = b.substring(p, eb);
+    final trimmed = inserted.trim();
+    if (trimmed.isNotEmpty && !trimmed.contains('\n')) {
+      final m = _imageLineRe.firstMatch(trimmed);
+      if (m != null && !_isAtomRef(m.group(3)!)) {
+        final rs = p + inserted.indexOf(trimmed);
+        isolate(rs, rs + trimmed.length);
+      }
+    }
+    if (breaks.isEmpty) return next;
+
+    // Right to left, so each insertion leaves the offsets before it alone. A
+    // caret exactly at a break stays before it: typed text in front of a
+    // picture keeps the caret at the end of that text, on the line above.
+    var text = b;
+    int past(int o) {
+      var n = o;
+      for (final at in breaks) {
+        if (o > at) n++;
+      }
+      return n;
+    }
+
+    for (final at in breaks.toList()..sort((x, y) => y.compareTo(x))) {
+      text = text.replaceRange(at, at, '\n');
+    }
+    final sel = next.selection;
+    final comp = next.composing;
+    return TextEditingValue(
+      text: text,
+      selection: sel.isValid
+          ? sel.copyWith(
+              baseOffset: past(sel.baseOffset),
+              extentOffset: past(sel.extentOffset))
+          : sel,
+      composing: comp.isValid
+          ? TextRange(start: past(comp.start), end: past(comp.end))
+          : comp,
+    );
+  }
+
+  /// **Select the picture at [lineStart]..[lineEnd]**, whole — what clicking
+  /// one does, so it can be copied, cut or deleted like anything else that is
+  /// selected. [was] is the line as it read when the picture was drawn; the
+  /// offsets can be stale by the time a click lands, and a selection quietly
+  /// placed on the wrong text would be worse than none.
+  void pickObject(int lineStart, int lineEnd, String was) {
+    if (lineStart < 0 || lineEnd > text.length || lineStart > lineEnd) return;
+    if (text.substring(lineStart, lineEnd) != was) return;
+    selection = TextSelection(baseOffset: lineStart, extentOffset: lineEnd);
+  }
+
+  /// The whole-line picture at text offset [at], or null — for a first click
+  /// into a box that lands on one.
+  ({int start, int end, String line})? pictureAround(int at) {
+    for (final o in _lineObjects(text)) {
+      if (at < o.start || at > o.end) continue;
+      final line = text.substring(o.start, o.end);
+      final img = _imageLineRe.firstMatch(line);
+      if (img == null || _isAtomRef(img.group(3)!)) return null; // a card
+      return (start: o.start, end: o.end, line: line);
+    }
+    return null;
   }
 
   /// **An edit may never land inside an object.**
@@ -768,6 +908,17 @@ class LiveMarkdownController extends TextEditingController {
       final from = r.start - 1;
       if (!forward && at == r.end) return _spliced(v, from, r.end);
       if (forward && at == from) return _spliced(v, from, r.end);
+    }
+    // **And a picture, or a card, standing on its line is one thing too.**
+    // Backspace just after one took the `)` off the end of its reference,
+    // which stopped it matching: the picture went and its hash appeared in
+    // its place. The owner: *"pressing backspace here should delete the whole
+    // thing."* Delete just before one is the mirror. The line it stood on
+    // stays, empty, the way a paragraph does when a picture is deleted.
+    for (final o in _lineObjects(t)) {
+      if (o.end <= o.start) continue;
+      if (!forward && at == o.end) return _spliced(v, o.start, o.end);
+      if (forward && at == o.start) return _spliced(v, o.start, o.end);
     }
     final runs = [
       for (final r in _runs(t))
@@ -1457,6 +1608,14 @@ class LiveMarkdownController extends TextEditingController {
           fontFamilyFallback: onoteFontFallback,
           fontSize: (base.fontSize ?? 14) * 0.85);
       final bytes = _resolveImage(img.group(3)!);
+      // Selected whole — by a click on it, or a drag across it — so it can be
+      // drawn as selected: a selection highlight is painted UNDER a
+      // placeholder, where a picture covers it entirely.
+      final sel = selection;
+      final picked = sel.isValid &&
+          !sel.isCollapsed &&
+          sel.start <= lineStart &&
+          sel.end >= lineEnd;
       if (bytes != null && line.isNotEmpty) {
         // The placeholder goes FIRST and stands for the line's first
         // character; the rest of the reference trails behind it, hidden. The
@@ -1472,7 +1631,7 @@ class LiveMarkdownController extends TextEditingController {
           // after a first draw has to replace the placeholder, and comparing
           // the buffers themselves would cost more than rebuilding.
           child: _atom(
-              'img|$lineStart|$lineEnd|$onLine|${bytes.length}|$line',
+              'img|$lineStart|$lineEnd|$onLine|$picked|${bytes.length}|$line',
               () => _EditImage(
                     // Keyed by line so the drag state belongs to THIS
                     // picture, and is dropped if the text above it moves and
@@ -1483,6 +1642,8 @@ class LiveMarkdownController extends TextEditingController {
                     height: double.tryParse(img.group(5) ?? ''),
                     indent: indentPx(img.group(1)!.length, base.fontSize),
                     selected: onLine,
+                    picked: picked,
+                    onPick: () => pickObject(lineStart, lineEnd, line),
                     onNeedWidth: requestExtraWidth,
                     label: line,
                     labelStyle: refStyle,
@@ -1997,6 +2158,8 @@ class _EditImage extends StatefulWidget {
     required this.height,
     required this.indent,
     required this.selected,
+    this.picked = false,
+    this.onPick,
     required this.label,
     required this.labelStyle,
     required this.onResize,
@@ -2009,6 +2172,16 @@ class _EditImage extends StatefulWidget {
   final double? width, height;
   final double indent;
   final bool selected;
+
+  /// Selected whole, as text is: drawn tinted, the way a selected picture is
+  /// everywhere else.
+  final bool picked;
+
+  /// A click on the picture. It selects the picture, so Ctrl+C, Ctrl+X and
+  /// Delete act on it — what a click on a picture does everywhere else. The
+  /// field never sees this press (a placeholder has its own gestures), so the
+  /// caret would otherwise not move at all.
+  final VoidCallback? onPick;
 
   /// The raw reference, shown if the bytes turn out not to be an image.
   final String label;
@@ -2138,21 +2311,32 @@ class _EditImageState extends State<_EditImage> {
           left: widget.indent, top: sized ? 0 : 4, bottom: sized ? 0 : 4),
       child: Stack(
         children: [
-          Container(
-            // A foreground decoration, so the outline costs no layout: with a
-            // real border the picture would shift a pixel every time the caret
-            // entered its line.
-            foregroundDecoration: widget.selected
-                ? BoxDecoration(
-                    border: Border.all(
-                        color: OnoteColors.brass400.withValues(alpha: .85)))
-                : null,
-            child: sized
-                ? image
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
-                    child: image,
-                  ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onPick,
+            child: Container(
+              // A foreground decoration, so the outline costs no layout: with
+              // a real border the picture would shift a pixel every time the
+              // caret entered its line.
+              foregroundDecoration: widget.picked
+                  ? BoxDecoration(
+                      color: (DefaultSelectionStyle.of(context).selectionColor ??
+                              OnoteColors.brass400)
+                          .withValues(alpha: .35),
+                      border: Border.all(color: OnoteColors.brass400, width: 2))
+                  : widget.selected
+                      ? BoxDecoration(
+                          border: Border.all(
+                              color:
+                                  OnoteColors.brass400.withValues(alpha: .85)))
+                      : null,
+              child: sized
+                  ? image
+                  : ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: image,
+                    ),
+            ),
           ),
           Positioned(right: 0, bottom: 0, child: _handle()),
         ],
