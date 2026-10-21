@@ -124,6 +124,11 @@ class _BlockViewState extends State<BlockView> {
   int? _selectBase;
   bool _textDragging = false;
 
+  /// This gesture is scrolling the page, so the tap it ends with is not a tap
+  /// (v1.0.2 bug 8). Flutter's tap slop is 18px and a pan is recognised at 4,
+  /// so without this a short finger-scroll over a box also opened the box.
+  bool _touchPanning = false;
+
   /// Whether the press that started this gesture landed on a member of a group
   /// that was not yet held.
   ///
@@ -179,6 +184,11 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.table;
 
   void _tap() {
+    // The gesture scrolled the page; it was not a tap on this box.
+    if (_touchPanning) {
+      _touchPanning = false;
+      return;
+    }
     // **A background layer is not one of the things on the page.** A locked
     // slide stays out of the selection however it is reached — the marquee
     // skips it, and a click on it is a click on the page behind the notes,
@@ -289,11 +299,39 @@ class _BlockViewState extends State<BlockView> {
     _pressTookGroup = _groupTakesGesture;
     _selectBase = null;
     _textDragging = false;
+    _touchPanning = false;
   }
 
   void _pointerMove(PointerMoveEvent e) {
     if (_isMiddle(e)) return; // see [_isMiddle]
     final from = _pressGlobal;
+    // **A finger dragged over a box scrolls the page** (v1.0.2 bug 8, the
+    // owner's own note before release: *"dragging over a box still selects
+    // its text"*). A box is most of the page, so a finger that lands on one
+    // and moves is almost always somebody scrolling — selecting its words
+    // instead left a tablet with nowhere to scroll from.
+    //
+    // The same shape as the two decisions already written down: a finger
+    // keeps its settled meaning (`AppState.touchShouldDraw`) and the middle
+    // button is nobody's gesture. Here the exceptions are the two gestures a
+    // drag on a box really is: the box is being typed in, where a drag
+    // selects its words, and a held group, which moves. A SELECTED box is
+    // dragged by its bar, which is a different pointer and not this path.
+    //
+    // Panned here rather than by standing down for the canvas: a block claims
+    // its pointer on press, so the canvas never sees this gesture, and not
+    // claiming would make a tap on a box land a new text box on top of it
+    // (`PageCanvas._selectUp`). The block already has the moves.
+    if (from != null &&
+        e.kind == PointerDeviceKind.touch &&
+        !editing &&
+        !_pressTookGroup &&
+        !_locked) {
+      if (!_touchPanning && (e.position - from).distance < 4) return;
+      _touchPanning = true;
+      widget.controller.panBy(e.delta);
+      return;
+    }
     if (from == null || !_editableType || _locked) return;
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
@@ -327,6 +365,9 @@ class _BlockViewState extends State<BlockView> {
   void _pointerUp(PointerEvent e) {
     _selectBase = null;
     _textDragging = false;
+    // A scroll is not a tap. Cleared on the NEXT press, not here: `_tap`
+    // fires after this.
+    if (_touchPanning) _pressGlobal = null;
     // _pressGlobal is left for _tap, which fires after the pointer is up.
   }
 

@@ -231,7 +231,10 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
+  /// How far apart the fingers were, and what the zoom was, when the pinch
+  /// STARTED — not last sample. See [CanvasController.zoomTo].
   double? _pinchBaseDist;
+  double _pinchBaseScale = 1;
   double _pzLastScale = 1.0;
 
   /// The pointer of a trackpad pan/pinch a block has claimed for itself
@@ -977,23 +980,37 @@ class _PageCanvasState extends State<PageCanvas> {
   void _touchDown(PointerDownEvent e) {
     _touches[e.pointer] = e.localPosition;
     _lastScreen = e.localPosition;
-    if (_touches.length == 2) {
-      final pts = _touches.values.toList();
-      _pinchBaseDist = (pts[0] - pts[1]).distance;
-    }
+    if (_touches.length == 2) _beginPinch();
+  }
+
+  /// A second finger has landed: remember the span and the zoom to measure
+  /// the whole gesture against.
+  void _beginPinch() {
+    final pts = _touches.values.toList();
+    _pinchBaseDist = (pts[0] - pts[1]).distance;
+    _pinchBaseScale = controller.scale;
+  }
+
+  /// One pinch sample. True when it did the zooming, so each caller knows
+  /// there is nothing else to do with this move.
+  ///
+  /// ONE copy: the two touch paths — navigation, and select mode — each had
+  /// their own, and both re-based every sample.
+  bool _pinchMove() {
+    final base = _pinchBaseDist;
+    if (_touches.length < 2 || base == null || base <= 0) return false;
+    final pts = _touches.values.toList();
+    final d = (pts[0] - pts[1]).distance;
+    if (d <= 0) return false;
+    controller.zoomTo((pts[0] + pts[1]) / 2, _pinchBaseScale * d / base);
+    setState(() {});
+    return true;
   }
 
   void _touchMove(PointerMoveEvent e) {
     _touches[e.pointer] = e.localPosition;
-    if (_touches.length >= 2 && _pinchBaseDist != null) {
-      final pts = _touches.values.toList();
-      final d = (pts[0] - pts[1]).distance;
-      final focal = (pts[0] + pts[1]) / 2;
-      if (_pinchBaseDist! > 0 && d > 0) {
-        controller.zoomAt(focal, d / _pinchBaseDist!);
-        _pinchBaseDist = d;
-      }
-      setState(() {});
+    if (_touches.length >= 2) {
+      _pinchMove();
     } else if (_touches.length == 1) {
       controller.panBy(e.localPosition - _lastScreen);
       _lastScreen = e.localPosition;
@@ -1003,8 +1020,19 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _touchUp(PointerUpEvent e) {
     _touches.remove(e.pointer);
-    if (_touches.length < 2) _pinchBaseDist = null;
+    _endOrRebasePinch();
     if (_touches.length == 1) _lastScreen = _touches.values.first;
+  }
+
+  /// A finger has gone. Below two there is no pinch; at two or more there is
+  /// a pinch between a DIFFERENT pair, and measuring it against the old
+  /// pair's span would jump the zoom — so it starts afresh from here.
+  void _endOrRebasePinch() {
+    if (_touches.length < 2) {
+      _pinchBaseDist = null;
+    } else {
+      _beginPinch();
+    }
   }
 
   // ── Select-mode pointer model ───────────────────────────────────────────
@@ -1172,8 +1200,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (e.kind == PointerDeviceKind.touch) {
       _touches[e.pointer] = e.localPosition;
       if (_touches.length == 2) {
-        final pts = _touches.values.toList();
-        _pinchBaseDist = (pts[0] - pts[1]).distance;
+        _beginPinch();
         _mode = _DragMode.none;
         return;
       }
@@ -1198,17 +1225,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _selectMove(PointerMoveEvent e) {
     if (_touches.containsKey(e.pointer)) {
       _touches[e.pointer] = e.localPosition;
-      if (_touches.length == 2 && _pinchBaseDist != null) {
-        final pts = _touches.values.toList();
-        final d = (pts[0] - pts[1]).distance;
-        final focal = (pts[0] + pts[1]) / 2;
-        if (_pinchBaseDist! > 0 && d > 0) {
-          controller.zoomAt(focal, d / _pinchBaseDist!);
-          _pinchBaseDist = d;
-        }
-        setState(() {});
-        return;
-      }
+      if (_touches.length == 2 && _pinchMove()) return;
     }
     final delta = e.localPosition - _lastScreen;
     _lastScreen = e.localPosition;
@@ -1264,7 +1281,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// at the start of the drag is for.
   void _selectCancel(PointerCancelEvent e) {
     _touches.remove(e.pointer);
-    if (_touches.length < 2) _pinchBaseDist = null;
+    _endOrRebasePinch();
     if (_mode == _DragMode.moveSelection) app.settleSelected();
     _mode = _DragMode.none;
     _moveUndoPushed = false;
@@ -1275,7 +1292,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _selectUp(PointerUpEvent e) {
     _touches.remove(e.pointer);
-    if (_touches.length < 2) _pinchBaseDist = null;
+    _endOrRebasePinch();
     final mode = _mode;
     _mode = _DragMode.none;
     switch (mode) {

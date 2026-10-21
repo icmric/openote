@@ -371,8 +371,14 @@ void main() {
     /// Three increments, because a drag recognizer swallows the one that wins
     /// it the gesture arena — asserting an exact total would be asserting
     /// Flutter's slop handling, not ours.
-    Future<void> dragBy(WidgetTester t, Offset from, Offset step) async {
-      final g = await t.startGesture(from);
+    /// **The mouse by default, said out loud.** `startGesture` sends a
+    /// FINGER unless told otherwise, and every drag here was written about a
+    /// mouse — a drag that moves a box by its bar, or picks out words. A
+    /// finger now scrolls the page instead (v1.0.2 bug 8,
+    /// `touch_navigation_test`), so these say which pointer they mean.
+    Future<void> dragBy(WidgetTester t, Offset from, Offset step,
+        {PointerDeviceKind kind = PointerDeviceKind.mouse}) async {
+      final g = await t.startGesture(from, kind: kind);
       for (var i = 0; i < 3; i++) {
         await g.moveBy(step);
         await t.pump();
@@ -477,7 +483,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // The guard above must not cost the thing it sits next to: a drag that
       // starts on the CONTENT is still a text selection, and still opens the
-      // editor to make one.
+      // editor to make one. With a MOUSE — a finger there scrolls the page
+      // (v1.0.2 bug 8), which is what `dragBy`'s default now says.
       await pump(t);
       await t.pump();
 
@@ -595,11 +602,15 @@ void main() {
       // A non-editing block renders read-only Markdown — there is no field to
       // drag-select in until the session exists. The first drag has to open
       // one mid-gesture and extend the selection from the press point.
+      //
+      // With a MOUSE: `startGesture` would otherwise send a finger, which
+      // scrolls the page instead (v1.0.2 bug 8, `touch_navigation_test`).
       block.content['text'] = 'aaaa bbbb cccc dddd eeee ffff';
       block.h = null;
       await pump(t);
 
-      final g = await t.startGesture(Offset(block.x + 10, block.y + 12));
+      final g = await t.startGesture(Offset(block.x + 10, block.y + 12),
+          kind: PointerDeviceKind.mouse);
       for (var i = 0; i < 6; i++) {
         await g.moveBy(const Offset(18, 0));
         await t.pump();
