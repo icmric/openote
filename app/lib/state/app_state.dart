@@ -507,6 +507,19 @@ class AppState extends ChangeNotifier
   /// Unlocked subtree roots → when the unlock expires (null = this session).
   final Map<String, DateTime?> _unlocked = {};
 
+  /// Unlocked subtree roots for **this visit to the open page** — what
+  /// [UnlockPolicy.always] ("Every time it is opened") grants.
+  ///
+  /// It needs a home of its own because that policy's unlock must not be
+  /// cached past the page it was given for, and because the gate is read at
+  /// BUILD time, not on the click: `isLocked` decides what the page area
+  /// renders every frame (see `_LockedPage` in app_shell). An unlock that is
+  /// recorded nowhere is therefore an unlock that never happened — picking
+  /// "Every time it is opened" made the node permanently unopenable, the
+  /// right passcode included, from the day the feature shipped. Cleared
+  /// alongside [_windowUnlocks] when the open page changes.
+  final Set<String> _visitUnlocks = {};
+
   /// Bumped whenever the set of locked nodes could have changed. Caches that
   /// filter on [isLocked] must include it in their key, or they answer from
   /// before the lock.
@@ -537,6 +550,7 @@ class AppState extends ChangeNotifier
   void reloadProtection() {
     _protectedIds.clear();
     _unlocked.clear();
+    _visitUnlocks.clear();
     _windowUnlocks.clear();
     if (notebookId == null) return;
     final prefix = 'protect:${notebookId!}:';
@@ -580,6 +594,7 @@ class AppState extends ChangeNotifier
   bool isLocked(String nodeId) {
     final root = governingNode(nodeId);
     if (root == null) return false;
+    if (_visitUnlocks.contains(root)) return false;
     if (!_unlocked.containsKey(root)) return true;
     final until = _unlocked[root];
     if (until == null) return false; // session-length unlock
@@ -597,8 +612,12 @@ class AppState extends ChangeNotifier
     final rec = protectionFor(root);
     if (rec == null || !rec.matches(passcode)) return false;
     final d = rec.policy.duration;
-    // `always` is not cached at all: the next open asks again.
-    if (rec.policy != UnlockPolicy.always) {
+    // `always` lasts for this visit only — it is not cached, so opening any
+    // other page covered by the same passcode asks again — but it does have
+    // to be recorded somewhere, or the lock screen simply rebuilds itself.
+    if (rec.policy == UnlockPolicy.always) {
+      _visitUnlocks.add(root);
+    } else {
       _unlocked[root] = d == null ? null : DateTime.now().add(d);
     }
     _gateRevision++;
@@ -612,6 +631,7 @@ class AppState extends ChangeNotifier
         _protectKey(nodeId), newProtection(passcode, policy).toJson());
     _protectedIds.add(nodeId);
     _unlocked.remove(nodeId);
+    _visitUnlocks.remove(nodeId);
     _gateRevision++;
     notifyListeners();
   }
@@ -624,6 +644,7 @@ class AppState extends ChangeNotifier
     _repo.setSetting(_protectKey(nodeId), null);
     _protectedIds.remove(nodeId);
     _unlocked.remove(nodeId);
+    _visitUnlocks.remove(nodeId);
     _gateRevision++;
     notifyListeners();
     return true;
@@ -631,8 +652,11 @@ class AppState extends ChangeNotifier
 
   /// Forget every unlock now — the "Lock now" action, and what shutdown does.
   void lockAll() {
-    if (_unlocked.isEmpty && _windowUnlocks.isEmpty) return;
+    if (_unlocked.isEmpty && _visitUnlocks.isEmpty && _windowUnlocks.isEmpty) {
+      return;
+    }
     _unlocked.clear();
+    _visitUnlocks.clear();
     _windowUnlocks.clear();
     _gateRevision++;
     notifyListeners();
@@ -5956,7 +5980,22 @@ class AppState extends ChangeNotifier
   void _commitActiveEditor() {
     final ae = activeEditor;
     if (ae == null) return;
-    ae.block.content[ae.contentKey] = ae.controller.text;
+    final now = ae.controller.text;
+    // **Tags and review schedules follow their lines, here too.** Typing does
+    // this in `TextBlockView.onChanged`; a programmatic insert never fires
+    // the field's `onChanged`, so it came through here and wrote the text
+    // alone. A tag records a line INDEX and a flashcard is `blockId:line`, so
+    // pasting three lines above a reviewed card moved the card and left its
+    // history under the name of whatever is now on that line — the exact
+    // swap fixed for typing, by the same two calls.
+    if (ae.block.type == BlockType.text) {
+      final was = ae.block.content[ae.contentKey] as String? ?? '';
+      if (was != now) {
+        NoteTag.rebase(ae.block.content, was, now);
+        study.remapCardStates(ae.block.id, NoteTag.lineMoves(was, now));
+      }
+    }
+    ae.block.content[ae.contentKey] = now;
     ae.block.updatedAt = nowMs();
     markDirty();
   }
@@ -5985,16 +6024,32 @@ class AppState extends ChangeNotifier
   void refreshChrome() => notifyListeners();
 
   /// Insert text at the caret of the active editor (e.g. a page link inline).
-  void insertTextAtActiveCursor(String s) {
+  ///
+  /// [recordUndo] false folds the insert into an undo step the caller has
+  /// already pushed — see [pasteBlocksIntoText], which has to change the
+  /// block's `atoms` in the same step.
+  ///
+  /// **Text and caret go in together, in ONE value assignment.** Setting
+  /// `.text` first makes the selection invalid (Flutter's own setter does
+  /// that), and the controller's guards read the selection: with none,
+  /// `_keepObjectLinesWhole` cannot shift the caret past a line break it had
+  /// to insert and `_snapOutOfHiddenMarkers` stands down entirely, so a
+  /// second assignment of the caret landed it at an offset computed against
+  /// the pre-guard text. Pasting a box ending in a picture left the caret
+  /// INSIDE the picture's reference — one keystroke from the hash appearing
+  /// in the note, which is the thing those guards exist to prevent.
+  void insertTextAtActiveCursor(String s, {bool recordUndo = true}) {
     final ae = activeEditor;
     if (ae == null) return;
     final c = ae.controller;
     final sel = c.selection;
     final at = sel.isValid ? sel.start : c.text.length;
     final end = sel.isValid ? sel.end : c.text.length;
-    pushUndo();
-    c.text = c.text.replaceRange(at, end, s);
-    c.selection = TextSelection.collapsed(offset: at + s.length);
+    if (recordUndo) pushUndo();
+    c.value = TextEditingValue(
+      text: c.text.replaceRange(at, end, s),
+      selection: TextSelection.collapsed(offset: at + s.length),
+    );
     _commitActiveEditor();
     notifyListeners();
   }
@@ -7352,6 +7407,12 @@ class AppState extends ChangeNotifier
     if (ae == null || ae.block.type != BlockType.text) return false;
     final projected = blockClipboardAsText();
     if (projected == null) return false;
+    // ONE undo step for the whole paste, and it is taken BEFORE the atoms are
+    // written. It used to be taken inside the insert, which runs after — so
+    // the snapshot Ctrl+Z restored already contained the pasted payloads, and
+    // undo gave back the text while leaving a table's or a picture's data
+    // behind in the block for good.
+    pushUndo();
     // Atoms land in the destination block, beside the reference that names
     // them — otherwise the paste would write a pointer to a payload nothing
     // can reach.
@@ -7362,7 +7423,7 @@ class AppState extends ChangeNotifier
         ...projected.atoms,
       };
     }
-    insertTextAtActiveCursor(projected.text);
+    insertTextAtActiveCursor(projected.text, recordUndo: false);
     return true;
   }
 
@@ -8304,8 +8365,12 @@ class AppState extends ChangeNotifier
   Future<void> selectPage(String? id) async {
     _rememberView(); // keep your place when flicking between pages (§7a.5)
     await flushSave();
-    // A window onto a locked page asks again on every visit (bug 33).
-    if (id != pageId) _windowUnlocks.clear();
+    // A window onto a locked page asks again on every visit (bug 33), and so
+    // does a page whose passcode is set to "Every time it is opened".
+    if (id != pageId) {
+      _windowUnlocks.clear();
+      _visitUnlocks.clear();
+    }
     pageId = id;
     select(null);
     _undo.clear();
@@ -9841,11 +9906,25 @@ class AppState extends ChangeNotifier
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
     ];
+    final wasEditing = editingBlockId;
     _carryCardSchedules(blocks, restored);
     blocks = restored;
     selectedIds.clear();
     selectedBlockId = null;
-    editingBlockId = null;
+    // **Undo while you are writing keeps the caret in the box.** Ctrl+Z
+    // inside a box is this stack's step now (see the keyboard map: the
+    // field's own history cannot be trusted against a controller that
+    // rewrites its own value), and a step that threw you out of the box you
+    // were typing in would make it unusable for the thing Ctrl+Z is most
+    // used for. The box reopens seeded from the restored block —
+    // `TextBlockView.build` re-seeds `session.text` from the block on every
+    // build for exactly this, and `docRevision` below replaces the element
+    // so it does.
+    editingBlockId = restored.any(
+            (b) => b.id == wasEditing && b.type == BlockType.text)
+        ? wasEditing
+        : null;
+    if (editingBlockId != null) selectedBlockId = editingBlockId;
     docRevision++;
     markDirty(); // which notifies
   }

@@ -372,22 +372,39 @@ Block insertPastedText(AppState app, String text, Offset at) {
 /// already pasted. Kinds mirror [pasteOntoCanvas]'s priority order exactly:
 /// a clipboard holding both an image and text reports the image, because
 /// that is what would paste.
-Future<({PasteResult kind, String? text})> probeClipboard() async {
+///
+/// [plainText] is a different question, and it has to be answered separately:
+/// **whatever plain text the clipboard holds, whether or not an image beat it
+/// to the kind.** It is what `AppState.blockClipboardIsNewer` compares
+/// against, and that comparison's other side — the snapshot taken when the
+/// boxes were copied — reads the plain text unconditionally. Reporting null
+/// here for a clipboard holding BOTH (a picture copied from a web page, a
+/// spreadsheet cell, a document — the common case, not a corner) made the two
+/// sides disagree: `null` never equals the text that is really there, so the
+/// boxes were ruled stale and Ctrl+V in a box pasted the clipboard's picture
+/// instead of the box that had just been cut.
+Future<({PasteResult kind, String? text, String? plainText})>
+    probeClipboard() async {
   final reader = await _readClipboard();
-  if (reader == null) return (kind: PasteResult.nothing, text: null);
-  for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
-    if (reader.canProvide(fmt)) return (kind: PasteResult.image, text: null);
-  }
-  if (reader.canProvide(Formats.fileUri)) {
-    return (kind: PasteResult.files, text: null);
-  }
+  const nothing = (kind: PasteResult.nothing, text: null, plainText: null);
+  if (reader == null) return nothing;
+  String? plain;
   if (reader.canProvide(Formats.plainText)) {
-    final text = await reader.readValue(Formats.plainText);
-    if (text != null && text.trim().isNotEmpty) {
-      return (kind: PasteResult.text, text: text);
+    final t = await reader.readValue(Formats.plainText);
+    if (t != null && t.trim().isNotEmpty) plain = t;
+  }
+  for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
+    if (reader.canProvide(fmt)) {
+      return (kind: PasteResult.image, text: null, plainText: plain);
     }
   }
-  return (kind: PasteResult.nothing, text: null);
+  if (reader.canProvide(Formats.fileUri)) {
+    return (kind: PasteResult.files, text: null, plainText: plain);
+  }
+  if (plain != null) {
+    return (kind: PasteResult.text, text: plain, plainText: plain);
+  }
+  return nothing;
 }
 
 /// The clipboard's image, if it holds one.

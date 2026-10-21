@@ -6,6 +6,15 @@
 /// reads "password protect" and assumes their file is safe has been misled by
 /// us, not by their own carelessness, and the only place to prevent that is
 /// here, at the moment they decide.
+///
+/// It is kept SHORT, and says "beta" and "yet", on the owner's instruction:
+/// *"at the moment it is stated like its super insecure (which granted it is),
+/// but that also it will not be changed or made more secure in the future,
+/// which i plan on doing."* A warning long enough to be skipped protects
+/// nobody, and one that implies the limitation is permanent is now simply
+/// wrong — ADR-0008 is the plan. Both facts a user needs are still here: the
+/// file is readable without the passcode, and the passcode cannot be
+/// recovered.
 library;
 
 import 'package:flutter/material.dart';
@@ -92,23 +101,15 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('This hides the page inside Openote. '
-                        'It does not encrypt it.',
+                    Text('Beta: this hides the page in Openote, '
+                        'it does not encrypt it yet.',
                         style: TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(
-                      'Anyone who has your notebook file can still read this '
-                      'page — the passcode only applies to this copy of '
-                      'Openote on this computer. Do not use it for anything '
-                      'you would be harmed by someone else reading.',
-                      style: TextStyle(fontSize: 12.5, height: 1.45),
-                    ),
-                    SizedBox(height: 6),
-                    Text(
-                      'There is no way to recover a forgotten passcode, but '
-                      'your notes are not lost either: they are still in the '
-                      'file.',
+                      'For now, anyone with your notebook file can still '
+                      'read the page, and a forgotten passcode cannot be '
+                      'recovered. Real encryption is planned.',
                       style: TextStyle(fontSize: 12.5, height: 1.45),
                     ),
                   ],

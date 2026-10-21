@@ -24,6 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/api/mcp_tools.dart' show callMcpTool;
 import 'package:openote/canvas/media_drop.dart' show insertImageIntoTextAt;
+import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
@@ -126,6 +127,43 @@ void main() {
         for (final c in cardsFromBlock(box(), 'pg', 'Page'))
           '${c.line}:${c.front}'
       ];
+
+  group('a programmatic insert, not a keystroke', () {
+    test('a box pasted above two cards carries their schedules', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `TextBlockView.onChanged` rebases tags and remaps cards, and it does
+      // not fire for an edit the app makes itself: a box pasted into a box
+      // went through `_commitActiveEditor`, which wrote the text alone. So
+      // the words arrived, the cards moved down with them, and their review
+      // histories stayed on the line numbers they used to have.
+      review();
+      final c = LiveMarkdownController(text: _twoCards, dark: false);
+      addTearDown(c.dispose);
+      app.select(boxId, edit: true);
+      app.setActiveEditor(c, box(), 'text');
+      c.selection = const TextSelection.collapsed(offset: 0);
+
+      app.insertTextAtActiveCursor('Week 3\n');
+      expect(box().content['text'], 'Week 3\n$_twoCards');
+      expect(cardLines(), ['1:osmosis', '2:diffusion']);
+      expect(history(1), 'osmosis');
+      expect(history(2), 'diffusion');
+    });
+
+    test('and a tag above them keeps its line too', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      NoteTag.writeInto(
+          box().content, [NoteTag(kind: TagKind.important, line: 1)]);
+      final c = LiveMarkdownController(text: _twoCards, dark: false);
+      addTearDown(c.dispose);
+      app.select(boxId, edit: true);
+      app.setActiveEditor(c, box(), 'text');
+      c.selection = const TextSelection.collapsed(offset: 0);
+
+      app.insertTextAtActiveCursor('Week 3\n');
+      expect([for (final t in NoteTag.listFrom(box().content)) t.line], [2]);
+    });
+  });
 
   group('where every line went', () {
     test('a line typed above moves every line below it', () {

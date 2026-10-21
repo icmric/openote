@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../canvas/block_view.dart';
 import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../math/math_field.dart';
@@ -207,6 +208,71 @@ class _AppShellState extends State<AppShell> {
       return true;
     });
     return found;
+  }
+
+  /// **Whether the focused editor belongs to a BLOCK**, rather than to the
+  /// navigator's search field, the find bar, or a dialog.
+  ///
+  /// [_editableFocused] says "someone is typing" and that is too broad for
+  /// the text-editing intents [_blockTextActions] overrides: taking Ctrl+Z
+  /// away from the search box would be a regression in its own right. A block
+  /// editor always sits inside the `BlockView` that draws its box, and
+  /// nothing else in the shell does.
+  bool _blockEditorFocused() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return false;
+    var found = false;
+    ctx.visitAncestorElements((e) {
+      if (e.widget is BlockView) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
+  /// **Ctrl+Z, Ctrl+Y and Ctrl+V while a block's editor has the keyboard.**
+  ///
+  /// These are Flutter's own text-editing intents, and the shell's
+  /// `HardwareKeyboard` handler cannot take them — its `true` does not stop
+  /// the `Shortcuts`/`Actions` dispatch that follows, so both ran. An
+  /// `Actions` override does win: `EditableText` and `UndoHistory` build
+  /// their handlers with `Action.overridable`, whose whole purpose is to let
+  /// an ancestor replace them, and an override that reports itself disabled
+  /// falls back to the default.
+  ///
+  /// **Undo and redo** go to the app's own stack because the field's cannot
+  /// be made to work here, and that is structural rather than a bug to be
+  /// patched: `UndoHistory` restores a value by assigning it back to the
+  /// controller and then asserts the controller holds exactly what it
+  /// assigned — and `LiveMarkdownController` rewrites what it is given (a
+  /// picture keeps its line; an edit may not land inside an atom reference).
+  /// So the stack and the field drift apart, the stack's idea of "current"
+  /// goes stale, and a press does nothing at all. The owner: *"i had to press
+  /// undo a couple of times before anything happened"*. The app's stack is
+  /// the coherent one — `TextBlockView` already pushes a step per 700 ms
+  /// burst of typing, `AppState._restore` keeps the caret in the box, and the
+  /// step persists and syncs. Two stacks was always one too many.
+  ///
+  /// **Paste** is here for the same reason: see [_pasteIntoEditor], which
+  /// returns false to let the field's own paste run.
+  Map<Type, Action<Intent>> _blockTextActions() => <Type, Action<Intent>>{
+        UndoTextIntent: _BlockTextAction<UndoTextIntent>(
+            _blockEditorFocused, (_) => _undoForBlock(redo: false)),
+        RedoTextIntent: _BlockTextAction<RedoTextIntent>(
+            _blockEditorFocused, (_) => _undoForBlock(redo: true)),
+        PasteTextIntent: _BlockTextAction<PasteTextIntent>(
+            _blockEditorFocused, (_) => _pasteIntoEditor()),
+      };
+
+  bool _undoForBlock({required bool redo}) {
+    if (redo) {
+      app.redo();
+    } else {
+      app.undo();
+    }
+    return true;
   }
 
   /// Whether the primary focus sits in a [MathField] specifically — gate TWO
@@ -505,23 +571,15 @@ class _AppShellState extends State<AppShell> {
     // While typing: allow only formatting accelerators; everything else
     // flows to the field untouched.
     if (editable) {
-      // Undo/redo INSIDE an equation go to the app's own stack. Unclaimed,
-      // Ctrl+Z reached nothing at all in a block equation (the 700ms
-      // coalescing built for exactly this was toolbar-only), and in an
-      // inline one it reached the host TextField's built-in UndoHistory —
-      // which rewrote the paragraph under the open session and corrupted
-      // the note (probe-proven).
-      if (ctrl && _mathFieldFocused()) {
-        if (k == LogicalKeyboardKey.keyZ && !shift) {
-          app.undo();
-          return true;
-        }
-        if ((k == LogicalKeyboardKey.keyZ && shift) ||
-            k == LogicalKeyboardKey.keyY) {
-          app.redo();
-          return true;
-        }
-      }
+      // **Undo, redo and paste inside a box are NOT handled here.** They are
+      // the field's own text-editing intents, and this handler cannot take
+      // them: a `HardwareKeyboard` handler's `true` does not stop the
+      // framework's `Shortcuts`/`Actions` layer running on the same keystroke
+      // (`KeyEventManager.handleRawKeyMessage` dispatches to it either way),
+      // so claiming them here left BOTH running — one app undo and one field
+      // undo per press, one box paste and one clipboard paste per Ctrl+V.
+      // They are overridden where an override actually wins, in
+      // [_blockTextActions]; see the note there.
       // `canFormatText` is the same gate the command bar's own buttons
       // read, and it is what stands these chords down while an equation or a
       // table cell inside the paragraph has the keyboard — otherwise Ctrl+B
@@ -587,24 +645,6 @@ class _AppShellState extends State<AppShell> {
         // rather than highlight even though `=` has a ladder.
         final produced = _producedCharacter(e, shift);
         if (produced != null && app.cycleMarker(produced)) return true;
-        // Ctrl+V with an IMAGE on the clipboard. Flutter's own paste handles
-        // text only, so screenshot → click in the box → Ctrl+V silently did
-        // nothing. Handled here only when there is an image; anything else
-        // falls through to the field's own paste, because breaking plain-text
-        // paste into a note would be a far worse bug than the one being fixed.
-        if (k == LogicalKeyboardKey.keyV) {
-          // Maths on the clipboard is handled by `MathPasteFormatter` on the
-          // field itself. It cannot be done here: reading the clipboard is a
-          // Future, so by the time the answer came back the field had already
-          // inserted the raw text — and inserting the wrapped form as well
-          // pasted the equation TWICE.
-          //
-          // A box CUT from the canvas is different, and it is why this can
-          // swallow the keystroke: the blocks are in hand, so the decision
-          // needs no clipboard read and can be made before the field types
-          // anything. See [_pasteIntoEditor].
-          return _pasteIntoEditor();
-        }
       }
       return false;
     }
@@ -1221,7 +1261,10 @@ class _AppShellState extends State<AppShell> {
       final probe = await probeClipboard();
       if (!mounted) return;
       final theirs = probe.kind == PasteResult.text ? probe.text : null;
-      if (await app.blockClipboardIsNewer(theirs) && mounted) {
+      // `plainText`, not `theirs`: the newer-clipboard check is about the
+      // plain text on BOTH sides, and a picture with text beside it reports
+      // no `text` at all. See [probeClipboard].
+      if (await app.blockClipboardIsNewer(probe.plainText) && mounted) {
         if (app.pasteBlocksIntoText()) return;
       }
       if (!mounted) return;
@@ -1269,7 +1312,7 @@ class _AppShellState extends State<AppShell> {
     // clipboard win.
     final probe = await probeClipboard();
     if (probe.kind == PasteResult.text &&
-        await app.blockClipboardIsNewer(probe.text)) {
+        await app.blockClipboardIsNewer(probe.plainText)) {
       app.pasteBlocks();
       return;
     }
@@ -1334,6 +1377,26 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Above everything, so it is an ancestor of every block editor in the
+    // page — which is where an `Action.overridable` looks for its override.
+    //
+    // The `Shortcuts` adds the one activator Flutter's text defaults leave
+    // out: they map Ctrl+Shift+Z to redo but not Ctrl+Y, and Openote has
+    // always taken both. Mapping it to the SAME intent keeps one path for
+    // redo rather than a second one that could fire alongside it.
+    return Shortcuts(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.keyY, control: true):
+            RedoTextIntent(SelectionChangedCause.keyboard),
+      },
+      child: Actions(
+        actions: _blockTextActions(),
+        child: _shell(context),
+      ),
+    );
+  }
+
+  Widget _shell(BuildContext context) {
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) {
@@ -2196,9 +2259,10 @@ class _SyncChip extends StatelessWidget {
 /// What stands in for a locked page's content.
 ///
 /// Deliberately says what the lock is and is not, in one line, where someone
-/// who set it a month ago will read it — the setting dialog's fuller warning
-/// is long gone by then. A lock screen that implies more protection than
-/// exists is the same lie told later.
+/// who set it a month ago will read it — the setting dialog's warning is long
+/// gone by then. A lock screen that implies more protection than exists is
+/// the same lie told later; one that implies the limitation is permanent is
+/// the opposite mistake, which is why it says "yet" (ADR-0008).
 class _LockedPage extends StatelessWidget {
   const _LockedPage({required this.app, required this.page});
 
@@ -2224,9 +2288,8 @@ class _LockedPage extends StatelessWidget {
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             const Text(
-              'Enter the passcode to read it. This hides the page inside '
-              'Openote — it is not encrypted, so anyone with the notebook '
-              'file can still read it.',
+              'Enter the passcode to read it. Beta: the page is hidden in '
+              'Openote, not encrypted in the file yet.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, height: 1.45),
             ),
@@ -2246,6 +2309,32 @@ class _LockedPage extends StatelessWidget {
 /// The window's big areas, in the order F6 walks them — which is the order
 /// they are read on screen: left, top, middle, right.
 enum _Region { sidebar, toolbar, page, panel, alerts }
+
+/// One of the text-editing intents the shell takes over inside a box — see
+/// `_AppShellState._blockTextActions`.
+///
+/// [enabled] decides per keystroke whether this override applies at all; when
+/// it does not, Flutter falls back to the field's own default. [run] returns
+/// false to hand the intent on to that default anyway, which is how a Ctrl+V
+/// that turns out not to be a box paste still reaches the field's.
+class _BlockTextAction<T extends Intent> extends Action<T> {
+  _BlockTextAction(this.enabled, this.run);
+
+  final bool Function() enabled;
+  final bool Function(T intent) run;
+
+  @override
+  bool get isActionEnabled => enabled();
+
+  @override
+  bool consumesKey(T intent) => enabled();
+
+  @override
+  Object? invoke(T intent) {
+    if (!run(intent)) callingAction?.invoke(intent);
+    return null;
+  }
+}
 
 /// An action that exists only while the canvas node itself is focused —
 /// the moment focus moves into any editor (or anywhere else), it reports
