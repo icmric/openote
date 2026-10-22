@@ -10853,10 +10853,55 @@ class AppState extends ChangeNotifier
   /// So an automatic hand-off leaves the selection alone, and what to do with
   /// it is decided where the next press lands — inside it moves it, outside
   /// clears it and draws. See `PageCanvas._selectionTakes`.
+  /// **Picking up a drawing tool puts the keyboard down.**
+  ///
+  /// A tool the user CHOSE clears the selection outright, which ends editing
+  /// with it. An AUTOMATIC switch — the pen announcing itself by hovering,
+  /// `PageCanvas._stylusProximity` — deliberately does not, because a
+  /// selection somebody made must survive a pen coming and going.
+  ///
+  /// But it took the open editor with it, and that is a different thing. The
+  /// owner: *"if i taped on the screen previously so there is the cursor but
+  /// no text in the box, if i start drawing the cursor stays flashing and the
+  /// outline of the box goes dashed."* Both from this: `editingBlockId`
+  /// survived, so the field kept focus and the caret went on blinking in a
+  /// box nobody could type into; and the box stayed selected, so
+  /// `PageCanvas` drew its dashed box round it — which it does round
+  /// everything selected while a drawing tool is in hand, because a block's
+  /// own chrome is suppressed then and the dashes are the only thing left
+  /// saying what a drag would pick up.
+  ///
+  /// [inkToolInHand] already states the rule this broke, in its own doc: *"a
+  /// block goes inert and loses its bar while one of these is held, so that
+  /// the pen can write over it."* A box with a live caret is not inert. So
+  /// the editor closes, and an empty box — the one in the report — then
+  /// clears itself away on the exit transition exactly as it does for every
+  /// other way of leaving one.
+  ///
+  /// **And the selection that came with it closes too, which is not the same
+  /// as dropping a selection.** `select(id, edit: true)` puts the box being
+  /// typed into in `selectedIds` as a consequence of opening the editor, not
+  /// because anybody picked it up. That distinction decides what the pen's
+  /// first stroke does: `PageCanvas._selectionTakes` implements the owner's
+  /// rule that *"whenever something on the page is selected (such that it is
+  /// moveable, NOT when in editing mode) then pen should act as regular touch
+  /// input, moving the selected items when dragged"* — so leaving the box
+  /// "selected" after closing its editor would make the first stroke drawn
+  /// inside the paragraph you had just been writing in pick the paragraph up
+  /// and drag it. Which is right for a box somebody clicked once, and wrong
+  /// for one they had a caret in. A real selection — made with no editor open
+  /// — is untouched, which is what the `automatic` branch exists for.
   void setTool(Tool t, {bool automatic = false}) {
     tool = t;
     toolWasAutomatic = automatic && t != Tool.select;
-    if (t != Tool.select && !automatic) select(null);
+    if (t != Tool.select && !automatic) {
+      select(null);
+    } else if (inkToolInHand && editingBlockId != null) {
+      // [inkToolInHand] reads [tool], which is already `t` — so it is false
+      // for Select, and the pen LEAVING (also automatic) is not a second way
+      // to close a box: by then the keyboard is what is back in hand.
+      select(null);
+    }
     notifyListeners();
   }
 
