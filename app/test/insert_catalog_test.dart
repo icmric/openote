@@ -74,13 +74,20 @@ void main() {
       expect(kInsertItems.length, 11);
     });
 
-    test('the ribbon is one row, in the order it has always been', () {
+    test('the ribbon is one row, in the order the owner asked for', () {
       // The owner, after a release that split it into three groups and took
       // the words off four of them: "i dont love the new menu stuff though, i
-      // think we go back to what we had before."
+      // think we go back to what we had before." One row it is.
+      //
+      // The ORDER inside the row is theirs too, and this is the list they
+      // gave: *"the first two should remain the same, then pdf, table, image,
+      // video, file, flashcard, board, link, page window"*. What it replaced
+      // had grown by appending whatever was built next — *"quite hap
+      // hazard"* — which is how a board ended up between a table and a
+      // picture.
       expect(kInsertRibbon.map((i) => i.id).toList(), [
-        'equation', 'code', 'table', 'board', 'image', 'pdf',
-        'file', 'video', 'flashcard', 'pagelink', 'portal',
+        'equation', 'code', 'pdf', 'table', 'image', 'video',
+        'file', 'flashcard', 'board', 'pagelink', 'portal',
       ]);
     });
 
