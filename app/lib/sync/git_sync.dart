@@ -106,17 +106,42 @@ class GitSync {
       ? const []
       : [
           '-c',
-          'core.sshCommand=ssh -i "${sshCommandPath(sshKey!)}" '
+          'core.sshCommand=ssh -i ${sshKeyArg(sshKey!)} '
               '-o IdentitiesOnly=yes',
         ];
 
-  /// [sshKey] in the form git's shell can be handed: forward slashes, and any
-  /// embedded double quote escaped rather than refused — legal on Linux,
-  /// pathological, and breaking silently would be worse than handling it.
+  /// **[sshKey] as ONE shell word, quotes included.** Never wrap the result in
+  /// quotes of your own — it is already a complete argument.
   ///
-  /// Exposed because it is the whole of the risk in [_sshArgs].
-  static String sshCommandPath(String key) =>
-      key.trim().replaceAll('\\', '/').replaceAll('"', r'\"');
+  /// This used to hand back a bare path for the caller to wrap in DOUBLE
+  /// quotes, which is wrong, and wrong in the way that matters. Double quotes
+  /// stop word-splitting — the space in `C:/Users/Eric McClelland/` — and that
+  /// is the hazard the code and its tests were written against. They do not
+  /// stop EXPANSION: `$(…)`, backticks and `$VAR` are all still evaluated
+  /// inside them. git hands `core.sshCommand` to a shell, so a key path
+  /// containing `$(…)` ran it. Reported as GitHub #24, and proved rather than
+  /// argued: a path of `/nonexistent/$(touch MARKER)key` created the marker
+  /// file and ssh then reported trying to open `/nonexistent/key`.
+  ///
+  /// **The issue's own recommendation — pass it through `GIT_SSH_COMMAND`
+  /// instead — does not fix it**, which was worth measuring before acting on:
+  /// git evaluates that variable through the same shell, and the marker file
+  /// appeared exactly as before.
+  ///
+  /// POSIX single quotes are what does fix it. Inside them NOTHING is
+  /// expanded, and the one character they cannot contain is a single quote,
+  /// which is closed, escaped and reopened in the standard way (`'\''`).
+  /// Both forms are covered by a test that drives real git and real ssh and
+  /// reads back the path ssh actually opened — which is the step the previous
+  /// test said in its own comment that it could not reach.
+  ///
+  /// Forward slashes still, for the reason [_sshArgs] gives: a Windows path's
+  /// backslashes are escape characters to the shell, and ssh on Windows takes
+  /// forward slashes perfectly well.
+  static String sshKeyArg(String key) {
+    final path = key.trim().replaceAll('\\', '/');
+    return "'${path.replaceAll("'", r"'\''")}'";
+  }
 
   /// The ssh arguments, for the test that drives them through git.
   List<String> get debugSshArgs => _sshArgs;
