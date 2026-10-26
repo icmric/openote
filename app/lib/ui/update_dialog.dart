@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../l10n/l10n.dart';
 import '../markdown/md_render.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -151,8 +152,45 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   String? _error;
 
   UpdateInfo get info => widget.info;
+
+  /// **Openote installs its own update on Windows, and nowhere else.**
+  ///
+  /// Not an unfinished branch — a decision, and a different one on each
+  /// platform:
+  ///
+  ///  * **Windows** ships an Inno Setup `-setup.exe`. It takes `/SILENT`,
+  ///    replaces the files and relaunches Openote itself, so the whole
+  ///    update is one `Process.start` and the installer handles its own
+  ///    elevation. That is the only platform where the artefact we already
+  ///    publish can do the job.
+  ///  * **Linux** ships `.deb`, `.rpm` and `.tar.gz`. Both packages need
+  ///    root, and an app that silently elevates to install a package is
+  ///    something a user is right to distrust — worse, it would be reaching
+  ///    around the package manager that owns those files. Somebody who
+  ///    installed the `.rpm` should be updated by `dnf`, not by us. The
+  ///    tarball COULD replace itself (unlinking a running binary is fine on
+  ///    Linux; the inode survives), but nothing records which of the three
+  ///    they used or where they put it, and guessing wrong breaks an install.
+  ///  * **macOS** ships a `.dmg`, so updating means mounting it and copying
+  ///    over `/Applications` while running from there. That is what Sparkle
+  ///    exists for, and it carries a code-signing story this app does not
+  ///    have yet: an unsigned bundle replacing itself lands in Gatekeeper
+  ///    quarantine.
+  ///
+  /// So everywhere else the button sends them to the download page and the
+  /// dialog says, in one line, that they install it themselves.
   bool get _canAutoUpdate =>
       Platform.isWindows && info.windowsSetupUrl != null;
+
+  /// **Where the button goes when Openote cannot install it itself.**
+  ///
+  /// The site rather than the GitHub release: openote.org detects the
+  /// visitor's OS and puts the matching download first, which is the whole
+  /// reason it exists — where the release page is seven assets and a wall of
+  /// notes to scroll past, and a Linux user has to know whether they want the
+  /// `.deb`, the `.rpm` or the `.tar.gz`. The page reads the newest release
+  /// at request time, so it needs nothing from us to stay current.
+  static const _downloadPage = 'https://openote.org';
 
   Future<void> _update() async {
     setState(() {
@@ -195,19 +233,20 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final notes = (info.notes ?? '').trim();
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
-        title: Text('Openote ${info.version} is available'),
+        title: Text(l.updateAvailable(info.version)),
         content: SizedBox(
           width: 440,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('You have $kAppVersion.',
-                  style: TextStyle(fontSize: 12.5)),
+              Text(l.updateYouHave(kAppVersion),
+                  style: const TextStyle(fontSize: 12.5)),
               if (notes.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 // Flexible, not a bare child: the notes panel asks for up to
@@ -220,27 +259,28 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               if (_busy) ...[
                 Text(
                     _progress == null
-                        ? 'Downloading…'
-                        : 'Downloading… ${(_progress! * 100).round()}%',
+                        ? l.updateDownloading
+                        : l.updateDownloadingPercent(
+                            (_progress! * 100).round()),
                     style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 6),
                 LinearProgressIndicator(value: _progress),
                 const SizedBox(height: 6),
-                const Text(
-                    'Your notes are saved. Openote will close, update '
-                    'itself, and reopen.',
-                    style: TextStyle(
+                Text(l.updateSavedClosing,
+                    style: const TextStyle(
                         fontSize: 11.5, color: OnoteColors.graphite400)),
               ] else if (_canAutoUpdate)
-                const Text(
-                    'Your notes will be saved first. Openote closes while '
-                    'the update installs, then reopens by itself.',
-                    style: TextStyle(fontSize: 12, height: 1.4))
+                Text(l.updateWillRestart,
+                    style: const TextStyle(fontSize: 12, height: 1.4))
               else
-                const Text(
-                    'On this system the update installs from a downloaded '
-                    'package — the button opens the download page.',
-                    style: TextStyle(fontSize: 12, height: 1.4)),
+                // **The one thing a reader must not miss.** The old wording
+                // explained the mechanism — *"the update installs from a
+                // downloaded package"* — and buried the instruction, so the
+                // browser opened and people thought the button had failed.
+                // This says what THEY do, in one short sentence, and the
+                // button's own icon says it leaves the app.
+                Text(l.updateInstallYourself,
+                    style: const TextStyle(fontSize: 12, height: 1.4)),
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -256,17 +296,21 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             : [
                 TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Not now')),
+                    child: Text(l.updateNotNow)),
                 if (_canAutoUpdate)
                   FilledButton(
-                      onPressed: _update, child: const Text('Update now'))
+                      onPressed: _update, child: Text(l.updateNow))
                 else
-                  FilledButton(
+                  FilledButton.icon(
                       onPressed: () {
-                        PlatformOpen.url(info.pageUrl);
+                        PlatformOpen.url(_downloadPage);
                         Navigator.of(context).pop();
                       },
-                      child: const Text('Open download page')),
+                      // The icon carries half the message: this one leaves
+                      // Openote. One word and a glyph, rather than a sentence
+                      // on the button.
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: Text(l.updateDownload)),
               ],
       ),
     );

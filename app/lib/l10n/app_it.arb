@@ -457,5 +457,15 @@
   "tagTodo": "Da fare",
   "touchDrawAlways": "Sempre",
   "touchDrawAuto": "Auto (comanda la penna)",
-  "touchDrawNever": "Mai"
+  "touchDrawNever": "Mai",
+  "updateAvailable": "Openote {version} è disponibile",
+  "updateYouHave": "Hai la {version}.",
+  "updateDownloading": "Download in corso…",
+  "updateDownloadingPercent": "Download in corso… {percent}%",
+  "updateSavedClosing": "Le tue note sono salvate. Openote si chiuderà, si aggiornerà e si riaprirà.",
+  "updateWillRestart": "Le tue note verranno salvate prima. Openote si chiude durante l’installazione e poi si riapre da solo.",
+  "updateInstallYourself": "Dovrai scaricarla e installarla tu.",
+  "updateNotNow": "Non ora",
+  "updateNow": "Aggiorna ora",
+  "updateDownload": "Scarica"
 }

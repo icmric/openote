@@ -1570,4 +1570,40 @@ class LZh extends L {
 
   @override
   String get touchDrawNever => '从不';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Openote $version 已发布';
+  }
+
+  @override
+  String updateYouHave(String version) {
+    return '你当前的版本是 $version。';
+  }
+
+  @override
+  String get updateDownloading => '正在下载…';
+
+  @override
+  String updateDownloadingPercent(int percent) {
+    return '正在下载… $percent%';
+  }
+
+  @override
+  String get updateSavedClosing => '你的笔记已保存。Openote 会关闭、完成更新，然后自动重新打开。';
+
+  @override
+  String get updateWillRestart => '系统会先保存你的笔记。安装更新时 Openote 会关闭，完成后自动重新打开。';
+
+  @override
+  String get updateInstallYourself => '你需要自己下载并安装。';
+
+  @override
+  String get updateNotNow => '暂不更新';
+
+  @override
+  String get updateNow => '立即更新';
+
+  @override
+  String get updateDownload => '前往下载';
 }
