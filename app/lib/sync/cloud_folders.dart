@@ -83,11 +83,24 @@ String? _driveLetterOf(String path) {
 /// `C:\\Users\\me\\OneDrive`, where it only ever says the system drive and
 /// "OneDrive · C:" tells nobody anything. The test is whether the path sits
 /// directly under the drive root.
+/// **`p.windows`, not `p`.** A drive letter is a Windows idea, so the question
+/// "is this path a drive root" has one answer everywhere rather than whatever
+/// the host's own path flavour makes of it. On Windows nothing changes —
+/// `p` IS `p.windows` there — and on a POSIX host nothing real changes either,
+/// because this is only reached for a path beginning `X:` and no folder
+/// discovered on Linux or macOS ever does.
+///
+/// What it changes is that the behaviour can be TESTED off Windows. With the
+/// default context, `p.dirname(r'G:\My Drive')` is `.` on a POSIX host, so
+/// the letter came back null, the label quietly lost its `(G:)`, and four
+/// tests in `volume_label_test.dart` failed on two of CI's three runners
+/// while passing on the owner's machine — which is how the branch sat red
+/// from 23 October without it being obvious why.
 String? _mountLetter(String path) {
   final letter = _driveLetterOf(path);
   if (letter == null) return null;
-  final parent = p.dirname(p.normalize(path));
-  return p.equals(parent, '$letter:\\') ? '$letter:' : null;
+  final parent = p.windows.dirname(p.windows.normalize(path));
+  return p.windows.equals(parent, '$letter:\\') ? '$letter:' : null;
 }
 
 /// A volume label with Windows' truncation tidied away.
