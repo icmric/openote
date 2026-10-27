@@ -70,6 +70,27 @@ as `Repository.refillContainerBlobs`, done to a copy, so the notebook in your
 workspace keeps its blobs in its folder where they belong — and then checks
 that every reference resolves before it writes anything.
 
+## What the demo may contain
+
+**Anything a notebook can.** Section groups, sub-pages, handwriting, pictures
+and attachments all travel, because the packer walks `blob_refs` — the same
+projection the app maintains from every block's `blob` and `pdf` keys, its ink
+references and its in-flow images — rather than a list of block types somebody
+has to remember to extend. A PDF attached to a page therefore packs its bytes
+like any picture.
+
+**Two things to check after a structural change**, neither of which the tests
+can judge for you:
+
+- **Which page it opens on.** The browser opens the FIRST page in position
+  order (`AppState._pageToOpenIn`, with no remembered page in a fresh tab).
+  Moving a section into a group, or adding one before it, can change which
+  page that is. Open the packed demo and look.
+- **The size.** It is downloaded by everyone who opens the demo. An attached
+  PDF costs its full size in that download, and the first PDF a visitor opens
+  also fetches PDFium's WASM build — about 3.8 MB, once, only if they reach
+  that page. Worth it for one page; not worth it three times over.
+
 ## Things worth knowing
 
 - **Keep it small.** It is downloaded by everyone who opens the demo. The

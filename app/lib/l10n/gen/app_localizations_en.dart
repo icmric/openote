@@ -1622,4 +1622,43 @@ class LEn extends L {
 
   @override
   String get touchDrawNever => 'Never';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Openote $version is available';
+  }
+
+  @override
+  String updateYouHave(String version) {
+    return 'You have $version.';
+  }
+
+  @override
+  String get updateDownloading => 'Downloading…';
+
+  @override
+  String updateDownloadingPercent(int percent) {
+    return 'Downloading… $percent%';
+  }
+
+  @override
+  String get updateSavedClosing =>
+      'Your notes are saved. Openote will close, update itself, and reopen.';
+
+  @override
+  String get updateWillRestart =>
+      'Your notes will be saved first. Openote closes while the update installs, then reopens by itself.';
+
+  @override
+  String get updateInstallYourself =>
+      'You’ll need to download and install it yourself.';
+
+  @override
+  String get updateNotNow => 'Not now';
+
+  @override
+  String get updateNow => 'Update now';
+
+  @override
+  String get updateDownload => 'Download';
 }

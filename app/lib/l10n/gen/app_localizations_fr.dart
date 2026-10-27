@@ -1637,4 +1637,43 @@ class LFr extends L {
 
   @override
   String get touchDrawNever => 'Jamais';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Openote $version est disponible';
+  }
+
+  @override
+  String updateYouHave(String version) {
+    return 'Vous avez la $version.';
+  }
+
+  @override
+  String get updateDownloading => 'Téléchargement…';
+
+  @override
+  String updateDownloadingPercent(int percent) {
+    return 'Téléchargement… $percent %';
+  }
+
+  @override
+  String get updateSavedClosing =>
+      'Vos notes sont enregistrées. Openote va se fermer, se mettre à jour, puis se rouvrir.';
+
+  @override
+  String get updateWillRestart =>
+      'Vos notes seront enregistrées d’abord. Openote se ferme pendant l’installation, puis se rouvre tout seul.';
+
+  @override
+  String get updateInstallYourself =>
+      'Vous devrez la télécharger et l’installer vous-même.';
+
+  @override
+  String get updateNotNow => 'Pas maintenant';
+
+  @override
+  String get updateNow => 'Mettre à jour';
+
+  @override
+  String get updateDownload => 'Télécharger';
 }

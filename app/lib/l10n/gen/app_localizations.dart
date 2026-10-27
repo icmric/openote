@@ -2728,6 +2728,66 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Never'**
   String get touchDrawNever;
+
+  /// Title of the update dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote {version} is available'**
+  String updateAvailable(String version);
+
+  /// The version the user is running now.
+  ///
+  /// In en, this message translates to:
+  /// **'You have {version}.'**
+  String updateYouHave(String version);
+
+  /// Shown while the update is downloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get updateDownloading;
+
+  /// Download progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading… {percent}%'**
+  String updateDownloadingPercent(int percent);
+
+  /// Reassurance shown while the update downloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Your notes are saved. Openote will close, update itself, and reopen.'**
+  String get updateSavedClosing;
+
+  /// Shown on Windows, where Openote installs the update itself.
+  ///
+  /// In en, this message translates to:
+  /// **'Your notes will be saved first. Openote closes while the update installs, then reopens by itself.'**
+  String get updateWillRestart;
+
+  /// Shown on Linux and macOS, where Openote cannot install the update itself. Deliberately short: the old wording explained the mechanism and people missed the instruction.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ll need to download and install it yourself.'**
+  String get updateInstallYourself;
+
+  /// Dismisses the update dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get updateNotNow;
+
+  /// Starts the in-app update on Windows.
+  ///
+  /// In en, this message translates to:
+  /// **'Update now'**
+  String get updateNow;
+
+  /// Opens openote.org, which offers the right file for the visitor’s system. Carries an open-in-new icon.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get updateDownload;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

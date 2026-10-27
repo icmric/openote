@@ -2198,5 +2198,60 @@
   "touchDrawNever": "Never",
   "@touchDrawNever": {
     "description": "Setting: fingers only move and zoom the page; drawing needs a stylus or the mouse. Shown in a small dropdown — one word if the language allows."
+  },
+  "updateAvailable": "Openote {version} is available",
+  "@updateAvailable": {
+    "description": "Title of the update dialog.",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateYouHave": "You have {version}.",
+  "@updateYouHave": {
+    "description": "The version the user is running now.",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateDownloading": "Downloading…",
+  "@updateDownloading": {
+    "description": "Shown while the update is downloading."
+  },
+  "updateDownloadingPercent": "Downloading… {percent}%",
+  "@updateDownloadingPercent": {
+    "description": "Download progress.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "updateSavedClosing": "Your notes are saved. Openote will close, update itself, and reopen.",
+  "@updateSavedClosing": {
+    "description": "Reassurance shown while the update downloads."
+  },
+  "updateWillRestart": "Your notes will be saved first. Openote closes while the update installs, then reopens by itself.",
+  "@updateWillRestart": {
+    "description": "Shown on Windows, where Openote installs the update itself."
+  },
+  "updateInstallYourself": "You’ll need to download and install it yourself.",
+  "@updateInstallYourself": {
+    "description": "Shown on Linux and macOS, where Openote cannot install the update itself. Deliberately short: the old wording explained the mechanism and people missed the instruction."
+  },
+  "updateNotNow": "Not now",
+  "@updateNotNow": {
+    "description": "Dismisses the update dialog."
+  },
+  "updateNow": "Update now",
+  "@updateNow": {
+    "description": "Starts the in-app update on Windows."
+  },
+  "updateDownload": "Download",
+  "@updateDownload": {
+    "description": "Opens openote.org, which offers the right file for the visitor’s system. Carries an open-in-new icon."
   }
 }

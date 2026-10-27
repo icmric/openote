@@ -1631,4 +1631,43 @@ class LPt extends L {
 
   @override
   String get touchDrawNever => 'Nunca';
+
+  @override
+  String updateAvailable(String version) {
+    return 'O Openote $version está disponível';
+  }
+
+  @override
+  String updateYouHave(String version) {
+    return 'Você tem a $version.';
+  }
+
+  @override
+  String get updateDownloading => 'Baixando…';
+
+  @override
+  String updateDownloadingPercent(int percent) {
+    return 'Baixando… $percent%';
+  }
+
+  @override
+  String get updateSavedClosing =>
+      'Suas notas estão salvas. O Openote vai fechar, atualizar-se e abrir novamente.';
+
+  @override
+  String get updateWillRestart =>
+      'Suas notas serão salvas primeiro. O Openote fecha enquanto a atualização é instalada e depois abre sozinho.';
+
+  @override
+  String get updateInstallYourself =>
+      'Você vai precisar baixar e instalar você mesmo.';
+
+  @override
+  String get updateNotNow => 'Agora não';
+
+  @override
+  String get updateNow => 'Atualizar agora';
+
+  @override
+  String get updateDownload => 'Baixar';
 }

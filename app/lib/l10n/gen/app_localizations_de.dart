@@ -1639,4 +1639,43 @@ class LDe extends L {
 
   @override
   String get touchDrawNever => 'Nie';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Openote $version ist verfügbar';
+  }
+
+  @override
+  String updateYouHave(String version) {
+    return 'Du hast $version.';
+  }
+
+  @override
+  String get updateDownloading => 'Wird heruntergeladen…';
+
+  @override
+  String updateDownloadingPercent(int percent) {
+    return 'Wird heruntergeladen… $percent %';
+  }
+
+  @override
+  String get updateSavedClosing =>
+      'Deine Notizen sind gespeichert. Openote wird geschlossen, aktualisiert sich und öffnet sich wieder.';
+
+  @override
+  String get updateWillRestart =>
+      'Deine Notizen werden zuerst gespeichert. Openote schließt sich während der Installation und öffnet sich dann von selbst wieder.';
+
+  @override
+  String get updateInstallYourself =>
+      'Du musst sie selbst herunterladen und installieren.';
+
+  @override
+  String get updateNotNow => 'Jetzt nicht';
+
+  @override
+  String get updateNow => 'Jetzt aktualisieren';
+
+  @override
+  String get updateDownload => 'Herunterladen';
 }

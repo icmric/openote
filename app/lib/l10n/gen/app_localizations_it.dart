@@ -1638,4 +1638,42 @@ class LIt extends L {
 
   @override
   String get touchDrawNever => 'Mai';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Openote $version è disponibile';
+  }
+
+  @override
+  String updateYouHave(String version) {
+    return 'Hai la $version.';
+  }
+
+  @override
+  String get updateDownloading => 'Download in corso…';
+
+  @override
+  String updateDownloadingPercent(int percent) {
+    return 'Download in corso… $percent%';
+  }
+
+  @override
+  String get updateSavedClosing =>
+      'Le tue note sono salvate. Openote si chiuderà, si aggiornerà e si riaprirà.';
+
+  @override
+  String get updateWillRestart =>
+      'Le tue note verranno salvate prima. Openote si chiude durante l’installazione e poi si riapre da solo.';
+
+  @override
+  String get updateInstallYourself => 'Dovrai scaricarla e installarla tu.';
+
+  @override
+  String get updateNotNow => 'Non ora';
+
+  @override
+  String get updateNow => 'Aggiorna ora';
+
+  @override
+  String get updateDownload => 'Scarica';
 }

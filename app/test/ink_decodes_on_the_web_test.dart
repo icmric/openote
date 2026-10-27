@@ -16,6 +16,15 @@
 // against both bugs, which is exactly how they survived: CI tested the VM on
 // three desktops and never compiled for a browser.
 //
+// It sits here rather than in `test/web/`, which holds tests that can ONLY
+// answer their question in a browser and are marked `@TestOn('browser')`.
+// This one is worth running in both places: on the VM it still guards the
+// round trip and the byte-for-byte re-encode, and a codec that decodes
+// differently on two platforms is the whole fault being guarded against — so
+// skipping the VM half would throw away the comparison. CI runs it twice.
+// `test/web/` is not in CI, deliberately: the job strips PDFium's WASM module
+// before building, which is the one thing the test in there needs.
+//
 // The blob below is real — the drawing on the demo notebook's Maths page,
 // 20 strokes in seven colours, encoded by the Windows build. Keeping the
 // bytes here rather than reading the asset is what lets the test run in a

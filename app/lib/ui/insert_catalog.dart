@@ -217,12 +217,20 @@ Offset insertAnchor(AppState app, InsertItem item) {
 List<InsertItem> get kInsertItems =>
     [for (final g in kInsertGroups) ...g.items];
 
-/// **The ribbon: one row, in the order it has always been in.**
+/// **The ribbon: one row, in the order the owner put them in.**
 ///
 /// The groups below are for the right-click MENU, which shows them as three
 /// short columns. The ribbon is a row and has no columns to put a heading on,
-/// so it reads them out flat — in the order a student learned, which is not
-/// the order the columns happen to fall in.
+/// so it reads them out flat.
+///
+/// The order is not the groups' and is not alphabetical; it is the owner's,
+/// given as a list — *"i recon the first two should remain the same, then pdf,
+/// table, image, video, file, flashcard, board, link, page window"*. The first
+/// two are the two things you MAKE here that have no other way in (an
+/// equation, a code block); then the things you bring in from elsewhere,
+/// commonest first; then the two that point at something that already exists.
+/// The previous order grew by appending whatever was built next, which is how
+/// a graph ended up between a picture and a PDF.
 ///
 /// A test asserts this names every item in the catalog exactly once, so the
 /// two cannot drift apart.
@@ -233,13 +241,13 @@ const List<String> kRibbonOrder = [
   // the text box option from the insert window, its redundant now"*.
   'equation',
   'code',
-  'table',
-  'board',
-  'image',
   'pdf',
-  'file',
+  'table',
+  'image',
   'video',
+  'file',
   'flashcard',
+  'board',
   'pagelink',
   'portal',
 ];

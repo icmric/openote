@@ -4,6 +4,17 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — updating on Linux and macOS
+
+- **The update button opens openote.org**, which offers the right file for
+  your system, instead of the GitHub release page with its seven files and
+  its release notes to scroll past.
+- **It says you install it yourself**, in one line, because the old wording
+  explained the mechanism and people read the browser opening as the button
+  having failed. Openote still installs its own update on Windows.
+- **The update notice is translated**, in all seven languages. It was English
+  everywhere.
+
 ### Fixed — handwriting shows up in a browser
 
 - **Ink draws in the web demo.** It never has. Two separate faults in the same
