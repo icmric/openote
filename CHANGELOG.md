@@ -4,6 +4,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — handwriting shows up in a browser
+
+- **Ink draws in the web demo.** It never has. Two separate faults in the same
+  path made sure of it: the browser could not decompress a stroke blob at all,
+  and the one that unpacks coordinates read every backwards stroke as a line
+  roughly 268 million pixels long. Each is invisible on a desktop, and the
+  first fails quietly by design — a drawing whose bytes will not decode is
+  skipped rather than allowed to break the page — so the demo showed no
+  handwriting and said nothing about why.
+- **Nothing you have saved was affected**, on any platform. The bytes were
+  always written correctly; only reading them in a browser was wrong, and the
+  encoder still produces exactly the same bytes it did before.
+
 ### Fixed — a page you locked can be unlocked again
 
 - **"Every time it is opened" works.** If you chose that when setting a

@@ -137,6 +137,15 @@ integers other than varints.
   `decode(u) = (u >>> 1) ^ -(u & 1)`. Deltas, which are as often negative as
   positive.
 
+  Those two expressions assume **64-bit two's-complement** bitwise operations.
+  Where that does not hold — JavaScript's bitwise operators are 32-bit, and a
+  language may normalise the result into the unsigned range — express the same
+  mapping arithmetically instead:
+  `encode(v) = v < 0 ? -v * 2 - 1 : v * 2`,
+  `decode(u) = u.isOdd ? -(u + 1) / 2 : u / 2`. It is the same mapping and the
+  same bytes; only negative values are at stake, and they fail by becoming
+  very large positive ones rather than by failing to parse.
+
 #### File
 
 | Bytes | Field | |

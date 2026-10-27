@@ -35,9 +35,10 @@
 library;
 
 import 'dart:convert';
-import 'dart:io' show ZLibCodec;
 import 'dart:math' as math;
 import 'dart:typed_data';
+
+import 'package:archive/archive.dart' show ZLibDecoder, ZLibEncoder;
 
 import '../model/models.dart';
 
@@ -85,7 +86,11 @@ class _Writer {
   }
 
   /// Zigzag then LEB128. Deltas, which are as often negative as positive.
-  void svar(int v) => uvar((v << 1) ^ (v >> 63));
+  ///
+  /// Arithmetic rather than `(v << 1) ^ (v >> 63)`, for the reason spelled out
+  /// on [_Reader.svar]: on the web a bitwise operation involving a negative
+  /// operand does not mean what it means here. Same mapping, same bytes.
+  void svar(int v) => uvar(v < 0 ? -v * 2 - 1 : v * 2);
 
   void bytes(List<int> v) => _b.add(v);
 
@@ -117,9 +122,26 @@ class _Reader {
     }
   }
 
+  /// Undo the zigzag, **without a bitwise operation on a negative number**.
+  ///
+  /// This was `(u >>> 1) ^ -(u & 1)`, which is the textbook form and is right
+  /// on the VM and wrong in a browser. `dart2js` normalises the result of an
+  /// integer bitwise operation into the UNSIGNED 32-bit range, so `799 ^ -1`
+  /// is 4294966496 there and -800 here. Compiled and run, to be sure of it:
+  ///
+  /// ```text
+  /// u=1599  bitwise=4294966496  arithmetic=-800
+  /// u=1600  bitwise=800         arithmetic=800
+  /// ```
+  ///
+  /// Only the odd `u` go wrong — only the negative deltas — so handwriting did
+  /// not vanish on the web, it exploded: a stroke that never doubled back drew
+  /// correctly beside one that shot 268,435,406 px off the page. Nothing in
+  /// the project could have caught it, because CI tests the VM on three
+  /// desktops and never compiles for the browser at all.
   int svar() {
     final u = uvar();
-    return (u >>> 1) ^ -(u & 1);
+    return (u & 1) == 1 ? -((u + 1) ~/ 2) : u ~/ 2;
   }
 }
 
@@ -150,7 +172,22 @@ abstract final class InkCodec {
   /// saves, and a single erased fragment is genuinely tiny.
   static const int _deflateAbove = 256;
 
-  static final ZLibCodec _zlib = ZLibCodec(level: 9);
+  /// **`archive`'s zlib rather than `dart:io`'s, because of the browser.**
+  ///
+  /// `dart:io` has no zlib on the web, so every deflated blob — which is every
+  /// blob over [_deflateAbove], so very nearly all of them — threw on the way
+  /// in. [InkStorage.toWorking] catches that and blanks the block by design,
+  /// so handwriting did not fail loudly in the browser demo: it was simply
+  /// absent, with nothing on the console. `archive` picks the platform's
+  /// decoder itself (`dart:io` natively, its own inflate on the web), so this
+  /// is one call that is correct in both places rather than a fork here.
+  ///
+  /// It costs nothing on the desktop, because there it IS `dart:io`: measured
+  /// over the 221 deflated ink blobs of the owner's 324-page notebook
+  /// (3.35 MB), 68.0 ms against 69.0 ms. The web's own inflate is 3.5× that,
+  /// and it is what makes the difference between ink and no ink.
+  static const ZLibEncoder _deflate = ZLibEncoder();
+  static const ZLibDecoder _inflate = ZLibDecoder();
 
   /// True when [bytes] look like this format at all.
   static bool looksLikeInk(Uint8List bytes) =>
@@ -348,7 +385,7 @@ abstract final class InkCodec {
     final payload = body.take();
     final out = w.take();
     if (deflate && payload.length > _deflateAbove) {
-      final z = Uint8List.fromList(_zlib.encode(payload));
+      final z = Uint8List.fromList(_deflate.encodeBytes(payload, level: 9));
       if (z.length < payload.length) {
         out[5] = 1;
         return Uint8List.fromList([...out, ...z]);
@@ -387,7 +424,7 @@ abstract final class InkCodec {
     final rest = Uint8List.sublistView(bytes, 6);
     return switch (method) {
       0 => (rest, version),
-      1 => (Uint8List.fromList(_zlib.decode(rest)), version),
+      1 => (Uint8List.fromList(_inflate.decodeBytes(rest)), version),
       _ => throw FormatException('ink: unknown compression $method'),
     };
   }

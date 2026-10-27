@@ -59,6 +59,7 @@ an Apache-2.0 core:
 | `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints`, `win32`, `win32_registry` | BSD-3-Clause |
 | `html` (added and audited 2026-09-04 — tolerant HTML5 parser for the OneNote-over-Graph import) | BSD-3-Clause (Dart team) |
 | `flutter_svg` (added and audited 2026-10-20 — SVG drawings on a page, promoted from transitive) | MIT (Dan Field) |
+| `archive` (audited 2026-10-27 — zip for the xlsx import, and the zlib that ink blobs are deflated with; a direct dependency since before this table and missed by it until now) | MIT (Brendan Duncan) |
 | `flutter_math_fork`, `pdf`, `printing`, `desktop_drop`, `rxdart` | Apache-2.0 |
 | `serde`, `serde_json` | MIT OR Apache-2.0 |
 | `cab` (vendored) | MIT |
