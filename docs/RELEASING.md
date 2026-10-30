@@ -287,7 +287,7 @@ to:
 | | |
 |---|---|
 | 1 | **Run the workflow.** Actions ▸ Demo ▸ Run workflow ▸ branch `v1.0.2`. This is what creates `openote-demo`. |
-| 2 | **Check it** on `openote-demo.<subdomain>.workers.dev`, which is where it answers before it has a route. |
+| 2 | **Check it** on `openote-demo.<subdomain>.workers.dev`, which is where it answers before it has a route. Everything is published under `/demo/` so the paths match the route, so that is the address that serves the app — the root redirects there. |
 | 3 | **Add the two routes** (§2c). Now it is `openote.org/demo`. |
 | 4 | **Set `VISIT_SALT`** (§2d). Takes effect at once; no redeploy. |
 

@@ -42,6 +42,20 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    // **Anything outside /demo goes to /demo/.**
+    //
+    // On openote.org this never runs: the routes hand this Worker `/demo` and
+    // `/demo/*` and nothing else. It is for the workers.dev address, which is
+    // the only way to check a deploy before those routes exist — and where
+    // the root held nothing, because everything is published one level down
+    // so that the paths match the route. An asset miss is a 404 with an empty
+    // body, which a browser replaces with its own "page cannot be found", so
+    // the first thing anyone saw after a successful deploy looked like a
+    // failed one. It was reported as exactly that.
+    if (!url.pathname.startsWith('/demo')) {
+      return Response.redirect(new URL('/demo/', url).toString(), 302);
+    }
+
     // `sec-fetch-dest: document` is the browser saying "this is a page I am
     // navigating to", which is exactly the event worth counting: one per
     // visit, not one per file. Anything without the header — curl, most
