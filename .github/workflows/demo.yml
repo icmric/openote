@@ -1,0 +1,72 @@
+# Build and publish the browser demo to openote.org/demo.
+#
+# **Manual only, and that is the decision rather than an omission.** Asked
+# whether the demo should follow every release, the owner's answer was that it
+# need not be perfectly up to date — "not all the features even work on the web
+# version" — so this runs when somebody runs it, and the demo otherwise sits at
+# whatever was last published. A release does not touch it.
+#
+# That also keeps a 56 MB build and a public deploy out of the release path,
+# where the things that matter are the three desktop binaries.
+#
+# To publish: Actions ▸ Demo ▸ Run workflow, and pick the branch to build from.
+name: Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'What is being published (shows up in the run list)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# Never two deploys at once, and never cancel one half-uploaded — the same
+# rule as the site workflow, for the same reason.
+concurrency:
+  group: demo
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # The same pin as CI. A demo built on a different SDK from the one
+          # the tests ran against is a demo nothing has tested.
+          flutter-version: 3.44.8
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get
+        working-directory: app
+
+      # `--base-href /demo/` is what makes every URL the app builds at runtime
+      # — its own assets, its service worker scope — sit under the route
+      # rather than at the root of the domain.
+      - name: Build the demo
+        run: flutter build web --release --base-href /demo/
+        working-directory: app
+
+      # Into `public/demo/`, so a request for /demo/<file> maps to a file of
+      # that name without the Worker rewriting anything. See
+      # wrangler.demo.jsonc.
+      - name: Stage it
+        run: |
+          mkdir -p public/demo
+          cp -r app/build/web/. public/demo/
+          echo "staged $(find public/demo -type f | wc -l) files, $(du -sh public/demo | cut -f1)"
+
+      # Pinned, for the reason spelled out at length in site.yml: a deploy
+      # tool that changes underneath a publish is something you find out
+      # about from a user.
+      - name: Deploy
+        run: npx --yes wrangler@4.118.0 deploy -c wrangler.demo.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
