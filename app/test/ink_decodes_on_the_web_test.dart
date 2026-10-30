@@ -125,7 +125,19 @@ void main() {
   test('re-encoding the demo blob gives back the same bytes', () {
     // The store is content-addressed, so a change in what the encoder emits
     // is a change in every hash. `archive` delegating to `dart:io` natively
-    // is what keeps that true.
+    // is what keeps that true where ink is actually written.
+    //
+    // **`vm` only, and the browser taught us why.** This passed here and
+    // failed under `--platform chrome` on the first CI run that compiled it:
+    // DEFLATE is not a function. Only INFLATE is — any encoder may emit a
+    // different valid stream for the same input, and `archive`'s own
+    // compressor is not byte-for-byte `zlib` at level 9. The decoded strokes
+    // are identical either way, which is what the next test holds it to.
+    //
+    // Nothing turns on it today: the browser demo never saves. It would
+    // matter to a browser that did, and only as dedupe — the same drawing
+    // made on a laptop and in a tab would be two blobs rather than one, each
+    // correct, neither replacing the other.
     final bytes = base64Decode(_demoInk);
     final again = InkCodec.encode(
       InkCodec.decode(bytes, originX: 0, originY: 0),
@@ -133,5 +145,25 @@ void main() {
       originY: 0,
     );
     expect(again, bytes);
+  }, testOn: 'vm');
+
+  test('re-encoding the demo blob keeps every stroke, byte-identical or not',
+      () {
+    // What the encoder owes everywhere, which is the weaker and more
+    // important half of the test above: the strokes survive a round trip
+    // whatever the compressor chose to emit.
+    final strokes = InkCodec.decode(base64Decode(_demoInk),
+        originX: 100, originY: 200);
+    final again = InkCodec.decode(
+      InkCodec.encode(strokes, originX: 100, originY: 200),
+      originX: 100,
+      originY: 200,
+    );
+    expect(again.length, strokes.length);
+    for (var i = 0; i < strokes.length; i++) {
+      expect(again[i].x, strokes[i].x, reason: 'stroke $i moved in x');
+      expect(again[i].y, strokes[i].y, reason: 'stroke $i moved in y');
+      expect(again[i].colorHex, strokes[i].colorHex);
+    }
   });
 }

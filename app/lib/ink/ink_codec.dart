@@ -186,6 +186,12 @@ abstract final class InkCodec {
   /// over the 221 deflated ink blobs of the owner's 324-page notebook
   /// (3.35 MB), 68.0 ms against 69.0 ms. The web's own inflate is 3.5× that,
   /// and it is what makes the difference between ink and no ink.
+  ///
+  /// **Reading is identical everywhere; writing is not.** Only INFLATE is a
+  /// function of its input — any compressor may emit a different valid stream
+  /// — so a blob deflated in a browser is not byte-for-byte one deflated by
+  /// `zlib`, though both decode to the same strokes. Nothing turns on it while
+  /// the browser only ever reads; see `ink_decodes_on_the_web_test.dart`.
   static const ZLibEncoder _deflate = ZLibEncoder();
   static const ZLibDecoder _inflate = ZLibDecoder();
 
