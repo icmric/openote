@@ -258,6 +258,112 @@ Pages artefact and has been deleted.
 Until the domain is attached, the Worker is live at
 `openote-site.<your-subdomain>.workers.dev`, which is enough to test with.
 
+### 2.3 The browser demo — `openote.org/demo`
+
+The app itself, compiled for the web, with the demo notebook baked in. The
+point of it is that the download page currently asks for a commitment before
+anybody has seen the thing; the hero's one outline link is the whole of the
+pitch.
+
+**It is not part of a release, and that is deliberate.** Published only by
+running [`.github/workflows/demo.yml`](../.github/workflows/demo.yml) by hand —
+Actions ▸ Demo ▸ Run workflow — so the demo sits at whatever was last
+published until somebody decides otherwise. Not every feature works in a
+browser, so following each release would mostly mean republishing a build
+nobody checked.
+
+**Its own Worker**, `openote-demo`, with its own
+[`wrangler.demo.jsonc`](../wrangler.demo.jsonc). Cloudflare replaces a
+Worker's whole asset directory on every deploy, so a demo living inside
+`site/` would have to be rebuilt and re-uploaded by every website deploy —
+and one made without it would delete the demo. The 56 MB build is produced in
+CI and gitignored; it is never committed.
+
+**You do not create that Worker.** `wrangler deploy` creates it from the
+`name` in the config the first time it runs. Which fixes the order of
+everything below, because a route and a secret both need something to attach
+to:
+
+| | |
+|---|---|
+| 1 | **Run the workflow.** Actions ▸ Demo ▸ Run workflow ▸ branch `v1.0.2`. This is what creates `openote-demo`. |
+| 2 | **Check it** on `openote-demo.<subdomain>.workers.dev`, which is where it answers before it has a route. |
+| 3 | **Add the two routes** (§2c). Now it is `openote.org/demo`. |
+| 4 | **Set `VISIT_SALT`** (§2d). Takes effect at once; no redeploy. |
+
+Step 1 against **`v1.0.2`, not `master`** until that merges: the notebook
+asset, `demo_notebook.dart` and the fix that makes handwriting draw in a
+browser are all on the release branch. `workflow_dispatch` takes the workflow
+*and* the code from the ref picked in the dropdown; the file only has to exist
+on the default branch for the UI to offer it at all.
+
+#### ⚠️ 2c. Two routes — manual, once ever, AFTER the first deploy
+
+Workers & Pages ▸ **openote-demo** ▸ Settings ▸ Domains & Routes ▸ Add ▸
+**Route**, twice:
+
+| Route | Why both |
+|---|---|
+| `openote.org/demo` | the bare path, so a typed address does not hit the site's 404 |
+| `openote.org/demo/*` | everything the app loads — a star does not match the bare path |
+
+A path route, not a custom domain: `openote.org` already belongs to
+`openote-site`, and the more specific path wins. Until these exist the Worker
+answers on `openote-demo.<subdomain>.workers.dev`.
+
+#### Reading the visit count
+
+One data point per page load — not per asset, or one visit would read as the
+seventy-seven requests it takes to start a Flutter app. No cookie and no script
+in the page. Five fields: the day, the country Cloudflare already knows from
+routing, the referring host, the path, and a visitor hash.
+
+| | |
+|---|---|
+| `blob1` | day, `YYYY-MM-DD` |
+| `blob2` | country |
+| `blob3` | referring host, or empty |
+| `blob4` | path |
+| `blob5` | visitor hash — distinct values in a day are roughly distinct people |
+
+```sql
+SELECT blob1 AS day, SUM(_sample_interval) AS loads
+FROM openote_demo_visits
+WHERE timestamp > NOW() - INTERVAL '30' DAY
+GROUP BY day ORDER BY day
+```
+
+Run it against the Analytics Engine SQL API, or read it in the dashboard.
+Treat every number as an indication: bots inflate them, nothing here tries to
+tell a crawler from a person, and Analytics Engine samples above a certain
+volume — which is what `_sample_interval` is correcting for.
+
+**The visitor hash is pseudonymous data, not anonymous data**, and worth
+understanding before anybody asks. It is SHA-256 over the day, the IP, the
+user agent and a secret, truncated to eight bytes. The IP itself is never
+stored. The day is inside the digest, so the same person is a different value
+tomorrow and nobody can be followed across days.
+
+#### ⚠️ 2d. One secret, once ever, also after the first deploy
+
+Dashboard, no tooling needed: Workers & Pages ▸ **openote-demo** ▸ Settings ▸
+**Variables and Secrets** ▸ Add ▸ type **Secret**, name `VISIT_SALT`, value
+any long random string. Or from a terminal, if wrangler is already to hand:
+
+```bash
+npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc   # any long random string
+```
+
+Without it the digest is a hash of an IP address and a user agent, and the
+IPv4 space is small enough to walk — anyone who obtained the numbers could
+turn a hash back into an address. With it they cannot. Rotating it costs one
+day of discontinuity in the unique count and nothing else.
+
+If the Workers plan does not include Analytics Engine, delete the
+`analytics_engine_datasets` block — the Worker checks the binding before
+writing, so the demo keeps working, and the Workers dashboard still shows raw
+request counts.
+
 #### Deploying by hand
 
 ```bash

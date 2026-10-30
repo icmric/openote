@@ -30,3 +30,7 @@ node_modules/
 /appimagetool
 QUESTIONS-for-eric.md
 HANDOVER.md
+
+# The browser demo is BUILT into here by .github/workflows/demo.yml and
+# published from it; 56 MB of Flutter output has no business in the history.
+/public/
