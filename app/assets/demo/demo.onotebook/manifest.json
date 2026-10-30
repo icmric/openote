@@ -1,0 +1,23 @@
+{
+  "format": {
+    "major": 1,
+    "minor": 0
+  },
+  "notebookId": "01a109ea-356d-7f29-9db6-5021d9f35b9e",
+  "title": "demo",
+  "createdAt": 1793013333457,
+  "scope": {
+    "kind": "notebook",
+    "id": "01a109ea-356d-7f29-9db6-5021d9f35b9e"
+  },
+  "devices": {
+    "01a156ca-631f-7da8-8242-eb90a7dcca66": {
+      "firstSeen": 1793013333467,
+      "label": "Windows computer"
+    },
+    "01a177ef-c5a6-7b22-b122-6f99652fb6f2": {
+      "firstSeen": 1793014754891,
+      "label": "Windows computer"
+    }
+  }
+}

@@ -279,7 +279,25 @@ Worker's whole asset directory on every deploy, so a demo living inside
 and one made without it would delete the demo. The 56 MB build is produced in
 CI and gitignored; it is never committed.
 
-#### ⚠️ 2c. Two routes — manual, once ever
+**You do not create that Worker.** `wrangler deploy` creates it from the
+`name` in the config the first time it runs. Which fixes the order of
+everything below, because a route and a secret both need something to attach
+to:
+
+| | |
+|---|---|
+| 1 | **Run the workflow.** Actions ▸ Demo ▸ Run workflow ▸ branch `v1.0.2`. This is what creates `openote-demo`. |
+| 2 | **Check it** on `openote-demo.<subdomain>.workers.dev`, which is where it answers before it has a route. |
+| 3 | **Add the two routes** (§2c). Now it is `openote.org/demo`. |
+| 4 | **Set `VISIT_SALT`** (§2d). Takes effect at once; no redeploy. |
+
+Step 1 against **`v1.0.2`, not `master`** until that merges: the notebook
+asset, `demo_notebook.dart` and the fix that makes handwriting draw in a
+browser are all on the release branch. `workflow_dispatch` takes the workflow
+*and* the code from the ref picked in the dropdown; the file only has to exist
+on the default branch for the UI to offer it at all.
+
+#### ⚠️ 2c. Two routes — manual, once ever, AFTER the first deploy
 
 Workers & Pages ▸ **openote-demo** ▸ Settings ▸ Domains & Routes ▸ Add ▸
 **Route**, twice:
@@ -326,7 +344,11 @@ user agent and a secret, truncated to eight bytes. The IP itself is never
 stored. The day is inside the digest, so the same person is a different value
 tomorrow and nobody can be followed across days.
 
-#### ⚠️ 2d. One secret, once ever
+#### ⚠️ 2d. One secret, once ever, also after the first deploy
+
+Dashboard, no tooling needed: Workers & Pages ▸ **openote-demo** ▸ Settings ▸
+**Variables and Secrets** ▸ Add ▸ type **Secret**, name `VISIT_SALT`, value
+any long random string. Or from a terminal, if wrangler is already to hand:
 
 ```bash
 npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc   # any long random string
