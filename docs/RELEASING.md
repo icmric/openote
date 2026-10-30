@@ -297,10 +297,16 @@ answers on `openote-demo.<subdomain>.workers.dev`.
 
 One data point per page load — not per asset, or one visit would read as the
 seventy-seven requests it takes to start a Flutter app. No cookie and no script
-in the page: the day, the country Cloudflare already knows, and the referring
-host. **No unique-visitor count**, because counting uniques without cookies
-means keeping a rotating hash of each visitor's IP, which is pseudonymous data
-rather than none.
+in the page. Five fields: the day, the country Cloudflare already knows from
+routing, the referring host, the path, and a visitor hash.
+
+| | |
+|---|---|
+| `blob1` | day, `YYYY-MM-DD` |
+| `blob2` | country |
+| `blob3` | referring host, or empty |
+| `blob4` | path |
+| `blob5` | visitor hash — distinct values in a day are roughly distinct people |
 
 ```sql
 SELECT blob1 AS day, SUM(_sample_interval) AS loads
@@ -310,8 +316,26 @@ GROUP BY day ORDER BY day
 ```
 
 Run it against the Analytics Engine SQL API, or read it in the dashboard.
-Treat the numbers as an indication: bots inflate them and nothing here tries to
-tell a crawler from a person.
+Treat every number as an indication: bots inflate them, nothing here tries to
+tell a crawler from a person, and Analytics Engine samples above a certain
+volume — which is what `_sample_interval` is correcting for.
+
+**The visitor hash is pseudonymous data, not anonymous data**, and worth
+understanding before anybody asks. It is SHA-256 over the day, the IP, the
+user agent and a secret, truncated to eight bytes. The IP itself is never
+stored. The day is inside the digest, so the same person is a different value
+tomorrow and nobody can be followed across days.
+
+#### ⚠️ 2d. One secret, once ever
+
+```bash
+npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc   # any long random string
+```
+
+Without it the digest is a hash of an IP address and a user agent, and the
+IPv4 space is small enough to walk — anyone who obtained the numbers could
+turn a hash back into an address. With it they cannot. Rotating it costs one
+day of discontinuity in the unique count and nothing else.
 
 If the Workers plan does not include Analytics Engine, delete the
 `analytics_engine_datasets` block — the Worker checks the binding before

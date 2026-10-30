@@ -89,25 +89,21 @@
   h1,h2,h3 { line-height:1.25; letter-spacing:-.01em; }
 
   /* ── Hero ─────────────────────────────────────────────────────────── */
-  header { padding:72px 0 8px; text-align:center; }
+  header { padding:32px 0 4px; text-align:center; }
   .mark {
-    display:inline-block; width:64px; height:64px; margin-bottom:20px;
+    display:inline-block; width:56px; height:56px; margin-bottom:12px;
     /* drop-shadow, not box-shadow: it follows the icon's own rounded corners,
        which are transparent pixels, rather than drawing a square behind them. */
     filter:drop-shadow(0 6px 14px rgba(59,56,180,.32));
   }
-  h1 { font-size:46px; margin:0 0 8px; font-weight:700; }
-  .tagline { font-size:20px; color:var(--text-2); margin:0 0 22px; }
-  .lede { font-size:18px; max-width:620px; margin:0 auto; }
-  .badges { margin-top:22px; font-size:14px; color:var(--text-2); }
-  .badges span { white-space:nowrap; }
-  .badges span + span::before { content:"·"; margin:0 10px; opacity:.55; }
-
+  h1 { font-size:40px; margin:0 0 6px; font-weight:700; }
+  .tagline { font-size:19px; color:var(--text-2); margin:0 0 12px; }
+  .lede { font-size:17px; max-width:760px; margin:0 auto; }
   /* The demo. An OUTLINE, where every download is a solid .btn — it has to be
      findable in the first screenful without competing with the thing most
      people came here for. Four words: anyone who wants it will recognise it,
      and anyone who doesn't has lost no time reading it. */
-  .try { margin:22px 0 0; }
+  .try { margin:18px 0 0; }
   .try a {
     display:inline-block; text-decoration:none;
     color:var(--primary); font-weight:600; font-size:15px;
@@ -119,10 +115,17 @@
     .try a:hover, .try a:focus-visible { color:var(--night-0); }
   }
 
-  /* The same shape as .note below: the brass left border is this site's
-     mark for "the honest bit". */
+  /* The same shape as .note below it: the brass left border is this site's
+     mark for "the honest bit".
+
+     It sits UNDER the downloads, which is a change from having led with it.
+     Above them it was the tallest thing on the page and pushed every
+     download button off a laptop screen — so the first impression was a
+     paragraph of caveats and a demo link, and the app itself read as
+     unreleased. Honesty that hides the thing it is being honest about is
+     not doing its job. */
   .status {
-    max-width:620px; margin:26px auto 0; text-align:left;
+    margin:18px 0 0; text-align:left;
     background:var(--surface); border:1px solid var(--border);
     border-left:3px solid var(--brass-400); border-radius:8px;
     padding:12px 16px; font-size:15px; color:var(--text-2);
@@ -130,9 +133,9 @@
   .status b { color:var(--text); }
 
   /* ── Downloads ────────────────────────────────────────────────────── */
-  section { padding:44px 0; }
+  section { padding:24px 0 40px; }
   h2 { font-size:22px; margin:0 0 6px; }
-  .sub { color:var(--text-2); margin:0 0 22px; font-size:16px; }
+  .sub { color:var(--text-2); margin:0 0 16px; font-size:15.5px; }
 
   .grid { display:grid; gap:14px; grid-template-columns:repeat(3,1fr); }
   @media (max-width:720px) { .grid { grid-template-columns:1fr; } }
@@ -195,28 +198,14 @@
     <h1>Openote</h1>
     <p class="tagline">Your notes. Your format. Every platform.</p>
     <p class="lede">
-      An open-source alternative to Microsoft OneNote — a real freeform canvas,
-      handwriting and maths, and a documented file format that stays readable
-      whether or not this project does.
-    </p>
-    <p class="badges">
-      <span>Windows · macOS · Linux</span>
-      <span>No account</span>
-      <span>Notes stay on your machine</span>
+      An open-source alternative to OneNote — freeform canvas, handwriting and
+      maths, in a documented format that stays readable without us.
     </p>
     <!-- A new tab, deliberately: the demo has no way back here, and a visitor
          who was about to download something should not lose the page that
          offered it. -->
     <p class="try">
       <a href="/demo/" target="_blank" rel="noopener">Try it in your browser →</a>
-    </p>
-    <p class="status">
-      <b>Usable today, still under active development.</b> Openote is still
-      receiving major updates, and an update may break a feature until the
-      next one fixes it. It is developed on Windows, tested on Linux now and
-      then, and largely untested on macOS. Your notes stay on your own
-      machine in an open, documented format either way — so nothing is ever
-      locked in.
     </p>
   </div>
 </header>
@@ -229,30 +218,35 @@
     <div class="grid">
       <div class="card" id="card-windows">
         <h3>Windows</h3>
-        <p>An installer with the usual wizard. Installs for your user only, so
-           it never asks for an administrator password.</p>
+        <p>The usual installer. Per-user, so it never asks for an
+           administrator password.</p>
         <a class="btn" id="dl-windows" href="https://github.com/icmric/openote/releases/latest">Download for Windows</a>
         <span class="alt" id="alt-windows"></span>
       </div>
 
       <div class="card" id="card-macos">
         <h3>macOS</h3>
-        <p>A universal disk image — Apple Silicon and Intel. Open it and drag
-           Openote to Applications. Honestly: this is the least-tested build —
-           <a href="https://github.com/icmric/openote/issues">tell us what breaks</a>.</p>
+        <p>Apple Silicon and Intel. Drag it to Applications. The least-tested
+           build, honestly: <a href="https://github.com/icmric/openote/issues">tell us what breaks</a>.</p>
         <a class="btn" id="dl-macos" href="https://github.com/icmric/openote/releases/latest">Download for macOS</a>
         <span class="alt" id="alt-macos"></span>
       </div>
 
       <div class="card" id="card-linux">
         <h3>Linux</h3>
-        <p>A package your system installs, so Openote lands in your
-           applications menu — <code>.deb</code> for Ubuntu, Debian and Mint,
-           <code>.rpm</code> for Fedora and openSUSE.</p>
+        <p><code>.deb</code> for Ubuntu, Debian and Mint; <code>.rpm</code> for
+           Fedora and openSUSE. Lands in your applications menu.</p>
         <a class="btn" id="dl-linux" href="https://github.com/icmric/openote/releases/latest">Download for Linux</a>
         <span class="alt" id="alt-linux"></span>
       </div>
     </div>
+
+    <p class="status">
+      <b>Young, and under active development.</b> Updates land often and one
+      can break a feature until the next fixes it. Developed on Windows,
+      tested on Linux occasionally, barely on macOS. What none of that can do
+      is lose your notes: they are files on your disk in a documented format.
+    </p>
 
     <div class="note">
       <h3>Your operating system will warn you. Here's the honest reason.</h3>

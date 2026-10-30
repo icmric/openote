@@ -15,17 +15,27 @@
  * ## What is counted, and what is not
  *
  * One data point per PAGE LOAD — not per asset, or a single visit would count
- * as the seventy-seven requests it takes to start a Flutter app. No cookie, no
- * script in the page, nothing for an ad blocker to object to and nothing a
- * visitor can be identified by: the day, the country Cloudflare already knows
- * from routing the request, and the site that linked here.
+ * as the seventy-seven requests it takes to start a Flutter app. No cookie and
+ * no script in the page, so there is nothing for an ad blocker to object to:
+ * the day, the country Cloudflare already knows from routing the request, the
+ * site that linked here, and a visitor hash.
  *
- * **There is deliberately no unique-visitor count.** Counting uniques without
- * cookies means keeping a rotating hash of each visitor's IP address, which is
- * pseudonymous rather than anonymous data, and the owner's brief was numbers
- * "nothing tying the specific user to it". So this counts loads. Bots inflate
- * that and some visitors block nothing at all, which is the other half of why
- * exactness was never on offer here.
+ * **The visitor hash**, which is the one part worth being precise about. It is
+ * SHA-256 over the day, the IP address, the user agent and a secret, truncated
+ * to eight bytes, and it exists so that two loads can be told apart from one
+ * visitor reloading. The day is INSIDE the hash, so it is a different value
+ * tomorrow for the same person and nothing can be followed across days. The
+ * IP is never stored — only the digest, which never leaves this account.
+ *
+ * It is still pseudonymous data rather than anonymous, and the honest reason
+ * it is here is that the owner asked for a visitor count and decided the
+ * trade was fine for a number nobody acts on. `VISIT_SALT` is what keeps the
+ * digest from being brute-forceable across the IPv4 space by anyone who ever
+ * saw the numbers; set it, and rotating it only costs a discontinuity in the
+ * unique count on the day it changes.
+ *
+ * Bots inflate all of this and nothing here tries to tell a crawler from a
+ * person, which is the other half of why exactness was never on offer.
  */
 
 export default {
@@ -37,20 +47,19 @@ export default {
     // visit, not one per file. Anything without the header — curl, most
     // crawlers — is not counted rather than guessed at.
     if (request.headers.get('sec-fetch-dest') === 'document') {
-      try {
-        record(request, env, url);
-      } catch {
-        // Counting must never be able to cost somebody the demo. If the
-        // dataset binding is absent — it needs a Workers plan that includes
-        // Analytics Engine — this throws, and the page still loads.
-      }
+      // `waitUntil`, because the hash is async and the page must not wait for
+      // a number nobody reads in real time. Counting must never be able to
+      // cost somebody the demo, which is also why the whole thing is inside
+      // a catch: with no dataset binding — it needs a Workers plan that
+      // includes Analytics Engine — this throws, and the page still loads.
+      ctx.waitUntil(record(request, env, url).catch(() => {}));
     }
 
     return env.ASSETS.fetch(request);
   },
 };
 
-function record(request, env, url) {
+async function record(request, env, url) {
   if (!env.VISITS) return;
 
   const cf = request.cf || {};
@@ -71,7 +80,24 @@ function record(request, env, url) {
     // One index per data point, and the day is what every question starts
     // with: "how many this week".
     indexes: [day],
-    blobs: [day, cf.country || '', from, url.pathname],
+    blobs: [day, cf.country || '', from, url.pathname, await visitor(request, env, day)],
     doubles: [1],
   });
+}
+
+/**
+ * Eight bytes of SHA-256 over the day, the address, the user agent and the
+ * salt — enough to separate visitors within a day and useless beyond it.
+ *
+ * Returns '' rather than a weak value if there is nothing to hash, so an
+ * empty address never collapses every visitor onto one shared key and
+ * reports the day's traffic as a single person.
+ */
+async function visitor(request, env, day) {
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  if (!ip) return '';
+  const ua = request.headers.get('user-agent') || '';
+  const bytes = new TextEncoder().encode(`${day}|${ip}|${ua}|${env.VISIT_SALT || ''}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(digest.subarray(0, 8), (b) => b.toString(16).padStart(2, '0')).join('');
 }
