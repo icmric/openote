@@ -103,6 +103,22 @@
   .badges span { white-space:nowrap; }
   .badges span + span::before { content:"·"; margin:0 10px; opacity:.55; }
 
+  /* The demo. An OUTLINE, where every download is a solid .btn — it has to be
+     findable in the first screenful without competing with the thing most
+     people came here for. Four words: anyone who wants it will recognise it,
+     and anyone who doesn't has lost no time reading it. */
+  .try { margin:22px 0 0; }
+  .try a {
+    display:inline-block; text-decoration:none;
+    color:var(--primary); font-weight:600; font-size:15px;
+    border:1px solid var(--primary); border-radius:999px; padding:9px 20px;
+    transition:background .1s, color .1s;
+  }
+  .try a:hover, .try a:focus-visible { background:var(--primary); color:#fff; }
+  @media (prefers-color-scheme: dark) {
+    .try a:hover, .try a:focus-visible { color:var(--night-0); }
+  }
+
   /* The same shape as .note below: the brass left border is this site's
      mark for "the honest bit". */
   .status {
@@ -187,6 +203,12 @@
       <span>Windows · macOS · Linux</span>
       <span>No account</span>
       <span>Notes stay on your machine</span>
+    </p>
+    <!-- A new tab, deliberately: the demo has no way back here, and a visitor
+         who was about to download something should not lose the page that
+         offered it. -->
+    <p class="try">
+      <a href="/demo/" target="_blank" rel="noopener">Try it in your browser →</a>
     </p>
     <p class="status">
       <b>Usable today, still under active development.</b> Openote is still

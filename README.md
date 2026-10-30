@@ -19,6 +19,12 @@ Windows · macOS · Linux
 > Openote. [TESTING.md](TESTING.md) tracks what's actually been tried by a
 > human, as opposed to by the test suite.
 
+## Try it
+
+[openote.org/demo](https://openote.org/demo/) runs the app in a browser, with
+a notebook to poke at. Nothing is saved and some things — opening your own
+files, anything that needs a file picker — can't work there.
+
 ## Install
 
 [openote.org](https://openote.org), or the

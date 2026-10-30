@@ -1,0 +1,75 @@
+// openote.org/demo — the browser demo, as its own Worker.
+//
+// SEPARATE from wrangler.jsonc on purpose. Cloudflare replaces a Worker's
+// whole asset directory on every deploy, so keeping the demo in the website's
+// Worker would mean every website deploy had to carry a 56 MB Flutter build —
+// and one made without it would delete the demo. Two Workers, two routes, two
+// cadences: the site deploys when `site/` changes, this deploys when somebody
+// asks it to.
+//
+// Deploy:  npx wrangler deploy -c wrangler.demo.jsonc
+//          (CI does this ONLY from a manual run of .github/workflows/demo.yml
+//          — never on a release, see that file for why)
+//
+// The assets directory is BUILT, not committed: `public/demo/` is produced by
+// `flutter build web --release --base-href /demo/` and is gitignored.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "openote-demo",
+  "main": "worker/demo.js",
+
+  // Same pin, same reason as the site Worker: a runtime that can change
+  // under a deploy is a deploy that can break without a commit.
+  "compatibility_date": "2026-07-01",
+
+  // NO `routes` block, deliberately, and for the same reason wrangler.jsonc
+  // has none: a `routes` entry makes wrangler manage the zone, which means
+  // widening CLOUDFLARE_API_TOKEN from "Workers Scripts: Edit" to something
+  // that can edit DNS. The two routes this Worker needs are added once, by
+  // hand, in the dashboard — see docs/RELEASING.md §2c. Until they are, it is
+  // live at openote-demo.<subdomain>.workers.dev, which is enough to test on.
+
+  "assets": {
+    // The build is copied to `public/demo/` so that a request for
+    // `/demo/main.dart.js` finds `public/demo/main.dart.js` without this
+    // Worker having to rewrite paths. The alternative — pointing at
+    // `app/build/web` and stripping the prefix in code — is the same result
+    // with a function in the way of it.
+    "directory": "./public",
+    "binding": "ASSETS",
+
+    // Requests hit the Worker first so that page loads can be counted; see
+    // worker/demo.js. Flutter's own files are served straight through.
+    "run_worker_first": true,
+
+    // `/demo` serves `/demo/index.html`, with the redirect to the slash that
+    // makes the app's relative URLs resolve.
+    "html_handling": "auto-trailing-slash"
+
+    // No `not_found_handling`. The obvious choice looks like
+    // `single-page-application`, and it would be wrong twice over: there is
+    // no `public/index.html` for it to fall back TO, and the demo does not
+    // put anything in the URL — opening pages and sections leaves the address
+    // untouched — so there is no deep link for a refresh to lose. A miss
+    // should simply be a miss.
+  },
+
+  // How the visit count is read. Query it with the Analytics Engine SQL API:
+  //
+  //   SELECT blob1 AS day, SUM(_sample_interval) AS loads
+  //   FROM openote_demo_visits
+  //   WHERE timestamp > NOW() - INTERVAL '30' DAY
+  //   GROUP BY day ORDER BY day
+  //
+  // **If your Workers plan does not include Analytics Engine**, delete this
+  // block: the Worker checks the binding exists before writing, so the demo
+  // keeps working and you still get request counts from the Workers dashboard
+  // (inflated by asset requests, which is roughly 77 per visit).
+  "analytics_engine_datasets": [
+    { "binding": "VISITS", "dataset": "openote_demo_visits" }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}
