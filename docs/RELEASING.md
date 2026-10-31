@@ -288,7 +288,7 @@ to:
 |---|---|
 | 1 | **Run the workflow.** Actions ▸ Demo ▸ Run workflow ▸ branch `v1.0.2`. This is what creates `openote-demo`. |
 | 2 | **Check it** on `openote-demo.<subdomain>.workers.dev`, which is where it answers before it has a route. Everything is published under `/demo/` so the paths match the route, so that is the address that serves the app — the root redirects there. |
-| 3 | **Add the two routes** (§2c). Now it is `openote.org/demo`. |
+| 3 | **Deploy the website once** so it picks up the `DEMO` binding — any push to `master` touching `wrangler.jsonc` does it, which the commit adding the binding already is. Now it is `openote.org/demo`. See §2c. |
 | 4 | **Set `VISIT_SALT`** (§2d). Takes effect at once; no redeploy. |
 
 Step 1 against **`v1.0.2`, not `master`** until that merges: the notebook
@@ -297,19 +297,32 @@ browser are all on the release branch. `workflow_dispatch` takes the workflow
 *and* the code from the ref picked in the dropdown; the file only has to exist
 on the default branch for the UI to offer it at all.
 
-#### ⚠️ 2c. Two routes — manual, once ever, AFTER the first deploy
+#### 2c. How `/demo` reaches the demo Worker
 
-Workers & Pages ▸ **openote-demo** ▸ Settings ▸ Domains & Routes ▸ Add ▸
-**Route**, twice:
+**A service binding in `openote-site`, not a Cloudflare route.** The site
+Worker checks for `/demo` and `/demo/*` and hands those requests to
+`openote-demo` through the `DEMO` binding in
+[`wrangler.jsonc`](../wrangler.jsonc); everything else carries on to the
+website's own assets.
 
-| Route | Why both |
-|---|---|
-| `openote.org/demo` | the bare path, so a typed address does not hit the site's 404 |
-| `openote.org/demo/*` | everything the app loads — a star does not match the bare path |
+That is not the obvious design and it is not the first one tried. A route
+(`openote.org/demo*` pointing at `openote-demo`) is the obvious design, and
+it does not work here: **openote.org is attached to `openote-site` as a
+Custom Domain, and a Custom Domain captures the entire hostname.** With both
+routes configured and visible in the dashboard, `openote.org/demo/` still
+answered with the website's 404 page. Cloudflare's documentation says a route
+on the same hostname takes precedence; its community threads report the
+opposite; the site is the deciding experiment and it said Custom Domain.
 
-A path route, not a custom domain: `openote.org` already belongs to
-`openote-site`, and the more specific path wins. Until these exist the Worker
-answers on `openote-demo.<subdomain>.workers.dev`.
+So **if you added those two routes, delete them** — they do nothing, and a
+rule that looks like it is doing the work when it is not is worse than no
+rule. The ordering now lives in `worker/index.js`, in the open, where it can
+be read and tested.
+
+The binding makes `openote-demo` a deploy-time dependency of the website: if
+it has never been deployed, deploying the site fails with an unresolved
+binding. That is the right way round — the alternative is a website that
+deploys happily with a `/demo` that 404s.
 
 #### Reading the visit count
 

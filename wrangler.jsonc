@@ -43,6 +43,22 @@
     "not_found_handling": "404-page"
   },
 
+  // The browser demo, which is its own Worker with its own 56 MB of assets —
+  // see wrangler.demo.jsonc for why it is not simply a folder in site/.
+  //
+  // A binding rather than a Cloudflare route, because a route does not work
+  // here: openote.org is a Custom Domain of THIS Worker and a Custom Domain
+  // takes the whole hostname, so `openote.org/demo*` pointed at the demo was
+  // configured, visible, and never reached. worker/index.js has the detail.
+  //
+  // This makes `openote-demo` a deploy-time dependency of the website: if it
+  // has never been deployed, this deploy fails with an unresolved binding.
+  // That is the right way round — the alternative is a site that deploys
+  // happily with a /demo that 404s.
+  "services": [
+    { "binding": "DEMO", "service": "openote-demo" }
+  ],
+
   "observability": {
     // Logs are off by default and are the only way to find out that
     // /api/latest has been 503ing for a week.
