@@ -42,6 +42,19 @@ jobs:
           flutter-version: 3.44.8
           cache: true
 
+          # **Its own cache keys, and this is not tidiness.** The pub cache is
+          # shared between workflows by default, and `ci.yml` runs
+          # `dart run pdfrx:remove_wasm_modules`, which works by commenting
+          # the `assets:` line out of pdfrx's pubspec INSIDE the pub cache —
+          # deliberately, because desktop cannot run a WASM PDF engine.
+          # `flutter pub get` does not undo it, so a demo built on CI's cache
+          # silently shipped with no PDFium at all: the first published demo
+          # had zero pdfrx entries in its asset manifest, and opening the PDF
+          # on the File Support page failed to load `pdfium_client.js`. The
+          # build was green, because nothing was wrong with the build.
+          cache-key: 'demo-flutter-:os:-:channel:-:version:'
+          pub-cache-key: 'demo-pub-:os:-:channel:-:version:'
+
       - run: flutter --version
       - run: flutter pub get
         working-directory: app
@@ -52,6 +65,24 @@ jobs:
       - name: Build the demo
         run: flutter build web --release --base-href /demo/
         working-directory: app
+
+      # The cache keys above are the fix; this is what makes a regression
+      # loud. A build that quietly omits a package's assets is green, serves,
+      # and only fails when a visitor clicks the one page that needs them —
+      # which is exactly how it was found the first time. Assert the files
+      # are there, and assert the manifest knows about them, because the
+      # failure mode was a present file that nothing declared.
+      - name: PDFium is actually in the build
+        working-directory: app
+        run: |
+          set -e
+          for f in pdfium.wasm pdfium_client.js pdfium_worker.js; do
+            path="build/web/assets/packages/pdfrx/assets/$f"
+            test -s "$path" || { echo "::error::$path is missing or empty"; exit 1; }
+          done
+          grep -q 'pdfrx' build/web/assets/AssetManifest.bin.json \
+            || { echo "::error::no pdfrx entries in AssetManifest — the pub cache was stripped"; exit 1; }
+          echo "PDFium present and declared"
 
       # Into `public/demo/`, so a request for /demo/<file> maps to a file of
       # that name without the Worker rewriting anything. See
