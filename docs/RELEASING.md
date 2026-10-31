@@ -361,16 +361,29 @@ tomorrow and nobody can be followed across days.
 
 Dashboard, no tooling needed: Workers & Pages ▸ **openote-demo** ▸ Settings ▸
 **Variables and Secrets** ▸ Add ▸ type **Secret**, name `VISIT_SALT`, value
-any long random string. Or from a terminal, if wrangler is already to hand:
+**32 random bytes, base64** — 44 characters. Longer buys nothing: SHA-256
+consumes its input in 64-byte blocks and 32 bytes is already far past
+brute-forcing. Generate one in PowerShell:
+
+```powershell
+$b=[byte[]]::new(32); [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+```
+
+Or from a terminal, if wrangler is already to hand:
 
 ```bash
-npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc   # any long random string
+npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc
 ```
+
+**It does not need keeping anywhere.** Nothing ever reads it back — not the
+Worker's code, not the analytics query, not any recovery path — and
+Cloudflare will not show it again once saved. Paste it in and forget it.
 
 Without it the digest is a hash of an IP address and a user agent, and the
 IPv4 space is small enough to walk — anyone who obtained the numbers could
-turn a hash back into an address. With it they cannot. Rotating it costs one
-day of discontinuity in the unique count and nothing else.
+turn a hash back into an address. With it they cannot. Losing it is therefore
+not an incident: set a new one, and the only cost is that the day it changes
+counts some visitors twice.
 
 If the Workers plan does not include Analytics Engine, delete the
 `analytics_engine_datasets` block — the Worker checks the binding before
