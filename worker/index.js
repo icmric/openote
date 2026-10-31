@@ -45,6 +45,27 @@ export default {
       return latestRelease(request, ctx);
     }
 
+    // **The demo is a different Worker, reached from here.**
+    //
+    // Not a Cloudflare route, which is how this was first built and does not
+    // work: openote.org is attached to THIS Worker as a Custom Domain, and a
+    // Custom Domain captures the whole hostname — every path, including the
+    // ones a more specific route claims. With `openote.org/demo*` configured
+    // and visible in the dashboard, openote.org/demo still answered with the
+    // 404 page below. Cloudflare's own docs and its community threads
+    // disagree about which should win; the site settled it.
+    //
+    // A service binding does not depend on that precedence at all. The order
+    // is this file, in the open, and the demo Worker receives the original
+    // request with its path intact — which is what it wants, since its assets
+    // are published under /demo/ to match.
+    if (url.pathname === '/demo' || url.pathname.startsWith('/demo/')) {
+      // Unbound (a deploy that predates the binding) falls through to the
+      // 404 rather than throwing: a missing demo must not take the download
+      // page down with it.
+      if (env.DEMO) return env.DEMO.fetch(request);
+    }
+
     // Everything else is a static asset. `env.ASSETS` is bound by the
     // `assets` block in wrangler.jsonc; the binding is what makes this a
     // Worker *with* assets rather than a Worker that has to serve HTML from a
