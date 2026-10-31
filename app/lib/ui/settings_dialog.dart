@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/platform_open.dart';
 import '../l10n/l10n.dart';
 import '../state/app_state.dart';
+import '../theme/appearances.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../update/app_update.dart';
@@ -165,6 +166,28 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   ],
                   selected: {app.themeMode},
                   onSelectionChanged: (s) => app.setThemeMode(s.first),
+                ),
+              ),
+              // The catalogue row. Two entries today — Light and Night ink —
+              // so the dropdown answers with either of them and the student
+              // sees the same two appearances the mode row above has always
+              // chosen between. What the row EXISTS for is the third entry
+              // (#12's True Black and high-contrast themes): those append to
+              // `appearances` and appear here with no further wiring.
+              _row(
+                l.settingsThemeAppearance,
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: app.appearance.id,
+                    isDense: true,
+                    style: const TextStyle(fontSize: 12),
+                    items: [
+                      for (final a in appearances)
+                        DropdownMenuItem(
+                            value: a.id, child: Text(a.label)),
+                    ],
+                    onChanged: (id) => app.setAppearance(id!),
+                  ),
                 ),
               ),
               // **Language sits under Appearance, not behind a "Region" page

@@ -1882,6 +1882,10 @@
   "@settingsTheme": {
     "description": "Row label: light, dark, or follow the computer."
   },
+  "settingsThemeAppearance": "Appearance",
+  "@settingsThemeAppearance": {
+    "description": "Row label: which built-in appearance the app wears (theme catalogue)."
+  },
   "settingsThemeDark": "Dark",
   "@settingsThemeDark": {
     "description": "Theme choice: pale text on a dark page."
