@@ -80,9 +80,23 @@ jobs:
             path="build/web/assets/packages/pdfrx/assets/$f"
             test -s "$path" || { echo "::error::$path is missing or empty"; exit 1; }
           done
-          grep -q 'pdfrx' build/web/assets/AssetManifest.bin.json \
-            || { echo "::error::no pdfrx entries in AssetManifest — the pub cache was stripped"; exit 1; }
-          echo "PDFium present and declared"
+          python3 -c '
+          import base64, json, sys
+          # AssetManifest.bin.json is a JSON string holding BASE64 of the
+          # binary manifest, NOT a list of readable paths. The first version
+          # of this step grepped it for "pdfrx", which can never match, and
+          # failed a build whose PDFium was perfectly present. Decode first.
+          data = base64.b64decode(json.load(open("build/web/assets/AssetManifest.bin.json")))
+          want = ["packages/pdfrx/assets/pdfium.wasm",
+                  "packages/pdfrx/assets/pdfium_client.js",
+                  "packages/pdfrx/assets/pdfium_worker.js"]
+          missing = [n for n in want if n.encode() not in data]
+          for n in missing:
+              print("::error::%s is on disk but not in AssetManifest" % n)
+          if missing:
+              sys.exit(1)
+          print("PDFium present on disk and declared in the manifest")
+          '
 
       # Into `public/demo/`, so a request for /demo/<file> maps to a file of
       # that name without the Worker rewriting anything. See
