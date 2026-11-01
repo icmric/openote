@@ -34,3 +34,8 @@ HANDOVER.md
 # The browser demo is BUILT into here by .github/workflows/demo.yml and
 # published from it; 56 MB of Flutter output has no business in the history.
 /public/
+
+# The demo notebook's working folder. Opening assets/demo/demo.onote in place
+# makes this its live log directory; the packer inlines what it needs into the
+# .onote, which is the only file the app bundles.
+/app/assets/demo/*.onotebook/
