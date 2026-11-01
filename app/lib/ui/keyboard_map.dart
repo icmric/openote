@@ -1,4 +1,4 @@
-/// THE keyboard map — docs/planning/v0.16-keyboard-control.md §1.
+/// THE keyboard map — docs/planning/archive/v0.16-keyboard-control.md §1.
 ///
 /// Every shortcut in the app, as data. Two consumers keep it honest: the
 /// Ctrl+/ reference overlay renders this table (so the documentation cannot
@@ -90,6 +90,8 @@ const List<KeySection> keyboardMap = [
         'Tool: Select, Text, Pen, Highlighter, Eraser'),
     KeyBinding('Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / cut / paste blocks'),
     KeyBinding('Ctrl+D', 'Duplicate the selected block'),
+    KeyBinding('Ctrl+G / Ctrl+Shift+G',
+        'Group / ungroup — a group is one thing to pick up'),
     KeyBinding('Del', 'Delete the selection'),
     KeyBinding('Ctrl+Z', 'Undo'),
     KeyBinding('Ctrl+Y / Ctrl+Shift+Z', 'Redo'),

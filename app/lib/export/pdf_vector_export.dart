@@ -20,6 +20,7 @@
 /// cut at the fold, which is what a printer does and what the reader expects.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -33,15 +34,47 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../canvas/ink_painter.dart' show colorFromHex;
+import '../core/picture_bytes.dart' show looksLikeSvg;
 import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
 import '../math/graph_plot.dart';
+import '../math/substitute.dart';
 import '../model/models.dart';
 import '../model/inline_atom.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
 import 'pdf_export.dart' show buildPageRasterPdf;
 import 'widget_raster.dart';
+
+/// A picture for the PDF, raster or vector.
+///
+/// An SVG blob used to reach `pw.MemoryImage`, fail to decode and be caught by
+/// the guard around it — the words survived and the drawing silently did not.
+/// `pw.SvgImage` draws it as vector, which is the whole point of having it on
+/// the page: it stays sharp at any zoom and in print.
+///
+/// Null when the bytes are neither, which is what the callers already handle.
+pw.Widget? _pdfPicture(Uint8List bytes,
+    {double? width,
+    double? height,
+    pw.BoxFit fit = pw.BoxFit.contain,
+    pw.Alignment alignment = pw.Alignment.centerLeft}) {
+  try {
+    if (looksLikeSvg(bytes)) {
+      return pw.SvgImage(
+          svg: utf8.decode(bytes, allowMalformed: true),
+          width: width,
+          height: height,
+          fit: fit,
+          alignment: alignment);
+    }
+    return pw.Image(pw.MemoryImage(bytes),
+        width: width, height: height, fit: fit, alignment: alignment);
+  } catch (_) {
+    // A picture the encoder cannot read must not take the words with it.
+    return null;
+  }
+}
 
 /// Page px per PDF point.
 ///
@@ -512,14 +545,14 @@ pw.Widget? _mixedFlow(AppState app, Block b,
           // points — a 600px screenshot drawn 8 inches wide. Falling back to
           // the block's own width is what the screen does too.
           final wPt = (wPx ?? b.w) / _pxPerPoint;
-          children.add(pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 2),
-            child: pw.Image(pw.MemoryImage(bytes),
-                width: wPt,
-                height: hPx == null ? null : hPx / _pxPerPoint,
-                fit: pw.BoxFit.contain,
-                alignment: pw.Alignment.centerLeft),
-          ));
+          final picture = _pdfPicture(bytes,
+              width: wPt, height: hPx == null ? null : hPx / _pxPerPoint);
+          if (picture != null) {
+            children.add(pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+              child: picture,
+            ));
+          }
         } catch (_) {
           // An image the encoder cannot read must not take the words with it.
         }
@@ -879,6 +912,21 @@ String _plainRuns(String line) => [
 /// Drop the inline markers, keeping the words.
 String _stripInline(String s) {
   var out = s;
+  // Until nothing changes: a colour can hold a colour (recolouring part of a
+  // coloured phrase), and one lazy pass stops the outer pair at the FIRST
+  // `}}`, printing `big {{#b word}}`. Each pass removes a level.
+  for (var pass = 0; pass < 8; pass++) {
+    final before = out;
+    out = _stripOnce(out);
+    if (out == before) break;
+  }
+  // An in-flow image reference has no textual meaning; the image itself is a
+  // separate block, so leaving the raw `![](sha256:…)` would just be noise.
+  return out.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
+}
+
+String _stripOnce(String s) {
+  var out = s;
   for (final re in [
     RegExp(r'\*\*(.+?)\*\*'),
     RegExp(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)'),
@@ -886,14 +934,11 @@ String _stripInline(String s) {
     RegExp(r'~~(.+?)~~'),
     RegExp(r'==(.+?)=='),
     RegExp(r'`(.+?)`'),
-    RegExp(r'\{\{#[0-9A-Fa-f]{6,8} (.+?)\}\}'),
+    RegExp(r'\{\{[#=][0-9A-Fa-f]{6,8} (.+?)\}\}'),
     RegExp(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]'),
   ]) {
     out = out.replaceAllMapped(re, (m) => m.group(1) ?? '');
   }
-  // An in-flow image reference has no textual meaning; the image itself is a
-  // separate block, so leaving the raw `![](sha256:…)` would just be noise.
-  out = out.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
   return out;
 }
 
@@ -936,12 +981,8 @@ pw.Widget? _imageWidget(AppState app, Block b, double h,
   final ref = b.content['blob'] as String?;
   final bytes = prerendered ?? (ref == null ? null : app.blob(ref));
   if (bytes != null) {
-    try {
-      image = pw.Image(pw.MemoryImage(bytes),
-          width: wPt, height: hPt, fit: pw.BoxFit.fill);
-    } catch (_) {
-      image = null;
-    }
+    image = _pdfPicture(bytes,
+        width: wPt, height: hPt, fit: pw.BoxFit.fill);
   }
 
   // An imported slide carries the text pdfium pulled out of it. Emitting it
@@ -1111,10 +1152,11 @@ pw.Widget? _graphWidget(Block b, double h) {
 /// word — this is the one place that string is actually built, and the one
 /// a test can check directly.
 @visibleForTesting
-String substituteLine(String latex, String value) {
-  if (value.isEmpty) return latex;
-  final outcome = substituteInto(graphSourceFromLatex(latex), value);
-  return '$latex   (${outcome.variable} = $value → ${outcome.result.display})';
+String substituteLine(Map<String, dynamic> content) {
+  final latex = (content['latex'] as String? ?? '').trim();
+  final at = substituteProjection(content);
+  if (at == null) return latex;
+  return '$latex   (${at.given} → ${at.answer})';
 }
 
 /// A substitute block, as plain text: the equation, and — once a value has
@@ -1124,8 +1166,7 @@ String substituteLine(String latex, String value) {
 pw.Widget? _substituteWidget(Block b) {
   final latex = b.content['latex'] as String? ?? '';
   if (latex.isEmpty) return null;
-  final value = (b.content['value'] as String? ?? '').trim();
-  return pw.Text(substituteLine(latex, value),
+  return pw.Text(substituteLine(b.content),
       style: const pw.TextStyle(fontSize: 10));
 }
 
@@ -1195,9 +1236,10 @@ pw.Font? _mono;
 ///
 /// BORROWED, not bundled, and that is a trade made deliberately: a CJK face
 /// alone is 16 MB or more, which would roughly double an install already
-/// larger than the user wants (docs/planning/install-size-findings.md). Every
-/// desktop that can DISPLAY these scripts already has a font for them, so the
-/// export reads one off disk when it needs one and embeds only the glyphs used.
+/// larger than the user wants (`docs/planning/archive/install-size-findings.md`).
+/// Every desktop that can DISPLAY these scripts already has a font for them, so
+/// the export reads one off disk when it needs one and embeds only the glyphs
+/// used.
 ///
 /// All best-effort: a missing path, a format the encoder will not read, a
 /// locked file — each is skipped. An export that loses a script is bad; one

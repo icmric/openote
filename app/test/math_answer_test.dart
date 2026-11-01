@@ -140,7 +140,7 @@ void main() {
   group('where an answer may appear at all', () {
     test('NOT inside a fraction the student has not stepped out of', () {
       // Typing `1/2=` and a space without leaving the denominator produced
-      // `rac{1}{2=2}` — an answer buried in the bottom of the fraction.
+      // `\frac{1}{2=2}` — an answer buried in the bottom of the fraction.
       final e = typed('1/2=');
       e.insertChar(' ');
       expect(e.latex, isNot(contains('boxed')),
@@ -443,7 +443,7 @@ void main() {
     // back — so opening and saving silently rewrote \fbox{a+b} into
     // \boxed{a+b}. Unrecognised, it goes to the LaTeX view with its source
     // intact, which is this parser's whole honesty rule.
-    final e = MathEditor.open(r'box{a+b}');
+    final e = MathEditor.open(r'\fbox{a+b}');
     if (e != null) {
       expect(e.latex, isNot(contains('boxed')),
           reason: 'if it opens at all it must not be reshaped');

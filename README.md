@@ -19,6 +19,12 @@ Windows · macOS · Linux
 > Openote. [TESTING.md](TESTING.md) tracks what's actually been tried by a
 > human, as opposed to by the test suite.
 
+## Try it
+
+[openote.org/demo](https://openote.org/demo/) runs the app in a browser, with
+a notebook to poke at. Nothing is saved and some things — opening your own
+files, anything that needs a file picker — can't work there.
+
 ## Install
 
 [openote.org](https://openote.org), or the
@@ -89,11 +95,11 @@ Longer-standing defects are carried openly in the
 
 ## What's next
 
-v1.0.2 clears the list above. Beyond that: searchable vector PDF export
-(today's is a raster capture), splitting `AppState`, and real use of the macOS
-and Linux builds. The ranked backlog is
-[here](docs/planning/v0.4-and-beyond.md#1-what-to-do-next); the phase plan is in
-the [roadmap](ROADMAP.md).
+v1.0.2 clears the list above. Beyond that: using the macOS and Linux builds for
+real, splitting the state class everything has landed in, and letting a notebook
+reclaim the space a deleted video left behind. The ranked list is
+[the backlog](docs/planning/backlog.md); the phase plan is in the
+[roadmap](ROADMAP.md).
 
 ## Documentation
 

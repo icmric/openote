@@ -1,7 +1,7 @@
 # Cutting a release
 
 > How a commit on `master` becomes something a stranger can download and
-> install. Last updated 2026-08-05.
+> install.
 >
 > **Everything here is automated except the four things marked ⚠️.** Those four
 > are manual on purpose — a release that can publish itself is a release that
@@ -361,16 +361,29 @@ tomorrow and nobody can be followed across days.
 
 Dashboard, no tooling needed: Workers & Pages ▸ **openote-demo** ▸ Settings ▸
 **Variables and Secrets** ▸ Add ▸ type **Secret**, name `VISIT_SALT`, value
-any long random string. Or from a terminal, if wrangler is already to hand:
+**32 random bytes, base64** — 44 characters. Longer buys nothing: SHA-256
+consumes its input in 64-byte blocks and 32 bytes is already far past
+brute-forcing. Generate one in PowerShell:
+
+```powershell
+$b=[byte[]]::new(32); [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+```
+
+Or from a terminal, if wrangler is already to hand:
 
 ```bash
-npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc   # any long random string
+npx wrangler@4 secret put VISIT_SALT -c wrangler.demo.jsonc
 ```
+
+**It does not need keeping anywhere.** Nothing ever reads it back — not the
+Worker's code, not the analytics query, not any recovery path — and
+Cloudflare will not show it again once saved. Paste it in and forget it.
 
 Without it the digest is a hash of an IP address and a user agent, and the
 IPv4 space is small enough to walk — anyone who obtained the numbers could
-turn a hash back into an address. With it they cannot. Rotating it costs one
-day of discontinuity in the unique count and nothing else.
+turn a hash back into an address. With it they cannot. Losing it is therefore
+not an incident: set a new one, and the only cost is that the day it changes
+counts some visitors twice.
 
 If the Workers plan does not include Analytics Engine, delete the
 `analytics_engine_datasets` block — the Worker checks the binding before
@@ -395,7 +408,7 @@ directly instead.
 ## 3. The warnings, and what to tell people
 
 Openote is **not code-signed**, on either platform. This is a deliberate,
-revisitable decision — see [v0.7 §4](planning/v0.7-packaging.md#4-the-honest-part-code-signing).
+revisitable decision — see [v0.7 §4](planning/archive/v0.7-packaging.md#4-the-honest-part-code-signing).
 The release notes already explain both warnings; the short version:
 
 - **Windows — "Windows protected your PC".** More info → Run anyway.
@@ -482,40 +495,28 @@ git push --delete origin vX.Y.Z
 
 ---
 
-## 6. Not yet true
+## 6. What the pipeline has not proved
 
-Stated plainly, because this is where the surprises come from.
+All three platform jobs run to completion and people have downloaded every
+artifact. What nobody has done is **report back from running the macOS or
+Linux build**. An artifact existing is not an artifact working, which is why
+the release notes keep saying macOS is the least-tested platform by far.
 
-> **Superseded 2026-09-02.** The paragraph below is kept because its two
-> findings are still worth reading, but its headline is no longer true:
-> **eight releases have shipped**, v0.3.1 through v0.8.0, and every one of the
-> three platform jobs runs to completion. v0.8.0 published `.exe`, `.zip`,
-> `.deb`, `.rpm`, `.tar.gz` and a universal `.dmg`, and people have downloaded
-> all of them. What is still true — and is the one thing this section should
-> now say — is that **nobody has reported back from running the macOS or
-> Linux build**. Artifacts existing is not the same as artifacts working, and
-> the release notes are right to keep saying macOS is the least-tested
-> platform by far.
+Two faults in the Windows job that no amount of reading caught, both fixed,
+both easy to reintroduce:
 
-**The three platform jobs had never run to completion when this was written.**
-Two tag attempts both stopped at the version guard, so everything after it was
-skipped. An audit of that never-executed path found two independent faults in
-the Windows job, both since fixed, and neither of which any amount of reading
-had caught before:
-
-- `"$env:ProgramFiles(x86)\..."` expands to `C:\Program Files(x86)\...` —
-  without the space. PowerShell ends an unbraced variable name at `(`, so the
-  braced `${env:ProgramFiles(x86)}` is required. Confirmed by running the exact
-  expression under pwsh.
-- The Inno Setup pin was 6.2.2 while `openote.iss` uses
+- `"$env:ProgramFiles(x86)\..."` expands without the space, because
+  PowerShell ends an unbraced variable name at `(`. Use
+  `${env:ProgramFiles(x86)}`.
+- The Inno Setup version was pinned to 6.2.2 while `openote.iss` uses
   `ArchitecturesAllowed=x64compatible`, which needs 6.3+. A pin that cannot
   compile the script it is pinned for is not caution. The install is now
-  unpinned and the step **asserts** the floor with a message saying what to do.
+  unpinned and the step asserts the floor.
 
-**Still unchecked from a Linux machine:** whether ISCC accepts `app_icon.ico`,
-whose entries are all PNG-compressed rather than BMP. The `workflow_dispatch`
-dry run settles this — that is what it is for. If ISCC rejects it, regenerate
-the icon with BMP entries at 16/32/48.
+**Still unchecked from a Linux machine:** whether ISCC accepts
+`app_icon.ico`, whose entries are all PNG-compressed rather than BMP. The
+`workflow_dispatch` dry run settles it. If ISCC rejects it, regenerate the
+icon with BMP entries at 16/32/48.
 
 ### What the dry run cannot tell you
 

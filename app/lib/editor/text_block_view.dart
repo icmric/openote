@@ -81,7 +81,18 @@ class TextBlockView extends StatefulWidget {
   /// other two to meet it.
   static const double letterSpacing = 0.25;
 
-  static TextStyle baseStyle(Block b, {required bool dark}) => TextStyle(
+  /// The resolved base style for a box's text.
+  ///
+  /// [onDocument] is [AppState.overDocument] — the box sits on an imported
+  /// slide or picture, which brings its own (overwhelmingly light) background,
+  /// so the default ink contrasts with THAT rather than with the page. The
+  /// owner: *"when typing on a PDF, auto text colour should work like auto ink
+  /// colour where it adjusts between black and white based on the PDF."* The
+  /// pen has worked this way since the same report was made about ink; a
+  /// chosen colour is never overridden, here or there.
+  static TextStyle baseStyle(Block b,
+          {required bool dark, bool onDocument = false}) =>
+      TextStyle(
         fontSize: (b.content['fontSize'] as num?)?.toDouble() ?? 15,
         height: _lineHeightOf(b),
         letterSpacing: letterSpacing,
@@ -91,7 +102,9 @@ class TextBlockView extends StatefulWidget {
         // characters an ordinary text font has no glyph for. Without this those
         // characters render as blank boxes.
         fontFamilyFallback: onoteFontFallback,
-        color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,
+        color: onDocument
+            ? OnoteColors.graphite900
+            : (dark ? OnoteColors.moon100 : OnoteColors.graphite700),
       );
 
   /// The line-height multiplier for a block, healing the legacy import value.
@@ -366,14 +379,15 @@ class _TextBlockViewState extends State<TextBlockView> {
           // line moves every marker below it onto the wrong sentence — and
           // takes the flashcards derived from them with it. Rebase before the
           // new text lands, while both versions are still available, and carry
-          // each moved tag's review schedule across with it: a card is
-          // identified by `blockId:line`, so a tag that moves alone leaves its
-          // schedule orphaned under a name nothing points at any more.
-          widget.app.study.remapCardStates(
-            widget.block.id,
-            NoteTag.rebase(widget.block.content,
-                _engine.deserialize(widget.block.content), v),
-          );
+          // every moved line's review schedule across with it: a card is
+          // identified by `blockId:line`, so a card that moves alone leaves its
+          // schedule orphaned under a name nothing points at any more — or
+          // worse, under the name of the card below it. EVERY line, not the
+          // tags' lines: a card written as `?[…](…)` has no tag.
+          final was = _engine.deserialize(widget.block.content);
+          NoteTag.rebase(widget.block.content, was, v);
+          widget.app.study
+              .remapCardStates(widget.block.id, NoteTag.lineMoves(was, v));
           _engine.serialize(widget.block.content, v);
           widget.block.updatedAt = nowMs();
           // Width is measured in the parent build (lag-free); markDirty here
@@ -403,7 +417,8 @@ class _TextBlockViewState extends State<TextBlockView> {
     final surface = TextSurface(
       block: widget.block,
       app: widget.app,
-      baseStyle: TextBlockView.baseStyle(widget.block, dark: dark),
+      baseStyle: TextBlockView.baseStyle(widget.block,
+          dark: dark, onDocument: widget.app.overDocument(widget.block)),
       inset: TextBlockView.insetFor(widget.block),
       dark: dark,
       // **Name first, then the marks.** The caret is already blinking here,

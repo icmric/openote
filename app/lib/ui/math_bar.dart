@@ -1,44 +1,30 @@
-/// The **Maths** tab of the toolbar (plan: v0.18 §5.2, revised four times).
+/// The **Maths** tab of the toolbar, shown only while an equation is being written
+/// and gone the moment you finish.
 ///
-/// It appears only while an equation is being written and goes away the moment
-/// you finish — a contextual tab, the way OneNote does it.
-///
-/// **Round one** put the palette inside the equation's own box. The owner:
-/// *"this isnt great. I want them in the bar up the top like it is in
-/// onenote."*
-///
-/// **Round two** put it in the toolbar and it was, in their word, chaotic —
-/// and measurably so: **1725–2230 px** against an app whose default window is
-/// **1280**, with no scrollbar and a mouse wheel that did nothing, so the
-/// search box and the LaTeX escape hatch sat off the right-hand edge.
-/// Twenty-seven controls, eighteen ragged-width chips in a flat run, then
-/// eight word-labelled drop-downs — each of which opened a gallery **one
-/// symbol per row** (Greek was a 1119 px column), because a `Container` with
-/// an `alignment` expands to its loose constraints.
-///
-/// **Round three** collapsed all of that to twelve controls behind one
-/// Symbols door, which fitted — and then had room to spare. The owner: *"We
-/// have more space to play with in that bar than your using, so we can break
-/// symbols, opperators, large opperators, functions, etc out into their own
-/// things."*
-///
-/// **Round four — this one.** A door per KIND of thing, because one marked
-/// "Symbols" is a filing cabinet: a student after a summation still has to
-/// know it is filed under symbols rather than under shapes.
+/// **A door per KIND of thing, not one marked "Symbols".** A single door is a
+/// filing cabinet: a student after a summation then has to know it is filed under
+/// symbols rather than under shapes. This layout is the fourth attempt and the
+/// three before it are in the archived v0.18 plan; what each of them ran into was
+/// width. The default window is **1280 px** and an earlier arrangement needed
+/// 1725–2230, so the search box and the LaTeX escape hatch sat off the right edge
+/// with no scrollbar. Anything added here has to fit.
 ///
 /// ```
-///  1/2  x^2  root  (box)  words  |  Shapes Big Operators Compare Greek
-///                                   Sets Functions More  |  find  = 0.5  ...
+///  1/2  x^2  root  (box)  |  Shapes Operators Compare Calculus Greek Sets
+///                            Functions Subjects  |  find  Graph Evaluate  DEG  ...
 /// ```
 ///
-/// Every door carries its arrow again (cut in round three for width, asked
-/// for back), the panels are owned by the BAR rather than by each button so a
-/// second door opens on the FIRST click, and the entrance is 90 ms rather than
-/// Material's ~300.
+/// **The panels are owned by the bar, not by each button**, so a second door opens
+/// on the FIRST click rather than needing one to dismiss the last. The entrance is
+/// 90 ms, against Material's ~300.
 ///
-/// The rules kept throughout: the shapes never move (their positions ARE the
-/// muscle memory), every tooltip teaches the keyboard route, the search speaks
-/// plain student, and the LaTeX view is one item behind the ellipsis.
+/// Four rules, each learned the hard way:
+///
+///  * **The shapes never move.** Their positions *are* the muscle memory.
+///  * **Every tooltip teaches the keyboard route**, so the palette is a way to
+///    learn the syntax rather than a replacement for it.
+///  * **The search speaks plain student** — "times", not the backslash name.
+///  * **The LaTeX view is one item behind the ellipsis**, never on the bar.
 library;
 
 import 'package:flutter/material.dart';
@@ -49,7 +35,7 @@ import '../math/math_view.dart';
 import '../theme/tokens.dart';
 import 'shortcut_overlay.dart';
 
-/// The eight shapes that stay on the bar, in this order, forever.
+/// The shapes that stay on the bar, in this order, forever.
 ///
 /// Chosen by what a year-10 to first-year student reaches for in an afternoon,
 /// not by what is interesting. Everything else is one click further away.
@@ -57,6 +43,26 @@ import 'shortcut_overlay.dart';
 /// is 1385 px measured, which is wider than the 1280 px window the app opens
 /// at — so the chips pay for the doors, and these are the five that survive a
 /// "would a student reach for this today" test.
+///
+/// **The rule that makes these consistent with the doors beside them**, which
+/// was reported as missing: *"we have some options (like fraction, square
+/// root, and brackets) just there as buttons, then groups of buttons, where
+/// most are labled by english words, and one is labeled by symbols, this
+/// should be more consistent."*
+///
+/// > **The arrow is the tell.** A control carrying `arrow_drop_down` opens
+/// > something; one without it inserts what it draws.
+///
+/// That is exactly true of every control on the row, the search door
+/// included — a magnifying glass is not a word, and it has the arrow. What
+/// the complaint was really about is that the arrow was not enough to go on
+/// while one door's FACE was a pair of maths symbols: `∑ ∫` looked like a
+/// chip that would insert a sigma, and was not one. With it renamed to
+/// Calculus every labelled control says which kind it is twice over —
+/// glyphs insert, words open — and the arrow settles the icon case.
+///
+/// Keeping both kinds is deliberate: these four are the ones worth never
+/// putting behind a door.
 const List<String> kMathQuickShapes = [
   'frac', 'power', 'sqrt', 'paren',
 ];
@@ -100,6 +106,20 @@ const Map<String, List<MathCat>> kMathDoorSweeps = {
 /// the derivative it belongs beside, `sin` eighteen chips from `sin⁻¹`, and
 /// absolute value, piecewise and matrix in **no door at all** — reachable only
 /// by searching for them.
+///
+/// **The order changed once more**, on the report that it was not logical:
+///
+/// ```
+/// was:  Shapes  ∑∫  Operators  Compare  Greek  Sets  Functions  Subjects
+/// now:  Shapes  Operators  Compare  Calculus  Greek  Sets  Functions  Subjects
+/// ```
+///
+/// The big operators sat SECOND — the hardest door on the row, before plus
+/// and minus. Reading left to right now goes: the shapes you build things
+/// out of, the arithmetic you do to them, the relations you write between
+/// them, then calculus, then the alphabet, then sets and logic, then named
+/// functions, then one door per subject. That is the order the topics
+/// arrive in, which is the only order a student has already learnt.
 const List<MathDoor> kMathDoors = [
   (
     label: 'Shapes',
@@ -109,8 +129,6 @@ const List<MathDoor> kMathDoors = [
       'subscript', 'subsup',
       // Roots.
       'nthroot',
-      // Calculus, and the prime that belongs with it.
-      'ddx', 'partial', 'prime',
       // Brackets that grow — abs, floor and ceil are the same idea.
       'abs', 'floor', 'ceil',
       // Grids: the determinant now has its matrix beside it.
@@ -125,14 +143,6 @@ const List<MathDoor> kMathDoors = [
     ],
   ),
   (
-    // Not "Big": a door named after a size tells a student nothing. These are
-    // the operators that carry their limits, and the symbols say so faster
-    // than any word available at this width.
-    label: '∑ ∫',
-    tip: 'Sums, integrals, products and limits',
-    ids: ['sum', 'prod', 'int', 'iint', 'oint', 'lim'],
-  ),
-  (
     label: 'Operators',
     tip: 'Plus or minus, times, divide, and the rest',
     ids: [
@@ -141,7 +151,7 @@ const List<MathDoor> kMathDoors = [
       // Then the ones that hang off a number.
       'percent', 'degree', 'factorial',
       // Then the odds and ends.
-      'infty', 'ldots', 'propto', 'nabla',
+      'infty', 'ldots', 'propto',
     ],
   ),
   (
@@ -156,6 +166,33 @@ const List<MathDoor> kMathDoors = [
       'to', 'gets', 'leftrightarrow', 'mapsto',
       'implies', 'impliedby', 'iff',
       'therefore', 'because',
+    ],
+  ),
+  (
+    // **Was `∑ ∫`** — the one door labelled with symbols while the other seven
+    // were labelled with words. Reported: *"most are labled by english words,
+    // and one is labeled by symbols, this should be more consistent."*
+    //
+    // Right, and the fix is not just a word: it is that the word made the
+    // door's CONTENTS wrong. "Not Big, a door named after a size tells a
+    // student nothing" was the reason for the symbols, and it was sound —
+    // but the honest name for sums, integrals, limits and the derivative
+    // forms is Calculus, and once it is named that, d/dx, ∂ and the prime
+    // belong in it. They were filed under Shapes, so differentiating and
+    // integrating meant two different doors. ∇ comes across from Operators
+    // for the same reason.
+    //
+    // Ordered the way the topic is taught: differentiate, integrate, take a
+    // limit, sum a series — each blank form followed by the filled-in ones
+    // that save typing the same limits again.
+    label: 'Calculus',
+    tip: 'Derivatives, integrals, limits, sums and products',
+    ids: [
+      'ddx', 'partial', 'prime', 'nabla',
+      'int', 'intdx', 'iint', 'oint',
+      'lim', 'limx0', 'limxinf',
+      'sum', 'sumin', 'suminf',
+      'prod', 'prodin',
     ],
   ),
   (
@@ -189,6 +226,13 @@ const List<MathDoor> kMathDoors = [
     ids: [],
   ),
 ];
+
+/// The label of the door that holds whatever did not fit on the row.
+///
+/// Shares its spelling with the trailing `...` fold's tooltip by accident
+/// rather than by design — they are different controls, and this one is a
+/// door like the ones beside it.
+const String kMathFoldLabel = 'More';
 
 /// Doors whose contents come from a whole category rather than a list.
 const Map<String, List<MathCat>> kMathDoorCats = {
@@ -348,10 +392,16 @@ class _MathBarState extends State<MathBar> {
       return box.localToGlobal(Offset.zero) & box.size;
     }
 
-    for (final door in kMathDoors) {
-      final r = rectOf(_keyFor(door.label));
+    for (final label in [
+      // Only the doors actually on the row have a laid-out button to hit, and
+      // the fold has one whenever anything is behind it.
+      for (final d in kMathDoors)
+        if (!_folded.contains(d)) d.label,
+      if (_folded.isNotEmpty) kMathFoldLabel,
+    ]) {
+      final r = rectOf(_keyFor(label));
       if (r != null && r.contains(global)) {
-        if (was != door.label) _toggle(door.label);
+        if (was != label) _toggle(label);
         return;
       }
     }
@@ -399,10 +449,12 @@ class _MathBarState extends State<MathBar> {
               clipBehavior: Clip.antiAlias,
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: label == '__search'
-                    ? _searchPanel()
-                    : _doorPanel(
-                        kMathDoors.firstWhere((d) => d.label == label)),
+                child: switch (label) {
+                  '__search' => _searchPanel(),
+                  kMathFoldLabel => _groupsPanel(_foldedGroups()),
+                  _ => _doorPanel(
+                      kMathDoors.firstWhere((d) => d.label == label)),
+                },
               ),
             ),
           ),
@@ -418,9 +470,129 @@ class _MathBarState extends State<MathBar> {
     widget.onInsert(item);
   }
 
-  Widget _doorPanel(MathDoor door) {
+  /// Which doors are on the row, and which are behind [kMathFoldLabel], at a
+  /// given width. Set during layout and read by [_barrierPressed], which
+  /// runs from a pointer event rather than from a build.
+  List<MathDoor> _folded = const [];
+
+  /// A door's rendered width, measured rather than tabulated.
+  ///
+  /// Every door is the same widget with a different word in it — see
+  /// [_DoorButton] — so its width is that word's width plus a constant, and
+  /// `TextPainter` knows the word's width exactly. Taking the text scaler
+  /// from the context matters: a student reading at 150% has wider words, and
+  /// a table of constants measured at 100% would fold nothing while the row
+  /// overflowed.
+  double _doorWidth(BuildContext context, String label) {
+    // right padding 3 + border 1 + left pad 6 + text + arrow 11 + pad 1 +
+    // border 1.
+    const chrome = 23.0;
+    final tp = TextPainter(
+      text: TextSpan(text: label, style: OnoteType.small),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    return tp.width + chrome;
+  }
+
+  /// **The doors, and a fold for whatever will not fit.**
+  ///
+  /// Round four gave every kind of thing its own named door, at the owner's
+  /// request: *"We have more space to play with in that bar than your using,
+  /// so we can break symbols, opperators, large opperators, functions, etc
+  /// out into their own things."* That spent the row's spare width, and the
+  /// guard test said as much in so many words — "the next thing that wants a
+  /// place on it has to take something else off".
+  ///
+  /// Then two more things wanted a place: an Evaluate button that is the
+  /// whole point of taking it out of the fold, and a door named Calculus
+  /// where `∑ ∫` had been. Measured at 1415 px against a 1280 px window.
+  ///
+  /// Taking a door off again would undo the request above, so the row folds
+  /// instead — the same answer the command bar's trailing cluster gives, for
+  /// the same reported reason: *"it doesnt handle resizing well (menus should
+  /// either compact as required or become sliding, again i believe the former
+  /// is cleaner)."*
+  ///
+  /// Order is what makes a fold acceptable here. The doors are listed in the
+  /// order a student meets the topics, so the ones that fold are the far
+  /// ones — Subjects before Functions, Functions before Sets — and never
+  /// Shapes. Nothing becomes unreachable: the fold's panel is the hidden
+  /// doors' own contents, each under its own name, which the panel already
+  /// knew how to draw because Greek and Subjects are built that way.
+  Widget _doorStrip(OnoteSurfaces s) {
+    return LayoutBuilder(builder: (context, cons) {
+      final widths = [
+        for (final d in kMathDoors) _doorWidth(context, d.label),
+      ];
+      final total = widths.fold<double>(0, (a, b) => a + b);
+      var shown = kMathDoors.length;
+      if (cons.maxWidth.isFinite && total > cons.maxWidth) {
+        // Room for the fold's own button is reserved before anything is
+        // placed, so the decision never has to be redone once making room
+        // for the trigger has itself taken room.
+        var used = _doorWidth(context, kMathFoldLabel);
+        shown = 0;
+        for (var i = 0; i < kMathDoors.length; i++) {
+          if (used + widths[i] > cons.maxWidth) break;
+          used += widths[i];
+          shown++;
+        }
+      }
+      final folded = kMathDoors.sublist(shown);
+      // Read later by the barrier, which has no build to read it from.
+      _folded = folded;
+      // **Resizing can take the button a panel belongs to off the row.**
+      // Widen until nothing folds and the fold's panel is left showing
+      // nothing at all; narrow until the open door folds and its panel is
+      // left anchored to a button that no longer exists. Either way the
+      // panel has outlived the control that opened it, so it closes.
+      //
+      // Post-frame, because closing is a `setState` and this runs during
+      // layout.
+      final orphaned = _open != null &&
+          _open != '__search' &&
+          (_open == kMathFoldLabel
+              ? folded.isEmpty
+              : folded.any((d) => d.label == _open));
+      if (orphaned) {
+        final was = _open;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _open == was) _close();
+        });
+      }
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        for (final door in kMathDoors.take(shown))
+          _DoorButton(
+            key: _keyFor(door.label),
+            label: door.label,
+            tooltip: door.tip,
+            open: _open == door.label,
+            surfaces: s,
+            onTap: () => _toggle(door.label),
+          ),
+        if (folded.isNotEmpty)
+          _DoorButton(
+            key: _keyFor(kMathFoldLabel),
+            label: kMathFoldLabel,
+            tooltip: folded.map((d) => d.label).join(', '),
+            open: _open == kMathFoldLabel,
+            surfaces: s,
+            onTap: () => _toggle(kMathFoldLabel),
+          ),
+      ]);
+    });
+  }
+
+  /// The fold's panel: every hidden door's contents, under its own name.
+  List<MathGroup> _foldedGroups() => [
+        for (final d in _folded) (title: d.label, items: mathDoorItems(d)),
+      ];
+
+  Widget _doorPanel(MathDoor door) => _groupsPanel(mathDoorGroups(door));
+
+  Widget _groupsPanel(List<MathGroup> groups) {
     final s = context.surfaces;
-    final groups = mathDoorGroups(door);
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 340),
       child: SingleChildScrollView(
@@ -555,7 +727,11 @@ class _MathBarState extends State<MathBar> {
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),
-        _GraphButton(onDrawGraph: widget.onDrawGraph, surfaces: s),
+        ..._doButtons(
+          onDrawGraph: widget.onDrawGraph,
+          onEvaluateAtValue: widget.onEvaluateAtValue,
+          surfaces: s,
+        ),
         _AngleSwitch(
           mode: widget.angleMode,
           onToggle: widget.onToggleAngleMode,
@@ -565,7 +741,6 @@ class _MathBarState extends State<MathBar> {
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
           onToggleLatex: widget.onToggleLatex,
-          onEvaluateAtValue: widget.onEvaluateAtValue,
           surfaces: s,
         ),
       ]);
@@ -574,17 +749,25 @@ class _MathBarState extends State<MathBar> {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       for (final id in kMathQuickShapes)
         if (mathItemsById[id] case final item?)
-          MathChip(item: item, onTap: widget.onInsert, surfaces: s),
+          MathChip(
+              item: item, onTap: widget.onInsert, surfaces: s, dense: true),
       _Sep(surfaces: s),
-      for (final door in kMathDoors)
-        _DoorButton(
-          key: _keyFor(door.label),
-          label: door.label,
-          tooltip: door.tip,
-          open: _open == door.label,
-          surfaces: s,
-          onTap: () => _toggle(door.label),
-        ),
+      // **The doors compact; everything else is pinned.**
+      //
+      // `Flexible` is how the strip learns what room it has, and it learns it
+      // EXACTLY: a `Row` lays its inflexible children out first and offers
+      // the remainder to the flexible ones, so the strip is handed the width
+      // left over by the chips, the commands and the fold's own button with
+      // nothing measured by hand. `CompactingToolbar` has to be told each of
+      // its controls' widths for want of this; a strip of one kind of control
+      // in one slot does not.
+      //
+      // Which is also why the equation face no longer sits in a horizontal
+      // `SingleChildScrollView`. That axis is unbounded on purpose — it is
+      // what lets content wider than the window scroll — so a `LayoutBuilder`
+      // inside one is offered infinity and folds nothing. Insert made the
+      // same move for the same reason.
+      Flexible(child: _doorStrip(s)),
       _Sep(surfaces: s),
       _DoorButton(
         key: _searchKey,
@@ -594,7 +777,11 @@ class _MathBarState extends State<MathBar> {
         surfaces: s,
         onTap: () => _toggle('__search'),
       ),
-      _GraphButton(onDrawGraph: widget.onDrawGraph, surfaces: s),
+      ..._doButtons(
+        onDrawGraph: widget.onDrawGraph,
+        onEvaluateAtValue: widget.onEvaluateAtValue,
+        surfaces: s,
+      ),
       _AngleSwitch(
         mode: widget.angleMode,
         onToggle: widget.onToggleAngleMode,
@@ -604,7 +791,6 @@ class _MathBarState extends State<MathBar> {
         latexMode: widget.latexMode,
         latexAvailable: widget.latexAvailable,
         onToggleLatex: widget.onToggleLatex,
-        onEvaluateAtValue: widget.onEvaluateAtValue,
         surfaces: s,
       ),
     ]);
@@ -749,23 +935,52 @@ class _Sep extends StatelessWidget {
 /// notify — any emptiness captured here would be one keystroke stale — so the
 /// question "is there anything to graph" is asked when the button is pressed,
 /// and answered there.
-class _GraphButton extends StatelessWidget {
-  const _GraphButton({required this.onDrawGraph, required this.surfaces});
+/// **The two things you can DO with the equation you have written**, in the
+/// same shape, beside each other.
+///
+/// Graph was a labelled button on the row and Evaluate was the second item of
+/// the `⋯` menu, which is an odd pair of homes for two halves of one idea.
+/// The owner, on the one in the menu: *"this is super helpful and i like it
+/// ... although its rather buried away at the moment, this isnt ideal because
+/// those who would want it probably wont just stumble across it"*, and again:
+/// *"We are also hiding this option in a menu, making it hard to find,
+/// anoying to get to, and basically impossible to just stumble across, which
+/// is how most people learn about these features."*
+///
+/// Stumbling across it is the whole requirement, and nothing that lives
+/// behind an ellipsis is ever stumbled across.
+///
+/// Always enabled. The callback is a closure rather than a flag precisely
+/// because `setActiveMath` is called from the editor's own build and does not
+/// notify — any emptiness captured here would be one keystroke stale — so the
+/// question "is there anything to graph" is asked when the button is pressed,
+/// and answered there.
+class _DoButton extends StatelessWidget {
+  const _DoButton({
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.onTap,
+    required this.surfaces,
+  });
 
-  final VoidCallback? onDrawGraph;
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final VoidCallback? onTap;
   final OnoteSurfaces surfaces;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(right: 3),
         child: Tooltip(
-          message: 'Draw this equation as a graph beside it',
+          message: tooltip,
           child: SizedBox(
             height: OnoteSize.button,
             child: InkWell(
               mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(5),
-              onTap: onDrawGraph,
+              onTap: onTap,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(5),
@@ -776,10 +991,10 @@ class _GraphButton extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.show_chart,
+                      Icon(icon,
                           size: OnoteIcon.sm, color: surfaces.textPrimary),
                       const SizedBox(width: 4),
-                      Text('Graph',
+                      Text(label,
                           style: OnoteType.small.copyWith(
                             fontWeight: FontWeight.w600,
                             color: surfaces.textPrimary,
@@ -793,6 +1008,32 @@ class _GraphButton extends StatelessWidget {
         ),
       );
 }
+
+/// Graph and Evaluate, together, in the order a student meets them.
+List<Widget> _doButtons({
+  required VoidCallback? onDrawGraph,
+  required VoidCallback? onEvaluateAtValue,
+  required OnoteSurfaces surfaces,
+}) =>
+    [
+      _DoButton(
+        icon: Icons.show_chart,
+        label: 'Graph',
+        tooltip: 'Draw this equation as a graph beside it',
+        onTap: onDrawGraph,
+        surfaces: surfaces,
+      ),
+      _DoButton(
+        icon: Icons.calculate_outlined,
+        // Not "Evaluate at a value…" — the menu's wording, three words long
+        // because a menu row has the room and an ellipsis to spend. The
+        // tooltip says the rest.
+        label: 'Evaluate',
+        tooltip: 'Put values into this equation and see the result, beside it',
+        onTap: onEvaluateAtValue,
+        surfaces: surfaces,
+      ),
+    ];
 
 class _AngleSwitch extends StatelessWidget {
   const _AngleSwitch({
@@ -852,14 +1093,12 @@ class _MoreMenu extends StatelessWidget {
     required this.latexMode,
     required this.latexAvailable,
     required this.onToggleLatex,
-    this.onEvaluateAtValue,
     required this.surfaces,
   });
 
   final bool latexMode;
   final bool latexAvailable;
   final VoidCallback onToggleLatex;
-  final VoidCallback? onEvaluateAtValue;
   final OnoteSurfaces surfaces;
 
   @override
@@ -869,7 +1108,6 @@ class _MoreMenu extends StatelessWidget {
         icon: Icon(Icons.more_horiz, size: OnoteIcon.sm, color: surfaces.textPrimary),
         onSelected: (v) {
           if (v == 'latex') onToggleLatex();
-          if (v == 'evaluate') onEvaluateAtValue?.call();
           if (v == 'help') showShortcutOverlay(context);
         },
         itemBuilder: (_) => [
@@ -880,11 +1118,9 @@ class _MoreMenu extends StatelessWidget {
                 ? 'Back to the buttons'
                 : 'Write the LaTeX by hand'),
           ),
-          PopupMenuItem<String>(
-            value: 'evaluate',
-            enabled: onEvaluateAtValue != null,
-            child: const Text('Evaluate at a value…'),
-          ),
+          // Evaluate used to be here, as the second row. It is a button on the
+          // row now — see [_DoButton] — because a thing nobody stumbles across
+          // may as well not exist.
           // **With the backslashes.** This line used to read "type sqrt, sum,
           // theta", and typing `sqrt` and a space gives you the four letters:
           // the build-up requires the leading `\`, deliberately, so that
@@ -901,15 +1137,62 @@ class _MoreMenu extends StatelessWidget {
 }
 
 
+/// **One offer, drawn at a size you can actually read.**
+///
+/// Reported: *"The boxes to select maths stuff is quite small, particularly an
+/// issue for large operators. I dont know if it would be better to boost the
+/// size of all the items or just the large operators, but worth finding a
+/// solution."*
+///
+/// Both, as it turns out, because the measurement says they are one problem.
+/// Every chip was a fixed 34×32 box with a `FittedBox(scaleDown)` inside it,
+/// and **27 of the 231 previews do not fit that box** at the 12px they were
+/// drawn at — so they were silently shrunk, by as much as a third. The
+/// tallest is `\sum` at 37.3px, because its limits stack above and below; the
+/// widest is `\gcd(a,b)` at 98.2px.
+///
+/// A uniform cell cannot serve both: 98px wide for every symbol is absurd,
+/// and 34px crushes a summation. So the cell is **uniform in height and
+/// follows its content in width**, between a floor and a ceiling. A `π` is a
+/// square; a prefilled sum is wider; `\gcd` is wider still. `FittedBox` only
+/// starts scaling past the ceiling, which is what keeps the one or two
+/// genuinely enormous templates from setting the width of the whole panel.
+///
+/// No measuring pass is needed for that, which is the nice part:
+/// `ConstrainedBox` with a min and a max, around a `FittedBox` that
+/// shrink-wraps its child, gives `clamp(natural, min, max)` by itself.
 class MathChip extends StatelessWidget {
   const MathChip({
     super.key,
     required this.item,
     required this.onTap,
     required this.surfaces,
+    this.dense = false,
   });
 
+  /// The old fixed cell, kept for the four quick shapes that sit on the
+  /// command row itself. That row is 44px tall and a picker-sized chip would
+  /// fill it edge to edge; its four previews are also the four simplest in
+  /// the table. The complaint was about the pickers, where the large
+  /// operators live.
+  final bool dense;
+
+  /// The dense cell's width, and the floor for a roomy one.
   static const double size = 34;
+
+  /// A roomy cell: tall enough for `\sum`'s stacked limits at [previewFont]
+  /// without any scaling, and never narrower than it is tall.
+  static const double roomyHeight = 44;
+  static const double roomyMinWidth = 40;
+
+  /// The ceiling. `\gcd(a,b)` measures 106px at [previewFont]; past this the
+  /// `FittedBox` takes over, which costs a couple of per cent on two rows
+  /// rather than making every panel as wide as its worst case.
+  static const double roomyMaxWidth = 104;
+
+  /// 13, not 12. The boxes being small was half the report and the glyphs
+  /// inside them were the other half.
+  static const double previewFont = 13;
 
   final MathItem item;
   final ValueChanged<MathItem> onTap;
@@ -933,9 +1216,16 @@ class MathChip extends StatelessWidget {
       child: Tooltip(
         message: tip,
         waitDuration: const Duration(milliseconds: 350),
-        child: SizedBox(
-          width: size,
-          height: OnoteSize.button,
+        child: ConstrainedBox(
+          constraints: dense
+              ? const BoxConstraints.tightFor(
+                  width: size, height: OnoteSize.button)
+              : const BoxConstraints(
+                  minWidth: roomyMinWidth,
+                  maxWidth: roomyMaxWidth,
+                  minHeight: roomyHeight,
+                  maxHeight: roomyHeight,
+                ),
           child: InkWell(
             mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: BorderRadius.circular(5),
@@ -945,28 +1235,44 @@ class MathChip extends StatelessWidget {
                 borderRadius: BorderRadius.circular(5),
                 border: Border.all(color: surfaces.border),
               ),
-              child: Center(
-                child: preview != null
-                    ? IgnorePointer(
-                        child: FittedBox(
+              child: Padding(
+                // Room for the glyph to not touch its own border, which at
+                // the old size there was none of.
+                padding: EdgeInsets.symmetric(
+                    horizontal: dense ? 1 : 5, vertical: dense ? 0 : 2),
+                child: Center(
+                  // **`widthFactor`, or nothing shrink-wraps.** An `Align`
+                  // given loose constraints expands to the largest it is
+                  // allowed, so without this every chip came out at the
+                  // ceiling — 240 of 240 — and "width follows the content"
+                  // was a comment describing nothing. With it the Align
+                  // takes its child's width, and the min/max still apply
+                  // because `Align` constrains the result.
+                  widthFactor: dense ? null : 1,
+                  child: preview != null
+                      ? IgnorePointer(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: OnoteMath(
+                              preview,
+                              compact: true,
+                              textStyle: TextStyle(
+                                  fontSize: dense ? 12 : previewFont,
+                                  color: surfaces.textPrimary),
+                            ),
+                          ),
+                        )
+                      : FittedBox(
                           fit: BoxFit.scaleDown,
-                          child: OnoteMath(
-                            preview,
-                            compact: true,
-                            textStyle: TextStyle(
-                                fontSize: 12, color: surfaces.textPrimary),
+                          child: Text(
+                            item.label ?? item.name,
+                            maxLines: 1,
+                            style: TextStyle(
+                                fontSize: dense ? 14 : 17,
+                                color: surfaces.textPrimary),
                           ),
                         ),
-                      )
-                    : FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          item.label ?? item.name,
-                          maxLines: 1,
-                          style: TextStyle(
-                              fontSize: 14, color: surfaces.textPrimary),
-                        ),
-                      ),
+                ),
               ),
             ),
           ),

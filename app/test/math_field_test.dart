@@ -101,7 +101,7 @@ void main() {
       (tester) async {
     await pump(tester);
     await typeKeys(tester, 'f(');
-    expect(editor.latex, isNot(contains(r'')),
+    expect(editor.latex, isNot(contains(r'\f')),
         reason: 'f(x) is a student naming a function, not calling ours');
   });
 

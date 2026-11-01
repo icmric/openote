@@ -7,9 +7,25 @@
 // work at all.
 //
 // The risky part is not the feature, it is the QUOTING. `core.sshCommand` is a
-// string git hands to a shell to split, so a Windows path full of backslashes
-// is a string full of escape characters, and a home directory named after a
-// person has a space in it. Both are the common case, not the exotic one.
+// string git hands to a shell, so a Windows path full of backslashes is a
+// string full of escape characters, and a home directory named after a person
+// has a space in it. Both are the common case, not the exotic one.
+//
+// Those two are about WORD-SPLITTING, and double quotes answer them — which
+// is what this file originally tested, and why it missed the third thing.
+// Double quotes do not stop EXPANSION. `$(…)`, backticks and `$VAR` are all
+// evaluated inside them, so a key path containing `$(…)` was run as a command
+// by the shell git spawned (GitHub #24). The path is chosen from a file
+// picker, so the payload has to be a FILENAME somebody selects — narrow, and
+// still a shell injection.
+//
+// The fix is POSIX single quotes, inside which nothing is expanded. The last
+// group below drives real git and real ssh and reads back the path ssh
+// actually tried to open, which is precisely the step the old test said in
+// its own comment that it could not reach: *"It does not prove what ssh
+// finally receives; that would need a server to connect to."* It does not —
+// ssh names the identity file before it fails to connect, so a closed port on
+// loopback is enough.
 
 import 'dart:io';
 
@@ -27,20 +43,41 @@ void main() {
       // git splits this value with shell rules, where a backslash ESCAPES the
       // next character. A Windows path arrives mangled unless it is converted,
       // and ssh on Windows accepts forward slashes perfectly well.
-      expect(GitSync.sshCommandPath(r'C:\Users\Eric\.ssh\id_ed25519'),
-          'C:/Users/Eric/.ssh/id_ed25519');
+      expect(GitSync.sshKeyArg(r'C:\Users\Eric\.ssh\id_ed25519'),
+          "'C:/Users/Eric/.ssh/id_ed25519'");
     });
 
     test('a path is trimmed, because a pasted one often is not', () {
-      expect(GitSync.sshCommandPath('  /home/me/.ssh/id_ed25519  '),
-          '/home/me/.ssh/id_ed25519');
+      expect(GitSync.sshKeyArg('  /home/me/.ssh/id_ed25519  '),
+          "'/home/me/.ssh/id_ed25519'");
     });
 
-    test('a quote inside the path is escaped, not dropped', () {
-      // Legal on Linux and pathological anywhere. Breaking silently would be
-      // worse than handling it.
-      expect(GitSync.sshCommandPath('/home/me/we"ird/id'),
-          r'/home/me/we\"ird/id');
+    test('a double quote needs no escaping inside single quotes', () {
+      // Legal on Linux and pathological anywhere. It used to be escaped
+      // because the wrapper was a double quote; inside single quotes it is an
+      // ordinary character and escaping it would CORRUPT the path.
+      expect(GitSync.sshKeyArg('/home/me/we"ird/id'), '\'/home/me/we"ird/id\'');
+    });
+
+    test('a single quote is closed, escaped and reopened', () {
+      // The one character single quotes cannot contain. `'` becomes `'\''`:
+      // end the quoted run, an escaped quote, start a new run.
+      expect(GitSync.sshKeyArg("/home/o'brien/.ssh/id"),
+          r"'/home/o'\''brien/.ssh/id'");
+    });
+
+    test('and NOTHING in the path is expanded', () {
+      // GitHub #24. Each of these is evaluated inside double quotes and inert
+      // inside single ones, which is the whole of the fix.
+      for (final hostile in [
+        r'/tmp/$(touch pwned).key',
+        '/tmp/`id`.key',
+        r'/tmp/$HOME.key',
+        r'/tmp/${HOME}.key',
+      ]) {
+        expect(GitSync.sshKeyArg(hostile), "'$hostile'",
+            reason: 'carried through verbatim: $hostile');
+      }
     });
   });
 
@@ -70,8 +107,17 @@ void main() {
           .debugSshArgs;
       expect(
           args.last,
-          'core.sshCommand=ssh -i "C:/Users/Eric McClelland/.ssh/notes_key" '
+          "core.sshCommand=ssh -i 'C:/Users/Eric McClelland/.ssh/notes_key' "
           '-o IdentitiesOnly=yes');
+    });
+
+    test('and the caller does not add quotes of its own', () {
+      // [GitSync.sshKeyArg] returns a complete shell word. Wrapping it again
+      // would nest the quoting and hand ssh a path with quotes in it.
+      final args =
+          const GitSync('/anywhere', sshKey: '/home/me/k').debugSshArgs;
+      expect(args.last, isNot(contains('"')));
+      expect(args.last, contains("-i '/home/me/k'"));
     });
   });
 
@@ -112,8 +158,63 @@ void main() {
       expect(r.exitCode, 0, reason: 'git accepted the override');
       expect(
           '${r.stdout}'.trim(),
-          'ssh -i "C:/Users/Eric McClelland/.ssh/notes_key" '
+          "ssh -i 'C:/Users/Eric McClelland/.ssh/notes_key' "
           '-o IdentitiesOnly=yes');
+    });
+
+    /// **What ssh finally opened**, which is the step the test above cannot
+    /// reach on its own.
+    ///
+    /// No server is needed after all: ssh names the identity file in a
+    /// warning BEFORE it fails to connect, so a closed port on loopback gets
+    /// the whole chain — Process.run's argument encoding, git's config
+    /// parsing, the shell git spawns, and ssh's own command line — to report
+    /// what it ended up with. Null when git or ssh is missing, or when the
+    /// attempt did not get far enough to say.
+    Future<String?> identityFileSshOpened(String key) async {
+      final g = GitSync('/anywhere', sshKey: key);
+      final git = (await GitSync.gitExecutable())!;
+      final r = await Process.run(
+        git,
+        [...g.debugSshArgs, 'ls-remote', 'ssh://git@127.0.0.1:1/x'],
+        workingDirectory: root.path,
+      ).timeout(const Duration(seconds: 30),
+          onTimeout: () => ProcessResult(0, -1, '', ''));
+      final line = '${r.stderr}'
+          .split('\n')
+          .where((l) => l.contains('Identity file'))
+          .firstOrNull;
+      if (line == null) return null;
+      // `Warning: Identity file <path> not accessible: …`
+      final from = line.indexOf('Identity file ') + 'Identity file '.length;
+      final to = line.indexOf(' not accessible');
+      return to > from ? line.substring(from, to) : null;
+    }
+
+    test('ssh receives a path with a space whole', () async {
+      if (!haveGit) return markTestSkipped('git not installed');
+      const key = '/nonexistent/Eric McClelland/.ssh/notes_key';
+      final got = await identityFileSshOpened(key);
+      if (got == null) return markTestSkipped('ssh did not report a path');
+      expect(got, key, reason: 'the space did not split it into two words');
+    });
+
+    test('ssh receives a hostile path LITERALLY, and nothing runs', () async {
+      // GitHub #24, end to end. Before the fix this created the marker file
+      // and ssh reported `/nonexistent/key` — the substitution had already
+      // happened. `touch` is the whole payload: harmless, and its effect is
+      // observable, which is what makes the claim checkable rather than
+      // arguable.
+      if (!haveGit) return markTestSkipped('git not installed');
+      final marker =
+          '${root.path}${Platform.pathSeparator}INJECTED'.replaceAll(r'\', '/');
+      final key = '/nonexistent/\$(touch $marker)key';
+
+      final got = await identityFileSshOpened(key);
+      expect(File(marker).existsSync(), isFalse,
+          reason: 'the shell ran the command substitution in the key path');
+      if (got == null) return markTestSkipped('ssh did not report a path');
+      expect(got, key, reason: 'ssh got the path as written');
     });
 
     test('and nothing is put in .git/config, which is replicated', () async {

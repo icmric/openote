@@ -1,174 +1,131 @@
 # Openote Roadmap
 
-> **Status: v0.9.0 prepared** (v0.8.0 is the last shipped release) · **2,764 Dart (54 skipped) + 78 Rust tests green, analyzer clean — 0 errors, 0 warnings** (verified 2026-09-03) · Last updated 2026-09-03
->
-> **Getting to 1.0:** [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md) is a whole-project review with a definition of what 1.0 should promise and a three-revision order to get there. Landed since: the welcome flow rebuilt around drawings, the translation foundation plus six surfaces (~450 messages) and **six shipping languages** chosen from the computer's own settings, the per-keystroke chrome rebuild (62.7 ms → 18.7 ms a frame), equations announcing themselves to a screen reader, and [a manual pre-release checklist](docs/pre-release-checklist.md) for the failures a headless suite cannot see. **The one real blocker is unchanged: nobody has opened the macOS or Linux build.** The one thing worth BREAKING before the format promise binds is §0 — every autosave rewrites the whole block, measured at 2,534 bytes of op log per save on a 2,193-character paragraph. The body of this document below has not had the same pass and still describes some work that has since shipped.
->
-> **Shipped since v0.2:** the student release (v0.3) · dates, reminders and the planner (v0.5) · the UI revamp (v0.6) · installers for all three platforms (v0.7) · events and the timetable (v0.8) · the performance pass (v0.9) · responsiveness and storage waves 1a + 1c (v0.10) · size and speed phase 0, including ink-as-bytes — 63.09 MB of handwriting became 3.22 MB (v0.11) · **git/GitHub sync with join-by-link** · **password-protected pages** ([ADR-0008](docs/adr/ADR-0008-page-protection.md)) · **MCP / AI access** ([spec 14](docs/specs/14-external-api-mcp.md)) · **local code cells** (v0.14) · **keyboard control phases 1–2** (v0.16) · **update through the app** (v0.7.0).
->
-> **What to do next**, ranked: [the standing backlog §1](docs/planning/v0.4-and-beyond.md#1-what-to-do-next). The short version — **use the macOS and Linux builds** (three platforms ship, two have never been run by a human), **split `AppState`** (8,755 lines as of 2026-08-22, up from 5,901 when this ranking was written), then **collect blobs** — the one item on that list still genuinely unbuilt (ADR-0007). **Demoting the container shipped in v0.8.0** — the op log is the source of truth and the container is a rebuildable working copy, opt-in per notebook. [Making folder sync bomb-proof](docs/planning/v0.12-folder-sync-hardening.md) — once this section's highest-priority unstarted plan — **also shipped 2026-08-15**: the watcher missing a cloud client's rename, the 10–20 s freeze on manual pull, and deleted notebooks leaving phantom entries in setup are all fixed and tested. Nothing marked "unstarted" survives a check against the tree right now; the standing backlog's own top-4 table has been updated to match.
-> **2026-07-27 fix pass:** the imported-page **layout misalignment is fixed** — root-caused to four renderer constants (line pitch, box inset, indent per level, bullet gutter), each measured against OneNote's own PDF export; the parser's coordinates were already accurate to 0.017 mm. Also landed: flush-on-exit and honest save-failure reporting, atomic `workspace.json`, importer hardening (finite floats, zip-bomb budget, partial-folder recovery, panic guards), partial-import reporting, title-dedup no longer eating body text, ink tilt round-trip, backlinks for bare `[[Page]]`, the notebook manager (+ duplicate), underline, external links, font size, open-attachment, ink-outline caching, and 25 → 82 tests. Later the same day: OneNote **table import** including OneNote's own per-column widths, the **`OUTLINE_GROUP` content-loss fix** (+16 % content boxes), flow re-stacking with real text measurement, imported-image anchoring, the **ADR-0004 editor decision**, a **Unicode font-fallback chain + Alt+X**, and **[ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)** proposing the sync storage layout. See §K–§O of the [exit review](docs/reviews/2026-07-code-review-phase1-exit.md).
->
-> **Accuracy note:** the checkboxes below were reconciled against the code on 2026-07-27 by a full requirement-by-requirement audit of all 102 PRD requirement IDs (see the [Phase 1 exit review](docs/reviews/2026-07-code-review-phase1-exit.md)). Headline: **25 fully done · 47 partial · 6 missing · 24 deferred by design.** A `[~]` box below means "the headline behaviour works, but named sub-requirements don't" — the review names each one. Several previously-`[x]` items were downgraded; several unclaimed ones were credited.
-> This roadmap is intentionally **milestone-based, not date-based** — it's a solo/community open-source effort in its earliest days, and sequencing matters more than calendar promises. Priorities trace to the [PRD](docs/02-product-requirements.md).
+The sequence, and where it has got to. **Milestone-based rather than date-based** —
+this is a solo project with occasional contributors, and ordering matters more than
+calendar promises.
 
-The guiding sequence: **de-risk the hardest technical unknowns first, ship a genuinely useful single-device MVP, then earn the harder features (sync, import, recognition, collaboration) on a proven foundation.**
+The guiding shape: de-risk the hardest technical unknowns first, ship a genuinely
+useful single-device notebook, then earn the harder features — sync, import,
+recognition, collaboration — on a foundation that already works.
 
----
-
-## At a glance — done · started · next
-
-A cross-cutting summary of *state*, where the phase sections below are organised
-by *scope*. Anything marked started has code or a decision in the tree already.
-
-### Decided and shipped
-- **The MVP app** — canvas, ink, math, images, attachments, tables, code, export, themes, autosave. Phase 1 is substantially built; the `[~]` items below name what each one is still missing.
-- **The OneNote importer** — structure, text, styling, lists, images, equations, ink, `.onepkg` whole-notebook import, and now **tables with real column widths**. Verified page-for-page against a real 324-page notebook.
-- **Imported-page layout** — root-caused to four renderer constants, each measured against OneNote's own PDF export.
-- **[ADR-0004](docs/adr/ADR-0004-editor-engine.md)** — keep the engine we own, behind the `OnoteTextEditor` seam. The bake-off was not run.
-- **Notebook management** — one surface, not two menus; recycle bin with 30-day expiry; duplicate; import feedback.
-- **Durability** — flush-on-exit, honest save-failure reporting, atomic `workspace.json` with `.bak` recovery, importer hardening.
-- **Unicode legibility** — font-fallback chain verified against the shipped fonts' cmaps; **Alt+X** code-point conversion.
-
-### Started — decided or built, but not finished
-- **Sync ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md))** — **two transports, both working.** A *synced folder* (six providers detected, no OAuth by documented design) and, since v0.6–v0.7, a **git remote with join-by-link**: paste a repository address and the notebook rebuilds from its op logs. One writer per file means conflicts cannot arise; delete wins into the recycle bin; mirrors and dated backups use `VACUUM INTO` so a backup is never a torn WAL copy. Joining an *existing* notebook was broken in six ways and is now covered by three test files — see [backlog Appendix A](docs/planning/v0.4-and-beyond.md#appendix-a--the-git-join-that-produced-an-empty-notebook). **Remaining:** blob GC, the structured `nodes` model, Loro, live collaboration. (Demoting the container shipped in v0.8.0 — opt-in per notebook, with the container rebuildable from the op log.)
-- **The structured `{nodes:[…]}` text model** (Data Model §5.1) — the seam it lands behind exists; the model itself does not. Now driven by sync rather than by the editor.
-- **CRDT** — the Rust core implements and tests a deterministic merge, but it is **not a CRDT** (add-wins, no delete propagation) and is never called on the save path. Loro is unwired.
-- **Image import geometry** — width/height verified to 0.03 mm; **`y` has never been independently validated** because the check was circular. Needs one OneNote PDF export to close.
-- **Layering cleanup** — the `export/` write path is **closed** (2026-07-27): `AppState.repo` is private behind a storage facade, and both importers write through it, so there is now exactly one funnel for persistent mutation — the precondition for the op log observing every change. Still to do: the `AppState`/`sidebar.dart` file splits and the `onenote.rs` module split.
-
-> **Where the detail lives:**
-> - [docs/planning/README.md](docs/planning/README.md) — the index, split into **open plans**, shipped reasoning, and the one plan that was rejected.
-> - [docs/planning/v0.4-and-beyond.md](docs/planning/v0.4-and-beyond.md) — the **standing product backlog**, ranked by value ÷ effort. §1 is the list to work from.
-> - [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) — the tiered plan for **v0.2, the first public release** (verification & packaging → data-safety fixes → switcher parity → tags → two-device sync → format freeze), with sizes, the exit checklist, and the open decisions.
-
-### Next
-
-**The ranked list lives in [the standing backlog §1](docs/planning/v0.4-and-beyond.md#1-what-to-do-next)** and is not duplicated here. In short: use the macOS and Linux builds, split `AppState`, collect blobs. (Demoting the container shipped in v0.8.0: the op log is the source of truth and the container is a rebuildable working copy, tucked away per notebook on opt-in.)
-
-Two items belong to this document rather than to the backlog, because they are
-acceptance criteria this project set itself and then did not meet:
-
-- **The atom-like inline-math caret** — [ADR-0004](docs/adr/ADR-0004-editor-engine.md) criterion 3. **Measured 2026-09-02, and neither this line nor the ADR's table was right.** On `a $x^2$ b`, eight presses of ArrowRight from the start give offsets `1, 2, 3, 3, 3, 3, 3, 3`: the caret does *not* walk through the equation's contents any more — arrowing in hands over to the equation editor, which is what [v0.20](docs/planning/v0.20-one-equation-editor.md) built. What is left is smaller and precise: **the opening `$` is still a character the caret steps onto**, so one press moves nothing you can see. Fix that one step and criterion 3 is met; update the ADR's table when it is, rather than this line alone.
-- **A CJK / IME pass on Linux and Windows** — ADR-0004 criterion 5, never done. Inherited from a stock `TextField` rather than reimplemented, so it is probably fine; "probably" is the problem.
-
-*(The historic version of this list — licence ratification, tags, canvas parity, bundled fonts, CI — is in the git history of this file. Everything on it shipped.)*
-
-### Known defects, carried openly
-- ~~The markdown emitter sometimes encodes fewer indent levels than the source~~ — **fixed 2026-07-28** (Tier-1 pass: indent emitted for every line kind, base depth once per outline).
-- ~~Symbol/Wingdings PUA characters drawn by fallback fonts rather than mapped~~ — **fixed 2026-07-28**: `U+F000+n` translates through the Adobe Symbol table at import; the font fallback remains as the safety net for unmapped glyphs.
-- ~~A finger cannot draw at all (INK-1/4)~~ — **fixed 2026-07-27.** Palm rejection is now stylus-*conditional*: a finger draws until a stylus is used, then touch reverts to pan for 2 s so a resting palm can't mark the page. Two fingers always pan. A **Draw ▸ touch-drawing** control offers Auto / Always / Never. *(Verified by unit tests on the extracted decision function; **not yet tried on real touch hardware**.)*
-- The two root PDFs (`Openote-Brand-and-Style-Guide.pdf`, `Openote-Product-and-Design-Overview.pdf`) are **stale** and have no source in the repo; they predate the navigator rework and the current style guide.
-- ~0.02 % of ink strokes are undecodable and dropped — **no longer silent** (2026-07-28): the count is surfaced in the notebook manager after import, alongside skipped sections. The strokes themselves remain unrecoverable.
+**This document does not track what is left to do.** That is
+[backlog.md](docs/planning/backlog.md), ranked, and the current release's own
+document beside it. Requirement ids and their priorities are in the
+[PRD](docs/02-product-requirements.md). Keeping a third copy here is what made
+every earlier version of this file wrong.
 
 ---
 
-## Phase 0 — Foundations (documentation & prototypes) — *gates closed*
+## Phase 0 — Foundations · **closed**
 
-> **Note:** implementation ran ahead of this phase's exit criteria, but both decision gates are now closed: ADR-0004 is **decided** (keep the engine we own, behind a seam) and ADR-0005 is **ratified and applied** (2026-07-27) — the repo is legally open source and can accept outside contributions. What remains from this phase is two validation spikes that were never gates: the tablet ink feel-check and the Loro round-trip benchmark.
+Documentation, prototypes, and the decisions that are expensive to reverse: the
+framework, the CRDT, the storage container, the editor engine, licensing, and the
+sync layout. All eight are [ADRs](docs/adr/README.md).
 
-**Goal:** know what we're building and prove the riskiest parts are feasible before committing to a stack.
+The gate was "nothing is being built on an undecided foundation", and it closed.
 
-- [x] Product vision, OneNote teardown, PRD, technology evaluation, architecture overview, style guide
-- [x] **Deep specs:** [File Format](docs/specs/10-file-format-spec.md), [Data Model](docs/specs/11-data-model-spec.md) (incl. live embeds), [Math Input](docs/specs/12-math-input-spec.md), [Ink Data](docs/specs/13-ink-data-spec.md) *(Sync Protocol spec deliberately deferred until CRDT integration is validated in code)*
-- [x] **Framework decision:** Flutter/Dart UI + Rust core — [ADR-0001](docs/adr/ADR-0001-application-framework.md) *(provisional, revisit triggers documented)*
-- [x] Provisional ADRs: CRDT ([0002](docs/adr/ADR-0002-crdt-library.md) — Loro), storage container ([0003](docs/adr/ADR-0003-storage-container.md) — SQLite `.onote`), licensing proposal ([0005](docs/adr/ADR-0005-licensing.md) — needs stakeholder ratification)
-- [x] **Editor-engine decision** ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)) — **Accepted: keep the engine we own, behind the `OnoteTextEditor` seam.** The bake-off was not run: the incumbent already meets criteria 1–2 in shipped code, and both candidates own their own document layout, which fights absolutely-positioned canvas boxes whose geometry must match the importer to fractions of a millimetre. The seam ADR-0004 required of any winner is built and the swap is pinned by a test that installs a substitute engine. *Criteria 3–5 explicitly not met and tracked: atom-like inline-math caret (TEXT-1b), the §5.1 structured-`nodes` migration, and a CJK IME pass on Linux + Windows.*
-- [~] **Validation spikes (not decision gates):** first-party canvas core (pan/zoom/cull) ✅ *shipped*; Rust core built, linked over **`dart:ffi`** and toolchain-verified (**26 passing tests**) ✅. Remaining: **ink feel-check on real tablet hardware** (never done — and note a finger currently cannot draw at all, INK-1), and the **Loro round-trip + note-shaped CRDT benchmark** (untouched; `flutter_rust_bridge` was bypassed in favour of hand-written `dart:ffi`, so ADR-0002's integration assumption should be revisited).
-- [x] **Ratify the license** ([ADR-0005](docs/adr/ADR-0005-licensing.md)) — **Accepted 2026-07-27, as proposed.** Applied in the tree: `LICENSE` (AGPL-3.0-or-later, the app), `rust/onote_core/LICENSE` + `NOTICE` (Apache-2.0, the core library), `docs/specs/LICENSE` (CC0-1.0, the format spec as the repo's public contract), and [LICENSING.md](LICENSING.md) mapping all three plus the vendored MIT `cab`. `Cargo.toml`'s provisional `AGPL-3.0-or-later` was corrected to `Apache-2.0` — it had contradicted the very ADR it cited. All 15 direct dependencies were audited from their own `LICENSE` files and are permissive (MIT / BSD-3-Clause / Apache-2.0); the recorded invariant is that **`onote_core` must never gain a copyleft dependency**. Contributor terms are inbound = outbound with a DCO sign-off, no CLA. *New revisit trigger recorded: GPL-family licences are widely held incompatible with the Apple App Store's terms, so a first-party iOS/iPadOS build (PLAT-3) must revisit this ADR before that work starts.*
+## Phase 1 — A single-device notebook · **shipped, with known gaps**
 
-**Exit criteria:** editor engine chosen with spike evidence; license ratified; canvas/ink/CRDT spikes green; a repo ready for application code. **Status: substantially met** — the engine decision (ADR-0004) and the licence are both settled; the app was built ahead of the phase regardless. The residue is the two unrun validation spikes (tablet ink feel-check; Loro round-trip benchmark), which were never decision gates.
+**The goal:** somebody switching from OneNote can install Openote on Windows,
+macOS or Linux and do real work — locally, in an open format, with no account.
 
----
+Built: the canvas, the notebook hierarchy, rich text with Markdown rendered where
+it is typed, maths typed linearly and read in two dimensions, pressure-sensitive
+ink, images and attachments, tables, code blocks, themes, autosave, and export to
+Markdown, PDF, a plain folder, InkML and JSON Canvas. The OneNote importer handles
+`.one` and `.onepkg`, verified page for page against a real 324-page notebook, and
+there is a second route over Microsoft Graph that needs no export at all.
 
-## Phase 1 — MVP: the single-device notebook ← *we are here (substantially built; polish + gaps remain)*
+**The exit criterion is not met.** It asks for the MVP test to pass on all three
+desktop operating systems, and only Windows has been used by a human. CI proves
+the other two compile. That is the project's oldest open item and the first thing
+on the backlog.
 
-**Goal:** a OneNote user can install Openote on Windows/macOS/**Linux** and do real work — locally, in an open format, with no account. This is the "core essentials" cut from the [PRD §9](docs/02-product-requirements.md#9-mvp-definition-the-core-essentials-cut).
+## Phase 2 — Notes that move between your own devices · **mostly shipped**
 
-> **Shipped:** `.onote` SQLite storage (mirror-write mode), stacked notebook/section/page navigator with notebook management + recycle bin, page-surface canvas (pan/zoom both axes, click-anywhere text, drag/width-resize, free ↔ snap-to-grid, viewport culling), pressure-sensitive ink (pen/highlighter/**area eraser that splits strokes**, perfect-freehand rendering), math blocks (linear-input subset → LaTeX → native render), images + file attachments (content-addressed blobs), tables, syntax-highlighted code, light/dark themes from the style-guide tokens, debounced autosave, Markdown/PDF/open-folder/InkML/JSON-Canvas export, Markdown + **OneNote** import, and a **native Rust core over `dart:ffi`**. *(Test counts here are historic — the current figure is in the status line at the top.)*
->
-> **Interim seams:** text editing is a `TextField` + rendered-Markdown pair with a real as-you-type marker-collapsing controller, now behind the `OnoteTextEditor` engine seam (ADR-0004, decided) — still **not** a structured rich-text model; storage remains the interim Markdown string, and the §5.1 `nodes` migration has one place to land (`serialize`/`deserialize`). `RustEngine` is live for hashing/import; **Loro CRDT is not wired** and the Rust merge is never called on the save path.
+**The goal:** notes move between a person's own devices reliably, and the app gains
+the polish that makes it a daily driver.
 
-- [~] **Freeform canvas:** pan/zoom (both axes), click-to-create text, drag/move, free + snap-to-grid placement, viewport-culled performance *(CANVAS-1–7, 9)* — **gaps:** no **group/ungroup** and no **alignment guides** (both named in CANVAS-7); resize is **width-only** (no height, no corner handles, and ink strokes never scale — CANVAS-4); no level-of-detail rendering (CANVAS-9); snap-to-grid is a global unpersisted flag, not per-page/notebook (CANVAS-5)
-- [~] **Notebook hierarchy:** notebook/section/page/subpage, create/rename, navigator sidebar, multiple notebooks *(ORG-1–6)* — **gaps:** **reorder is menu-only, no drag-to-reorder among siblings** (ORG-2); section groups can't actually nest (ORG-1); only one notebook is *open* at a time (ORG-3); no page tags/colour (ORG-5)
-- [~] **Rich text + inline-rendered Markdown** with reveal-on-edit; lists, headings, checkboxes; on-page find *(TEXT-1–4, 6, 7)* — **underline** (`++u++`, Ctrl+U), **font size** (points dropdown) and **external `[text](url)` links** (opened via the OS, scheme allow-listed) shipped 2026-07-27. **Alt+X code-point conversion** (type `2200` or `U+2200`, press Alt+X, get `∀`; press again to get the code back — selection-aware, greedy-longest scan, refuses surrogate halves) shipped 2026-07-27. **Remaining gaps:** no **text alignment** (TEXT-1); ` ``` ` doesn't open a fence while typing (TEXT-2); find has **no replace** and is page-only + block-granular (TEXT-7)
-- [~] **Math blocks:** linear input, LaTeX canonical storage, native rendering, complex notation, symbol palette *(MATH-1–6)* — **gaps:** the 2-D form renders in a **preview pane below the field**, not built up in place (MATH-2); **no MathML export** (MATH-3/OPEN-4); decorated operators (`\overline`, `\vec`, …) have no linear syntax or palette chip (MATH-5)
-- [~] **Ink:** pen/highlighter/area-eraser, pressure, **stylus-conditional palm rejection**, smooth low-latency strokes, undo *(INK-1–6, 11)* — finger drawing shipped 2026-07-27 (INK-1/4: a finger draws until a pen is used; two fingers always pan; Auto/Always/Never control on the Draw tab) and **tilt round-trips** (INK-11). **Remaining gaps:** no whole-stroke eraser mode (INK-6); the touch path has unit coverage but **has never been exercised on real touch hardware**
-- [~] **Images** inline; **file attach** *(MEDIA-1–2)* — attachments now **open with the system default app** (MEDIA-2, shipped 2026-07-27). **Remaining gap:** no **paste** and no **drag-and-drop** of images (MEDIA-1 — needs a platform package)
-- [x] **Code blocks** with syntax highlighting *(CODE-1)* — dependency-free tokenizer, 16 languages. *(CODE-2: no auto-detect / line numbers.)*
-- [~] **The open file format v1:** local-first, no size limits, crash-safe, inspectable; **Markdown + PDF export** *(OPEN-1–5, 10, 11; partial OPEN-7)* — **gaps:** **vector PDF export shipped 2026-08-04** — text as searchable text, ink as vector paths, tall pages paginated (the raster capture remains as "picture of the page"); still no HTML or MathML export (OPEN-7). *(OPEN-1/PLAT-10's licensing requirement is now met — the format spec is CC0-1.0 and the reader/writer is Apache-2.0, so implementing `.onote` carries no licensing friction.)*
-- [~] **Light/dark themes**, core design system, baseline accessibility *(PLAT-1, 4, 7, 9)* — **gaps:** **no fonts bundled** so type differs per OS, contradicting style guide §4.1 — mitigated 2026-07-27 by an explicit `onoteFontFallback` chain so maths and symbol characters resolve to *some* installed font (including `Symbol`/`Wingdings` for the PUA characters Office writes) instead of rendering as blank boxes, but bundling a known-coverage font is still the durable fix; `workspace.json` (the notebook registry) is written **non-atomically** — a crash mid-write can leave the app showing zero notebooks (PLAT-9); no adjustable text sizing, no reduced-motion support, no keyboard traversal of canvas blocks (PLAT-5); **no measured performance budgets** despite PLAT-4 specifying them
+Sync works, through two transports: a **folder** that any cloud client already
+replicates, and a **git remote with join-by-link** — paste a repository address and
+the notebook rebuilds from its operation logs. One writer per file means a
+conflicting pair of versions cannot arise;
+[ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md) is why that is the
+shape. The container has been demoted to a rebuildable cache, opt-in per notebook.
 
-**Exit criteria:** the [MVP success test](docs/02-product-requirements.md#9-mvp-definition-the-core-essentials-cut) passes on all three desktop OSes. **Currently unverified** — the app is developed and tested on Windows only; macOS and Linux have runner projects but no build/run evidence.
+Also shipped in this phase: live page windows onto other pages, the full
+open-folder export, Markdown and Obsidian import, tables with two-way GFM interop,
+backlinks, a recycle bin, lasso ink selection, page templates, page backgrounds,
+find and replace, flashcards from your own notes with spaced repetition, a planner
+that subscribes to a timetable, local code cells, an MCP server, keyboard control,
+and installers for all three platforms.
 
----
+**What this phase still owes**, and each is on the backlog: a tablet pass — the
+pen toolbar and gestures have never met real hardware — HTML and MathML export,
+notebook-wide search, and the block, range and frame embed targets.
 
-## Phase 2 — Own your notes everywhere: sync & polish
+## Phase 3 — The switch, and the network
 
-**Goal:** notes move between a user's own devices reliably, and the app gains the everyday polish that makes it a daily driver.
+**The goal:** leaving OneNote costs nothing, and more than one person can work in
+a notebook.
 
-- [ ] **Cross-device sync** with **conflict-free CRDT merge** *(SYNC-1, 2)* — the direct answer to OneNote's #1 complaint. *Seeded:* the Rust core implements and unit-tests a deterministic page-mirror merge + content hash, exposed over the C ABI. **Two honest caveats:** the merge is **never called by the app** (deliberately off the local save path — a single-device save is authoritative and add-wins merging would resurrect just-deleted blocks), and it is **not yet a CRDT** — add-wins with **no delete propagation**, so it cannot converge offline deletes. Remaining: the Loro CRDT (ADR-0002) for real convergence, plus a transport. The `RustEngine` *is* live for content hashing and import.
-- [ ] **Bring-your-own sync target** (Google Drive/OneDrive, WebDAV/Nextcloud, S3-compatible, synced folder) *(SYNC-3)*
-  > **Storage layout decided first — [ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md) (Proposed).** Consumer file-sync services replicate *whole files* and resolve conflicts by making a second copy, so today's one-SQLite-file-per-notebook is close to the worst possible layout for them: two devices editing different pages produce two whole-file versions whose only resolution is `notebook (1).onote`, and the edits are already unmergeable. Proposed instead: a `.onotebook` **directory** with an append-only **per-device op log** (one writer per file ⇒ conflicts cannot arise), content-addressed blobs, and SQLite demoted to a local never-synced cache. This is also what forces the structured-`nodes` text model — an opaque Markdown string makes the smallest edit "the whole block is now this". **Three open stakeholder questions** in the ADR before step 1.
-- [ ] **Tablet experience** hardened: pen toolbar, gestures, latency tuning across iPad/Android/Surface *(PLAT-2)*
-- [x] **Full open export** — lossless **"materialize as a folder of open files"** (per-page `page.json` mirror + `page.md` + JSON Canvas + InkML + content-addressed assets + manifest), plus single-page **JSON Canvas** and **InkML** exporters *(OPEN-6, 7)*. *(Still to add: **HTML** and **MathML** export; and note **PDF export is a 2× raster capture, not vector** — text isn't selectable or searchable in the output, which undercuts OPEN-7's spirit.)*
-- [x] **Import** from Markdown / Obsidian (folder → section, files → pages, nested folders → subpages; front-matter stripped; wiki-links preserved) *(OPEN-9)* — iteration 11. *(JSON Canvas import still to add.)*
-- [~] **Live embeds / transclusion** *(EMBED-2…8)*: **page windows shipped** (2026-08-09) — a live, read-only, text-selectable view of a chosen region (or all) of another page, updating as the source changes, cycle-safe with a depth cap, tombstoned when the source is gone, indexed for backlinks. *Still to add:* block/range/frame targets (frames themselves first), the snapshot fallback (deliberately deferred — same-notebook sources are always local, and a snapshot is a copy), cross-notebook refs, and PDF/print inlining beyond the attribution frame.
-- [~] **Tables** *(MEDIA-3)* — full editing, GFM **export**, and **OneNote import** with OneNote's own per-column widths (0x1D66) ✅. **Markdown-table interop is now two-way** (2026-07-27): `markdown/md_table.dart` parses GFM pipe tables — escaped `\|`, `:---:` alignment, ragged rows padded to the header — and the renderer draws them as real tables, horizontally scrollable so a wide pasted table doesn't push the page sideways. Pinned by a round-trip test against `tableToMarkdown`'s own output
-- [~] **Backlinks** *(TEXT-8)* — incoming + outgoing panel works, but **a bare `[[Page]]` link produces no backlink** (the refs index skips links without an explicit id, `repository.dart:470`) even though navigation resolves it by title. **Bug, not a gap.**
-- [~] **Recycle bin** *(ORG-7)* — soft-delete/restore/purge for notebooks *and* nodes, with 30-day auto-purge; retention is **hard-coded**, PRD asks for configurable
-- [~] **lasso-select ink** *(INK-7)* — loop-to-gather, move and delete; PRD's **resize and recolor are missing**
-- [~] **page templates** *(ORG-9)* — user-saved templates work; **no built-in templates**, so a fresh install shows an empty list
-- [x] **version history** *(SYNC-8)* — throttled snapshots, 30-per-page retention, restore
-- [x] **Page backgrounds** *(CANVAS-11)* — blank/grid/dotted/ruled, on the View tab *(was listed as to-do; it is done)*
-- [ ] **find-and-replace** across notebook *(TEXT-7)* — on-page find shipped (block-granular, no in-text highlighting); notebook-wide search **and replace entirely** still to add
-- [ ] Minimap / off-screen-content hints *(CANVAS-10, 12 — zoom-to-fit and reset-view are done)*, **alignment guides** *(CANVAS-7)*, section/page auto-sort *(ORG-8)*, favourites & recents *(ORG-10)*
+**Shipped already:** the whole importer, which was this phase's headline and
+arrived early because it turned out to be the thing that decides whether anybody
+can switch at all.
 
-**Exit criteria:** a user works across two of their own devices offline and online with no data loss and no conflict dialogs.
+**Open:**
 
----
+- **Real convergence for text.** Two devices editing different blocks merge
+  cleanly today; two edits to the same paragraph resolve last-writer-wins. Fixing
+  that needs the structured text model of [data model
+  §5.1](docs/specs/11-data-model-spec.md) and then a sequence CRDT —
+  [ADR-0002](docs/adr/ADR-0002-crdt-library.md), whose choice should be re-argued
+  first because the op log took over most of what it was chosen for.
+- **Live collaboration.** A transport swap over the same operations rather than a
+  redesign, and deliberately not wanted yet: shared-folder and git group notebooks
+  already cover the group-study case students actually have.
+- **Handwriting recognition**, ink-to-text and ink-to-maths. The stroke model is
+  recognition-ready and there is no mature fully-open cross-platform recogniser to
+  build on, so this waits on evidence that people want it.
+- **OCR on images**, which is additive — search already indexes a hidden text
+  layer.
 
-## Phase 3 — The switch & the network: import, recognition, collaboration
+## Beyond
 
-**Goal:** make leaving OneNote painless, make ink smarter, and let people work together.
+Longer-range ideas, each in [PLANNING.md](PLANNING.md) in the owner's own words:
+a spreadsheet engine inside a table, audio pinned to notes, maps, flowcharts,
+citations and an academic writing mode, and a presentation mode.
 
-- [~] **OneNote importer** (`.one`/`.onepkg`) preserving structure, text, images, and — as far as feasible — ink and tags *(OPEN-8)* — the headline migration wedge. **Shipped:** the reverse-engineered MS-ONESTORE/MS-ONE parser imports pages (one per object space, current revision resolved per object) with their **separate text boxes at true positions/widths, rendered at OneNote's font size/metrics** so siblings line up; styled text (**bold/italic/strikethrough, highlight, font, colour** via the 0x1E12/0x1E13 run arrays); bulleted/indented lists; **in-flow images kept inside their text box at display size** (the `![alt](sha256:… =WxH)` dialect, Data Model §5.2) plus floating images at offset-chain positions; **equations** (Office linear-math → LaTeX) as math blocks; **ink** — MS-ISF multi-byte delta paths with pressure, calibrated pen width, colour/alpha — as page-absolute stroke blocks; and **`.onepkg` whole-notebook import** (pure-Rust LZX-CAB extraction) creating a **new notebook** with one section per packaged `.one` (folders → section groups). Pages import in **correct tab order with subpage hierarchy** (SectionNode→PageSeries→PageMetadata, level 0x1DFF) and **ink decodes cleanly** (channel-count inferred by compactness — no more page-crossing scribbles), verified page-for-page against a real 195-page notebook, and later **page-for-page against a real 324-page / 48 MB `.onepkg`** including three levels of subpage nesting.
-  **Performance (2026-07-27):** whole-notebook import went **~53 s → ~14 s** — single-pass LZX folder extraction (a vendored two-method `cab` patch; upstream re-decompresses the folder prefix per file, which is quadratic over a one-folder package), **parallel per-section parsing**, `opt-level = 3`, and batched SQLite transactions.
-  **Fidelity fixed since:** prose inside math zones no longer runs together — classification is now **per run**, so a sentence containing a symbol is no longer promoted to a whole display equation, and **no path drops a run**; imported images are visible on open (pages now fit-to-width, since images sit at their true OneNote offsets — often right of the text); **`OUTLINE_GROUP` (0x00060019) is now treated as a container**, which alone took one section from 54,713 → 60,643 characters and the full notebook from 985 → 1133 content boxes with pages, images and ink unchanged; **tables** (`TABLE`/`TABLE_ROW`/`TABLE_CELL`, 0x00060022–24) import with **OneNote's own per-column widths (0x1D66)** — cells get the full Markdown dialect, ragged grids are rectangularised, and tables the outline walk never reaches are recovered rather than lost; and boxes from one container now share a **flow id** so the app **re-stacks them using real `TextPainter` measurement**, since the parser can only count *source* lines at a fixed pitch and so undercounted every wrapping paragraph.
-  **Remaining:** per-run font size (one font per box today); **tags/checkboxes**; hyperlink URLs; the markdown emitter sometimes encodes fewer indent levels than the source (leaving a residual horizontal offset on those rows); non-PNG images (JPEG/EMF) are never recovered; exact image *positioning* still uses aspect-ratio matching rather than the structural `PictureContainer` (0x1C3F) link; **file attachments** unparsed; **Symbol/Wingdings PUA characters** (`U+F000+n`) are not mapped to real Unicode — currently mitigated by letting those fonts draw them, because Symbol's `0xAC` is `←` while a user typing `¬` means `U+00AC` and the two are indistinguishable after the fact; ~0.02 % of ink strokes undecodable (dropped **silently** — no warning surfaced to the user).
+Two have been designed and not built, and both have documents:
+[everything in one box](docs/planning/v0.19-everything-in-one-box.md) and
+[outdoing OneNote at maths](docs/planning/v0.21-outdo-onenote-maths.md).
 
-  **Open measurement:** imported image **`y` has never been *independently* validated** — the page offset used to check it was itself derived from an image, so the check was circular. Width and height are confirmed to 0.03 mm and the four in-flow images in the sample carry no position of their own, so this is narrow; closing it needs a fresh OneNote PDF export of a page where the offset is visible.
+## Known defects, carried openly
 
-  > **Import-time vs render-time.** Parser fixes only affect **new** imports: column widths, flow re-stacking and the `OUTLINE_GROUP` recovery are written into the notebook at import, so an existing notebook must be re-imported to gain them. Renderer fixes (font fallback, the healed line-height) apply on restart.
+Things that are wrong, that nobody is about to fix, and that are better said out
+loud than discovered. The ones being worked on now are in
+[v1.0.2](docs/planning/v1.0.2.md) instead.
 
-  **Tables now import** — `TABLE`/`TABLE_ROW`/`TABLE_CELL` (0x00060022–24) are parsed, cells get the full Markdown dialect (inline maths, bold, lists), ragged grids are rectangularised, and tables the outline walk never reaches are recovered rather than lost. *Measured: 8 tables in one section, from 0.*
-- [ ] **In-flow images edit as images** *(stakeholder, TEXT-1a)*: while a text box is being edited, an inline `![alt](sha256:… =WxH)` reference should still render as the image (not raw markdown) and be resizable in place — arrives with the structured rich-text editor, whose `{"t":"image"}` inline atom this dialect maps onto 1:1.
-- [ ] **Imported-page layout gap** *(stakeholder)*: a small vertical gap can remain between an imported text box and its absolutely-positioned neighbours because Openote's text engine wraps/spaces slightly differently than OneNote's. The asymptotic fix is measuring each imported box with the real text layouter at import time and nudging sibling positions; revisit with the structured editor.
-- [ ] **Ink recognition (optional):** ink-to-text, ink-to-shape, ink-to-math via on-device (ML Kit) or commercial (MyScript) engines *(INK-8, 9, 10; MATH-7)*
-- [ ] **Real-time collaboration:** live multi-user editing, presence/cursors on the shared CRDT channel *(SYNC-6)*
-- [ ] **Sharing & permissions** (notebook and section/page granularity) *(SYNC-7)*
-- [ ] **Optional first-party sync service** and **E2E encryption** (blind-relay design, locally-searchable) *(SYNC-4, 5)*
-- [ ] **OCR of images** *(MEDIA-4)*, **audio-linked notes** *(MEDIA-5)*, **web clipper** *(MEDIA-6)*, **graph view** *(TEXT-9)*
-- [ ] **Phone & web builds** *(PLAT-3)*
-
-**Exit criteria:** a OneNote user can import an existing notebook without losing their work, and two people can co-edit a shared notebook live.
-
----
-
-## Beyond — "everything app" vision (stakeholder-flagged, future)
-
-- **Math evaluation / CAS.** The editor stores canonical LaTeX; a compute layer (e.g. a Rust CAS crate, or an embedded engine) could evaluate expressions — from basic arithmetic up to matrix multiplication and symbolic algebra. Feasible incrementally: start with numeric evaluation of simple expressions, grow toward CAS. Was a v1 non-goal; re-opened as a future differentiator.
-- ~~**Point-and-click math UI.**~~ **SHIPPED** (v0.18, phases 0-2): equations build up as you type, with boxes to fill, a searchable symbol bar, and inline maths that stays drawn while the sentence around it is edited. See `docs/planning/v0.18-visual-maths.md`; phase 3 (matrix size picker, recents, on-screen keyboard for touch, MathML export) is what remains.
-- **Sandboxed code execution.** Run code blocks in a sandbox (WASM runtimes like Wasmtime, or language-specific sandboxes) so scripts execute in-app. Lofty; a security-sensitive, later-stage goal.
-- Plugin/extension API (the documented format is the first extension surface)
-- Community importers/exporters and format tooling around the published spec
-- Advanced handwriting features; richer shapes/diagramming
-- Self-hostable sync/collaboration server for teams and institutions
+- **Screen readers cannot read the editor.** The Windows accessibility bridge
+  rejects the semantics tree this app produces. This is the worst defect in the
+  project and it is being worked on.
+- **A small fraction of imported ink strokes are undecodable and dropped.** The
+  count is reported after an import, so it is no longer silent, but those strokes
+  are not recoverable.
+- **The two PDFs in the repository root are stale** and have no source in the
+  tree. They predate the current navigator and style guide.
+- **The pen's barrel button does not switch tools**, and palm rejection has only
+  ever been tested by unit tests on the decision function, never on a real stylus.
 
 ---
 
 ## How priorities are decided
 
-When something new is proposed, it's weighed against the [design principles](docs/00-product-vision.md#5-design-principles) and the [non-goals](docs/00-product-vision.md#9-non-goals). Two questions gate everything: *does it protect the canvas and the open format?* and *is it something our core personas (the switcher, the open-source native, the pen-and-math thinker) actually need?* Features that fail either question wait, no matter how interesting.
+Every item is judged against one question: **does this help a student the week
+before an exam?** Secondary, always: does it keep working for somebody who
+switched from OneNote and judges us on whether their daily habits survived.
 
-*This roadmap will be revised as prototypes and real usage teach us where the effort truly is. Sequencing is a hypothesis; the principles are not.*
+Where two things are close, the one that is harder to reverse goes first. A format
+decision, a storage layout or anything that touches what is already on somebody's
+disk is worth more care than a feature, because a feature can be replaced and a
+migration cannot be unmade.

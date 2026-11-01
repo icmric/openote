@@ -1,7 +1,10 @@
 # ADR-0005: Licensing — AGPL-3.0 app · Apache-2.0 libraries · CC0 format spec
 
-> **Status:** **Accepted** — ratified by the stakeholder 2026-07-27 · proposed 2026-07-22
-> **Related:** [Vision §5.1/§5.7](../00-product-vision.md) · [File Format Spec](../specs/10-file-format-spec.md) · [LICENSING.md](../../LICENSING.md)
+> **Status: Ratified**, and mapped path by path in [LICENSING.md](../../LICENSING.md).
+> **Related:** [Vision §5.1/§5.7](../00-product-vision.md) · [File format](../specs/10-file-format-spec.md)
+>
+> The invariant that follows from this and is easy to break by accident:
+> **`onote_core` must never gain a copyleft dependency.**
 
 ## Ratification (2026-07-27)
 

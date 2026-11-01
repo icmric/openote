@@ -480,11 +480,11 @@ class MBinom extends MNode {
 /// A box that means "computed" is exactly the target for the click that
 /// switches how it is written.
 ///
-/// **It serialises as `oxed{…}`**, which is deliberate on three counts:
+/// **It serialises as `\boxed{…}`**, which is deliberate on three counts:
 /// it is real LaTeX, so an answer pasted into Word or Overleaf is a boxed
 /// number rather than a private marker; it draws identically in read mode,
 /// in edit mode and in print, because there is only one string; and it
-/// **round-trips** — the parser reads `oxed{…}` straight back into an
+/// **round-trips** — the parser reads `\boxed{…}` straight back into an
 /// answer, so the box, and the toggle, survive save and reload with no
 /// side-car metadata to drift out of step.
 ///

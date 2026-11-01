@@ -150,7 +150,12 @@ class ToolbarSubmenuItem {
       {required this.icon, required this.label, required this.onPressed});
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+
+  /// Null greys the entry out and leaves it where it was, which is the point:
+  /// a feature this build cannot do is still a feature the app has, and a
+  /// visitor to the demo should be able to see that it exists. See
+  /// `core/capabilities.dart`.
+  final VoidCallback? onPressed;
 }
 
 class _MoreMenu extends StatelessWidget {

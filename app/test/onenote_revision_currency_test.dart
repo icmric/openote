@@ -61,7 +61,7 @@ String _content(Map<String, dynamic> page) {
     final b = (raw as Map).cast<String, dynamic>();
     out.writeln(b['markdown'] as String? ?? '');
     for (final row in (b['cells'] as List? ?? const [])) {
-      out.writeln((row as List).join(''));
+      out.writeln((row as List).join('\u0001'));
     }
     out.writeln((b['latex'] as String? ?? ''));
   }

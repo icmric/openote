@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 
-import '../math/graph_plot.dart';
+import '../math/substitute.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
@@ -91,8 +91,15 @@ Future<void> writeExportedMedia(
 ///
 /// Freeform layout flattens to reading order (top-to-bottom, then
 /// left-to-right); page.json remains the fidelity path.
+///
+/// [withheld] names pages whose titles must not appear — a page window onto
+/// one says only that its source has a passcode. The AI helpers' reader
+/// passes it (`api/mcp_tools.dart`); an export made by the person who owns
+/// the notes does not.
 String pageMarkdownOf(AppState app, String title, List<Block> blocks,
-    {Map<String, String>? assetsOut, Map<String, String>? mediaOut}) {
+    {Map<String, String>? assetsOut,
+    Map<String, String>? mediaOut,
+    bool Function(String pageId)? withheld}) {
   final ordered = [...blocks]..sort((a, b) {
       final dy = a.y.compareTo(b.y);
       return dy != 0 ? dy : a.x.compareTo(b.x);
@@ -123,7 +130,7 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         final hash = (b.content['blob'] as String? ?? '').replaceFirst('sha256:', '');
         if (hash.isNotEmpty) {
           final mime = b.content['mime'] as String? ?? 'image/png';
-          final ext = mime.split('/').last.replaceFirst('jpeg', 'jpg');
+          final ext = extensionForMime(mime);
           final name = 'assets/$hash.$ext';
           assets[hash] = name;
           buf.writeln('![image]($name)\n');
@@ -148,16 +155,12 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         // carries the equation and the value last typed into it, which is
         // the thing a reader can actually do something with.
         final latex = b.content['latex'] as String? ?? '';
-        final value = (b.content['value'] as String? ?? '').trim();
+        final at = substituteProjection(b.content);
         if (latex.isNotEmpty) {
-          if (value.isEmpty) {
+          if (at == null) {
             buf.writeln('Evaluate \$$latex\$\n');
           } else {
-            final source = graphSourceFromLatex(latex);
-            final outcome = substituteInto(source, value);
-            buf.writeln(
-                'Evaluate \$$latex\$ at ${outcome.variable} = $value: '
-                '${outcome.result.display}\n');
+            buf.writeln('Evaluate \$$latex\$ at ${at.given}: ${at.answer}\n');
           }
         }
       case BlockType.board:
@@ -180,7 +183,9 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         // silently dropping the block or inlining a stale copy.
         final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
         final dst = ref?['pageId'] as String?;
-        if (dst != null) {
+        if (dst != null && (withheld?.call(dst) ?? false)) {
+          buf.writeln('> Window onto a page with a passcode\n');
+        } else if (dst != null) {
           final title = app.nodes
                   .where((n) => n.id == dst)
                   .firstOrNull

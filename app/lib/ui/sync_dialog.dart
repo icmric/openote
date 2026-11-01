@@ -703,7 +703,8 @@ class _SyncDialogState extends State<_SyncDialog> {
           const SizedBox(height: 2),
           Text(
             status.hasOtherDevices
-                ? '${status.devices} devices have edited this notebook.'
+                ? '${status.devices} devices have edited this notebook in the '
+                    'last month.'
                 : 'No other device has picked it up yet — install Openote '
                     'there and open it from the same folder.',
             style:
@@ -881,7 +882,7 @@ class _SyncDialogState extends State<_SyncDialog> {
       dense: true,
       contentPadding: EdgeInsets.zero,
       leading: Icon(_iconFor(f.kind), size: 20),
-      title: Text(f.name, style: const TextStyle(fontSize: 13)),
+      title: Text(f.label, style: const TextStyle(fontSize: 13)),
       subtitle: Text(
         caveat ?? f.path,
         style: const TextStyle(fontSize: 11, height: 1.3),

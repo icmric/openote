@@ -91,7 +91,7 @@ void main() {
       expect(words('H~2~O and x^2^'), 3);
       expect(words('{{#ff0000 red words}} here'), 3);
       expect(words('see https://example.com/a/b now'), 3);
-      expect(words(r'padded $ lpha $ here'), 3);
+      expect(words(r'padded $ \alpha $ here'), 3);
       expect(words('__under__ and _em_'), 3);
     });
 

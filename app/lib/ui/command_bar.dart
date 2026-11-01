@@ -12,6 +12,7 @@ import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
+import '../markdown/md_render.dart' show inlineHighlightColour;
 import '../math/evaluate.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
@@ -32,6 +33,7 @@ import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'pen_size_button.dart';
 import '../canvas/ink_shapes.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
@@ -71,18 +73,30 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   ///
   /// Tapping a tab mid-equation is the way out, for the rare case of wanting
   /// Home's formatting while an equation is open.
+  /// Whether the row is showing the equation's palette right now — an
+  /// equation is open AND the student has not tabbed off this one.
+  ///
+  /// Read by the badge as well as by [_face], because the badge is now how
+  /// you get back and has to say whether you are already there.
+  bool get _equationFaceShowing =>
+      objectFaceOf(app) == ObjectFace.equation &&
+      !identical(_tabbedAwayFrom, app.activeMath);
+
   Widget _face(BuildContext context) {
-    final equation = objectFaceOf(app) == ObjectFace.equation &&
-        !identical(_tabbedAwayFrom, app.activeMath);
+    final equation = _equationFaceShowing;
     final m = app.activeMath;
     if (equation && m != null) {
+      // **The equation face COMPACTS**, which is why it is not in a
+      // `SingleChildScrollView` any more. Same reason Insert is not: a
+      // horizontal `Scrollable` offers its child an unbounded width — that is
+      // what lets content wider than the window scroll — and a row that is
+      // handed infinity folds nothing. `MathBar` folds its own doors now, so
+      // it needs the real width. See `math_bar.dart`'s `_doorStrip`.
       return KeyedSubtree(
         key: const ValueKey('equation'),
-        child: ScrollConfiguration(
-          behavior: const _ToolbarScroll(),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: EquationFace(
+        child: SizedBox(
+          width: double.infinity,
+          child: EquationFace(
               math: m,
               onDrawGraph: m.drawGraph,
               onEvaluateAtValue: m.evaluateAtValue,
@@ -95,7 +109,6 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                       ? AngleMode.radians
                       : AngleMode.degrees),
               recentIds: app.recentMathIds,
-            ),
           ),
         ),
       );
@@ -115,16 +128,38 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       return KeyedSubtree(
           key: const ValueKey(1), child: _insertRow(context));
     }
-    return ScrollConfiguration(
-      behavior: const _ToolbarScroll(),
-      child: SingleChildScrollView(
-        key: ValueKey(_tab),
-        scrollDirection: Axis.horizontal,
-        child: switch (_tab) {
-          2 => _drawRow(context),
-          _tabPage => PageFace(app: app),
-          _ => _homeRow(context),
-        },
+    // **The key goes on the OUTERMOST widget**, which is what the
+    // [AnimatedSwitcher] below actually compares.
+    //
+    // It used to sit on the `SingleChildScrollView` inside an unkeyed
+    // `ScrollConfiguration`, so three of the four faces handed the switcher
+    // the same thing: a `ScrollConfiguration` with a null key. `canUpdate`
+    // says that is the same widget, so it rebuilt in place instead of
+    // transitioning — and the two faces that DID carry a key at the top,
+    // Insert and the equation, animated normally. Reported exactly along
+    // that seam:
+    //
+    //   *"there are animations between the bars which is great, however this
+    //   is only for home and insert, going to and from draw and page from
+    //   home just cuts (and vice versa), between home and page cuts, but
+    //   from insert to home or page (and vice versa) has the animation, this
+    //   must all be consistent."*
+    //
+    // Home↔Insert crosses the keyed/unkeyed boundary, so it animated; every
+    // pair that stayed on the unkeyed side cut. One key, at the top, for
+    // every face.
+    return KeyedSubtree(
+      key: ValueKey(_tab),
+      child: ScrollConfiguration(
+        behavior: const _ToolbarScroll(),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: switch (_tab) {
+            2 => _drawRow(context),
+            _tabPage => PageFace(app: app),
+            _ => _homeRow(context),
+          },
+        ),
       ),
     );
   }
@@ -172,6 +207,13 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.canUndo,
         app.canRedo,
         app.lastColor,
+        // The highlighter's swatch, and whether its button is lit. Rendered,
+        // so the guard test is right to want them named — without them the
+        // row keeps the memoised frame and picking a highlight colour
+        // appears to do nothing.
+        app.lastHighlight,
+        app.selectionIsHighlighted,
+        app.penButton,
         app.penInk,
         app.highlighterInk,
         // Derived from the two above and the tool, but it is what the swatch
@@ -274,14 +316,38 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                 // fast (Fitts's law) and always land.
                 for (var i = 0; i < _tabCount; i++)
                   _tabButton(scheme, i, tabs[i]),
-                // **A badge, not a tab.** It says what the row below is
-                // about and it cannot be pressed, so there is nothing here to
-                // be moved onto and nothing to be moved back from. It sits
-                // where the old Maths tab sat, deliberately: same place,
-                // opposite kind.
+                // **A badge that is also the way back.**
+                //
+                // It was deliberately unpressable — "there is nothing here to
+                // be moved onto and nothing to be moved back from" — which
+                // was true of the row but not of the student. Tapping a tab
+                // mid-equation IS a way off it, and it was one-way:
+                // `_tabbedAwayFrom` is set and nothing could ever clear it,
+                // so the palette was gone until the equation was closed and
+                // reopened. Reported:
+                //
+                //   *"there is a button labled "equation" which pops up in
+                //   the toolbar when editing an equation, this is good,
+                //   however it does not function as a button. If i click out
+                //   of it into one of the other tabs, i am unable to go back
+                //   into this toolbar, even though im still in the equation
+                //   editing mode, meaning i have to click out of the equation
+                //   and back in for this to become accessable again."*
+                //
+                // So it presses. It still is not a tab — it exists only while
+                // an equation does, and it is drawn as a chip in the place
+                // the old Maths tab sat — but it now carries which face the
+                // row is showing, which is the one thing the student needed
+                // it to say.
                 if (objectFaceOf(app) == ObjectFace.equation)
                   _SubjectBadge(
-                      icon: Icons.functions, label: l.barEquationBadge),
+                    icon: Icons.functions,
+                    label: l.barEquationBadge,
+                    selected: _equationFaceShowing,
+                    onTap: _equationFaceShowing
+                        ? null
+                        : () => setState(() => _tabbedAwayFrom = null),
+                  ),
                 const Spacer(),
                 // The trailing cluster COMPACTS rather than scrolling.
                 //
@@ -708,10 +774,20 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           isSelected: mark != null && active.contains(mark),
           onPressed: canFormat ? fn : null,
         );
+    // **`auto` is not a colour**, so the bar under the button shows what the
+    // text will actually come out as, the same way the pen's own swatch does
+    // (see [currentInkColor]). Painting it as the near-black it usually
+    // becomes would advertise black while the text came out light.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // The highlighter's own swatch, drawn as the highlight will actually come
+    // out — alpha and all, which in dark mode is most of what it looks like.
+    final curHighlight = inlineHighlightColour(app.lastHighlight, dark);
     final lcv = int.tryParse(app.lastColor, radix: 16) ?? 0;
-    final curColor = app.lastColor.length == 8
-        ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
-        : Color(0xFF000000 | lcv);
+    final curColor = app.lastColor == 'auto'
+        ? (dark ? OnoteColors.moon100 : OnoteColors.graphite700)
+        : app.lastColor.length == 8
+            ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
+            : Color(0xFF000000 | lcv);
     return Row(children: [
       // Undo and redo used to lead this row, which meant they were missing
       // from every other tab. They are in the tab row above now.
@@ -739,8 +815,52 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           () => app.wrapSelection('~~'), MdInline.strike),
       fmt(Icons.code, l.barInlineCode, () => app.wrapSelection('`'),
           MdInline.code),
-      fmt(Icons.border_color, l.barHighlight, () => app.wrapSelection('=='),
-          MdInline.highlight),
+      // Highlight — a split button like the text colour beside it: the main
+      // area highlights in the current colour (or takes the highlight off),
+      // the arrow opens the picker. It was one fixed yellow, which for an app
+      // whose students highlight to triage a reading list is half a feature.
+      Tooltip(
+        message: l.barHighlight,
+        child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
+          borderRadius: BorderRadius.circular(6),
+          onTap: canFormat ? app.toggleHighlight : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.border_color,
+                  size: 18,
+                  color: !canFormat
+                      ? context.surfaces.textSecondary
+                      : app.selectionIsHighlighted
+                          ? Theme.of(context).colorScheme.primary
+                          : null),
+              Container(
+                  width: 18,
+                  height: 3,
+                  margin: const EdgeInsets.only(top: 1),
+                  color:
+                      canFormat ? curHighlight : context.surfaces.textSecondary),
+            ]),
+          ),
+        ),
+      ),
+      InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        borderRadius: BorderRadius.circular(4),
+        onTap: canFormat
+            ? () async {
+                // No Automatic entry: a highlight has no "whatever contrasts
+                // with the page" answer — it IS the thing behind the text.
+                // Taking one off is the button beside this one.
+                final hex = await showOnoteColorPicker(context, app,
+                    initial: app.lastHighlight, allowAuto: false);
+                if (hex != null) app.applyHighlightColor(hex);
+              }
+            : null,
+        child: Icon(Icons.arrow_drop_down,
+            size: 18, color: canFormat ? null : context.surfaces.textSecondary),
+      ),
       const _Div(),
       fmt(Icons.title, l.barHeading1, () => app.toggleLinePrefix('# ')),
       _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
@@ -788,7 +908,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         onTap: canFormat
             ? () async {
                 final hex = await showOnoteColorPicker(context, app,
-                    initial: app.lastColor);
+                    initial: app.lastColor, allowAuto: true);
                 if (hex != null) app.applyTextColor(hex);
               }
             : null,
@@ -912,8 +1032,12 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
               icon: item.icon,
               label: item.label(l),
               inline: _InsertButton(app: app, item: item),
-              onPressed: () =>
-                  item.run(context, app, insertAnchor(app, item)),
+              // Null where this build cannot do it, which greys the folded
+              // entry rather than removing it. Same answer as the inline
+              // button's, from the same `item.available`.
+              onPressed: item.available
+                  ? () => item.run(context, app, insertAnchor(app, item))
+                  : null,
               submenu: item.extras.isEmpty
                   ? null
                   : [
@@ -923,15 +1047,19 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                       ToolbarSubmenuItem(
                         icon: item.icon,
                         label: item.label(l),
-                        onPressed: () =>
-                            item.run(context, app, insertAnchor(app, item)),
+                        onPressed: item.available
+                            ? () =>
+                                item.run(context, app, insertAnchor(app, item))
+                            : null,
                       ),
                       for (final extra in item.extras)
                         ToolbarSubmenuItem(
                           icon: extra.icon,
                           label: extra.label(l),
-                          onPressed: () => extra.run(
-                              context, app, insertAnchor(app, extra)),
+                          onPressed: extra.available
+                              ? () => extra.run(
+                                  context, app, insertAnchor(app, extra))
+                              : null,
                         ),
                     ],
             ),
@@ -1147,18 +1275,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
-        ...[
-          for (final v in kPenSizes) _penDot(context, app, v, l),
-          // The slider is still here for anybody who wants 3.5 — behind a
-          // button, which is where a control most people never touch belongs.
-          IconButton(
-            icon: const Icon(Icons.tune, size: 16),
-            tooltip: l.barPenSizeExact,
-            isSelected: !kPenSizes.contains(app.penSize),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _showExactPenSize(context, app),
-          ),
-        ],
+        // **One control, not six.** The owner: *"Pen size doesnt change
+        // regularly so that can be hiden behind a single menu."* The presets
+        // and the exact slider are both in it, and the button itself draws
+        // the size it would put down, so the row still says what the pen is
+        // set to without spending five buttons saying it.
+        PenSizeButton(
+          app: app,
+          sizes: kPenSizes,
+          label: _penSizeLabel,
+          onExact: (c) => _showExactPenSize(c, app),
+        ),
       // What is left really is about ONE tool, and says nothing at all when
       // that tool is not the one in hand.
       if (app.tool == Tool.eraser) ...[
@@ -1197,32 +1324,13 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       // constraint is a hard layout assertion, not a soft one. The Draw row
       // therefore failed to lay out *at all*: no pen, no highlighter, no
       // eraser, nothing clickable. Push things apart with a fixed gap.
-      const SizedBox(width: 12),
-      // Touch drawing (INK-1). Exposed because the right answer depends on
-      // hardware we can't detect reliably: "Auto" suits a pen-and-touch
-      // convertible, "Always" a touch-only tablet, "Never" anyone who rests a
-      // hand on the glass while thinking.
-      const _Div(),
-      Tooltip(
-        message: l.barTouchDrawing,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.touch_app_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 4),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<TouchDrawing>(
-              value: app.touchDrawing,
-              isDense: true,
-              style: TextStyle(fontSize: 11, color: scheme.onSurface),
-              items: [
-                for (final v in TouchDrawing.values)
-                  DropdownMenuItem(value: v, child: Text(v.label(l))),
-              ],
-              onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
-            ),
-          ),
-        ]),
-      ),
+      // **The hardware preferences are in Settings.** The owner: *"i think
+      // that option should be in settings rather than that bar. The whole
+      // drawing menu has sprawled out a lot."* What is left on this row is
+      // what somebody changes WHILE drawing — the tool, the colour, the size,
+      // the shape, how the eraser behaves. What the pen's side button does
+      // and whether a finger draws are set once, so they live where you go
+      // looking for a setting.
       const SizedBox(width: 4),
     ]);
   }
@@ -1833,6 +1941,12 @@ class _InsertButton extends StatelessWidget {
   /// already carry; a wordless one leads with its name, so nothing on the row
   /// is nameless.
   String _tip(L l) {
+    // **An unavailable item leads with its name and says why**, even when it
+    // is a labelled button whose hover would normally add nothing. A greyed
+    // control that will not say what is wrong with it is worse than no
+    // control: the one thing it has to communicate is that the app can do
+    // this and this build cannot.
+    if (!item.available) return '${item.label(l)} — ${l.commandNotInDemo}';
     if (item.showLabel) return item.tooltip?.call(l) ?? '';
     return item.tooltip == null
         ? item.label(l)
@@ -1852,6 +1966,9 @@ class _InsertButton extends StatelessWidget {
       _run(context, item);
     }
 
+    // Disabled rather than hidden. Flutter greys a null `onPressed` for us, so
+    // there is no second style to keep in step with the enabled one.
+    final onPressed = item.available ? press : null;
     final l = L.of(context);
     return Tooltip(
       message: _tip(l),
@@ -1859,12 +1976,12 @@ class _InsertButton extends StatelessWidget {
           ? CommandButton(
               icon: item.icon,
               label: item.label(l),
-              onPressed: press,
+              onPressed: onPressed,
             )
           : IconButton(
               icon: Icon(item.icon, size: OnoteIcon.sm),
               visualDensity: VisualDensity.compact,
-              onPressed: press,
+              onPressed: onPressed,
             ),
     );
   }
@@ -1940,12 +2057,22 @@ class _ToolbarScroll extends MaterialScrollBehavior {
 /// be — and deliberately not a tab.
 ///
 /// A pill, because the token file reserves the full radius for badges and no
-/// other control in the bar is that shape. No `InkWell`, no `onTap`, no
-/// underline ever: it cannot be pressed, so it cannot be misread as a fifth
-/// tab, and the ambiguity is removed by removing the behaviour rather than by
-/// styling around it.
+/// other control in the bar is that shape — and **no underline ever**, which
+/// is what keeps it from being misread as a fifth tab.
+///
+/// It used to have no `InkWell` and no `onTap` either, on the reasoning that
+/// removing the behaviour removed the ambiguity. That held until tapping a
+/// tab mid-equation became a way OFF the equation's controls, at which point
+/// the unpressable badge was the only thing on screen that could have been
+/// the way back and wasn't. It presses now; it is still not a tab, because it
+/// is a pill that exists only while its subject does.
 class _SubjectBadge extends StatelessWidget {
-  const _SubjectBadge({required this.icon, required this.label});
+  const _SubjectBadge({
+    required this.icon,
+    required this.label,
+    this.selected = true,
+    this.onTap,
+  });
 
   final IconData icon;
 
@@ -1953,34 +2080,61 @@ class _SubjectBadge extends StatelessWidget {
   /// "tools".
   final String label;
 
+  /// Whether the command row is showing this subject's own controls. False
+  /// means the student has tabbed away from them while the subject is still
+  /// open, which is the state [onTap] exists to leave.
+  final bool selected;
+
+  /// Press to bring the row back to this subject. Null when it is already
+  /// showing — a control that does nothing when pressed is worse than one
+  /// that cannot be.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final l = L.of(context);
+    // Filled while its controls are on the row, outlined once they are not:
+    // the same "here / go here" pair the tab row makes with its underline,
+    // in the register a chip can say it in.
+    final chip = Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: selected ? accent.withValues(alpha: 0.10) : Colors.transparent,
+        border: selected
+            ? null
+            : Border.all(color: accent.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(OnoteRadius.full),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: accent),
+        const SizedBox(width: 4),
+        Text(label,
+            style: OnoteType.caption
+                .copyWith(fontWeight: FontWeight.w600, color: accent)),
+      ]),
+    );
     return ExcludeFocus(
+      // **Not focusable, even now that it is pressable.** The whole point of
+      // pressing it is to get back to an equation that is still open, and an
+      // equation that lost the keyboard on the way back would be a poor
+      // trade. `InkWell` handles the tap either way.
       child: Padding(
         padding: const EdgeInsets.only(left: 6),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: 1, height: 18, color: context.surfaces.border),
+          Container(width: 1, height: 18, color: context.surfaces.border),
           const SizedBox(width: 6),
           Tooltip(
-            message: l.barEscWhenDone,
-            child: Container(
-              height: 22,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(OnoteRadius.full),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 14, color: accent),
-                const SizedBox(width: 4),
-                Text(label,
-                    style: OnoteType.caption.copyWith(
-                        fontWeight: FontWeight.w600, color: accent)),
-              ]),
-            ),
+            message: selected ? l.barEscWhenDone : l.barBackToEquation,
+            child: onTap == null
+                ? chip
+                : InkWell(
+                    mouseCursor: WidgetStateMouseCursor.clickable,
+                    borderRadius: BorderRadius.circular(OnoteRadius.full),
+                    onTap: onTap,
+                    child: chip,
+                  ),
           ),
         ]),
       ),
@@ -2007,41 +2161,6 @@ class _SubjectBadge extends StatelessWidget {
 const List<double> kPenSizes = [1, 2.5, 5, 8];
 
 /// One thickness, drawn at that thickness.
-Widget _penDot(BuildContext context, AppState app, double v, L l) {
-  final scheme = Theme.of(context).colorScheme;
-  final on = app.penSize == v;
-  // Clamped so the thinnest is still a target you can hit: the DOT grows with
-  // the value, the button it sits in does not.
-  final d = (v * 2.2).clamp(4.0, 18.0);
-  return Tooltip(
-    message: l.barPenSize(_penSizeLabel(v)),
-    child: InkWell(
-      mouseCursor: WidgetStateMouseCursor.clickable,
-      borderRadius: BorderRadius.circular(99),
-      onTap: () {
-        app.penSize = v;
-        app.refresh();
-      },
-      child: Container(
-        width: 26,
-        height: 26,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: on ? scheme.primary.withValues(alpha: .14) : null,
-        ),
-        child: Container(
-          width: d,
-          height: d,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: on ? scheme.primary : context.surfaces.textSecondary,
-          ),
-        ),
-      ),
-    ),
-  );
-}
 
 /// `2.5`, but `5` rather than `5.0` — a thickness reads as a number, not as a
 /// float.

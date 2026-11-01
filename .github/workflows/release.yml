@@ -709,103 +709,107 @@ jobs:
           # docs/RELEASING.md §"Writing the notes".
           body: |
             <!-- Draft: review — the What's new below was written with the
-                 tag, from CHANGELOG.md's 1.0.1 section — then publish. -->
+                 tag, from CHANGELOG.md's 1.0.2 section — then publish. -->
 
             ## What's new
 
-            - **A table sits in your writing now**, and you type in it where it sits.
-            - **Bold stays bold when you press space**, and the asterisks stay hidden.
-            - **Drag a page onto the page you are writing** for a live window onto it.
-            - **Links live in your words**, and Ctrl+K puts one on what you selected.
-            - **Straight lines and shapes for the pen**, which makes a trackpad usable.
-            - **Fold the section list away** when you want the room for the page.
-            - **Pen sizes are four dots** instead of a slider you had to aim.
+            - **Group anything with anything**: Ctrl+G, and a written word moves as one.
+            - **Your pen's side button works**, and lassoes by default, as in OneNote.
+            - **Highlight in any colour**, not only the one yellow.
+            - **Equations take formulas**: `F = m·a` asks for m and a, and names the answer.
+            - **Duplicate a page** from the right-click menu, filed right beneath it.
+            - **Touch is calmer**: a finger scrolls the page, and a pinch zooms where it began.
+            - **Try Openote in a browser** at openote.org/demo, before anyone installs it.
 
             ## All of it, in more detail
 
-            **Tables moved into your writing.** A table used to be a box of its own that
-            sat beside the sentence it belonged to. Now it lives in the paragraph: you
-            type a word, press Tab, and it becomes the first cell. Tab again adds a
-            column, Enter starts a row, and the caret stays where you put it. Your
-            existing tables convert as you open each page, keeping their contents and the
-            width they had. To format text inside a cell, type the Markdown for it: the
-            toolbar buttons act on the sentence around the table rather than on the
-            cell, so they stand down while you are in one.
+            **Group anything with anything.** Select a text box, a graph, a picture and
+            some handwriting, press Ctrl+G, and they move, copy, cut and delete as one.
+            Ctrl+Shift+G takes them apart again, and both are on the right-click menu and
+            the button above the selection, for a tablet held with a pen in the other hand.
+            Every stroke is now its own mark, so group the strokes of a word and it is one
+            thing to pick up. A group is a relationship, not a container: nothing moves
+            when you make one or undo one, and you can still type into a grouped box.
 
-            **The markup stops showing itself.** Three things you could do by accident
-            and see asterisks for:
+            **The lasso selects, and stops rearranging.** It used to weld everything it
+            caught into one new piece of handwriting, for good. Now it selects what it
+            caught — boxes, pictures and graphs too, not only ink — and changes nothing
+            else. What you lasso stays selected when you let go, and the pen drags it: a
+            press inside the selection moves it, a press anywhere else draws.
 
-            - Bolding a word and pressing space printed the markers around it, because
-              a marker may not sit against a space. The space steps outside the run
-              now, and the bold carries on into the next word.
-            - Selecting a bold word and deleting it left half its markers behind. All of it goes now.
-            - Ctrl+Z in a table cell removed the whole table. It takes back what you
-              typed, then the row or column you made, and never the table itself.
+            **Your pen's buttons do what you told Windows they were for.** The side button
+            never reached Openote at all — Flutter reports every pen touch as a plain
+            click. It is read directly now. A button your driver maps to the eraser
+            erases; the other kind lassoes by default, and Settings can make it Select,
+            Eraser or nothing. The eraser shows a faint ring of how far it reaches, even
+            while the pen hovers. Settings › Pen and touch test shows exactly what your pen
+            and fingers report, so a problem can be answered with evidence.
 
-            **Links read as their words.** Clicking into a sentence used to unfold
-            `[the docs](https://…/a/long/path)` in the middle of it. A link now behaves
-            like everything else in a note: bold stays bold, an equation stays an
-            equation, and a link stays its words. Ctrl+K puts one on what you selected
-            or on the word you are touching, and Ctrl+K inside a link edits it.
+            **Highlight in any colour.** The highlighter has a picker, like the text
+            colour beside it, and a highlight and a text colour are separate, so a word can
+            have both. In dark mode your colour is softened rather than swapped, so the
+            words stay readable and the colour is still yours. The text colour picker
+            opens with **Automatic** at the top, which is the way back to the default.
 
-            **Windows onto other pages.** Drag a page out of the list and onto the page
-            you are writing, and you get a live window onto it. Right-click to swap it
-            for a plain page link, or right-click a page link to swap it the other way —
-            they are the same thing at two sizes, and which one you want is usually only
-            clear once you can see it.
+            **Equations take formulas, not just functions of x.** `F = m·a`, `v = u + at`
+            and `c = √(a² + b²)` used to be refused with "unknown m". Evaluate is now a
+            button beside Graph; it asks for each letter in the order you wrote it and
+            names the answer — `v = 14`, not a bare `= 14`. There are prefilled sums,
+            integrals and limits, every symbol answers to its own name (`\integral`,
+            `\infinity`), and selecting part of an equation and pressing `(` wraps it.
 
-            **Shapes for the pen.** Pick Line, Arrow, Rectangle, Ellipse or Triangle on
-            the Draw tab and the stroke comes out straight. A shape is ink: it takes your
-            colour, size and opacity, both erasers rub it out, the lasso picks it up and
-            undo undoes it. Drawing a diagram with a trackpad is the difference between a
-            diagram and a mess, and most people using Openote are on a school laptop.
+            **Pictures behave like pictures.** Click one to select it; Backspace beside
+            one deletes the whole picture instead of leaving a long code behind; and a
+            picture keeps its own line while you type around it. A picture dropped on
+            empty canvas makes a box you can write under, and SVG drawings are drawn as
+            drawings, sharp at any zoom and in an exported PDF.
 
-            **The navigator does what you drag.** Fold the section list away when you
-            want the width for the page. Groups and pages you closed stay closed when you
-            come back. Dropping a page or a section into the space below the list moves
-            it to the bottom, which is where a hand overshooting a short list lands.
+            **Touch.** Dragging a finger across a box scrolls the page instead of
+            selecting its words. Two fingers zoom even when one lands on a box, the zoom
+            holds the point you started on, and a pinch that slides also pans.
+
+            **Settings is one group at a time** — Appearance, Writing and drawing,
+            Connections, Help, About down the left — with every description read again and
+            most of them shortened.
 
             **Smaller things that add up.**
 
-            - Insert puts a new block under the box you were last writing in, not in the
-              middle of the screen — and a new code block opens in the language you last
-              chose.
-            - Clicking out of a box onto the page opens the next box straight away,
-              rather than taking two clicks.
-            - Pen thickness is four dots drawn at the size they set, with anything in
-              between behind the ⚙ — which now goes up to 40 and shows the dot it will
-              draw, in the colour it will draw it.
-            - Comments in a code block are green, as they are in almost every editor.
-            - A picture that was still syncing appears when it lands, and you can
-              right-click any picture to save a copy of it.
-            - Point a notebook at its own SSH key, alongside its remote.
-            - Pressing Enter in an empty note no longer throws.
-            - Deleting a page leaves you on the page next door; deleting a section is one
-              Ctrl+Z away from coming back.
+            - Rename is on the right-click menu for pages, sections and groups.
+            - A new page takes its ruling, grid and paper from the page it is filed next to.
+            - Each notebook opens on the page you left it on.
+            - Board cards can be edited and deleted; a flashcard resizes with its box.
+            - Any text style combines with any other — bold and a colour, italic in bold.
+            - Dragged boxes keep up with the cursor at every zoom level.
+            - Clicking a page's title, or a box while another is open, takes one click.
+            - Paste a box you cut into another box, and its writing lands at the caret.
+            - An AI helper can now edit, move and delete, not only add — and Ctrl+Z undoes it.
+            - The folder picker names which Google Drive account each drive belongs to.
+            - "N devices" counts devices in use, and a crash no longer adds one.
+            - Moving or erasing older handwriting is no longer undone by the next save.
 
             ## Before you update
 
-            **Your existing tables are converted as you open each page.** The conversion
-            proves itself before it writes: the table is read back out and compared cell
-            for cell, and anything less than identical is left exactly as it was. A table
-            it declines goes on working as a table. Nothing is converted in a notebook
-            that is read-only or still catching up with another device.
+            **Page templates are gone.** A layout you want again is a page you keep, and
+            Duplicate copies it. Nothing you saved has been deleted.
+
+            **A passcode now keeps AI helpers out entirely** — a locked page is not listed,
+            searched, read or changed by one, even while you have it open. A page set to
+            ask "every time it is opened" can be unlocked again; before, it never could.
+            Passcodes are still a beta lock on Openote, not encryption of the file.
 
             ## For the technically curious
 
-            A table in a sentence is an **inline atom**: the paragraph holds a CommonMark
-            reference, `![2x3 table](onote://atom/<id>)`, and the payload lives beside it
-            in the same block. A reader that has never heard of Openote sees the alt
-            text rather than a syntax error, and a build too old to draw one says which
-            version made it instead of overwriting it.
+            Handwriting is now documented byte for byte in the ink specification, with a
+            worked example, so any program can read it without Openote. Strokes are stored
+            together and come back apart: 200 separate strokes take 26 KB, the same as
+            when a word was one object, instead of the 123 KB they took apart.
 
-            The caret arithmetic is the interesting part. An atom is drawn as one
-            zero-width placeholder standing for its first character, with the rest of the
-            reference laid out at a hair's width — so the number of code units the caret
-            walks is exactly the number in the source, and every offset in the paragraph
-            still means what it says.
+            The web demo found two bugs no desktop could show. The browser had no zlib to
+            inflate a stroke, and dart2js turns integer bit operations unsigned, so every
+            backwards stroke decoded as a line about 268 million pixels long. Both are
+            fixed with code that gives the same answer on every platform.
 
-            3,580 automated tests run on every push.
+            Over 4,000 automated tests run on every push.
 
             ## Downloads
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.

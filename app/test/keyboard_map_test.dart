@@ -206,9 +206,14 @@ void main() {
     // Reading order is y-then-x: a (top-left), b (top-right), c (below a).
     late Block a, b, c;
 
+    // Held still, so whether two nudges are one burst is decided by the test
+    // and not by how loaded the runner is. See [AppShell.clock].
+    var fakeNow = DateTime(2026, 1, 1, 9);
+
     setUp(() async {
       if (!haveSqlite) return;
       AppState.syncLogEnabled = false;
+      AppShell.clock = () => fakeNow;
       tmp = Directory.systemTemp.createTempSync('onote_trav_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Study');
@@ -234,6 +239,7 @@ void main() {
 
     tearDown(() {
       AppState.syncLogEnabled = true;
+      AppShell.clock = DateTime.now;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();
@@ -341,6 +347,23 @@ void main() {
       app.undo();
       expect(live().x, x0, reason: 'one burst, one undo step');
       expect(live().y, y0);
+
+      // And a pause ENDS the burst, which is the other half of the rule and
+      // only checkable with the clock held: the window is 900 ms wide, so a
+      // test that waited for it would be waiting on the machine.
+      app.select(a.id); // the undo above put the selection back as it found it
+      final base = live().x;
+      await key(tester, LogicalKeyboardKey.arrowRight, ctrl: true);
+      final mid = live().x;
+      expect(mid, greaterThan(base), reason: 'the first nudge landed');
+      fakeNow = fakeNow.add(const Duration(seconds: 2));
+      await key(tester, LogicalKeyboardKey.arrowRight, ctrl: true);
+      expect(live().x, greaterThan(mid), reason: 'and so did the second');
+
+      app.undo();
+      expect(live().x, mid,
+          reason: 'the press after a pause is its own undo step, so one undo '
+              'takes back that press and not the one before it');
 
       // Clamp: nudging left forever stops at the page edge, never negative.
       for (var i = 0; i < 30; i++) {

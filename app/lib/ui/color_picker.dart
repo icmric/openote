@@ -25,12 +25,17 @@ Color? onoteColorFromHex(String? hex) {
 /// colour" whichever caller opened it, so choosing "Background colour…" on a
 /// box put up a window headed "Text colour" — one of the two callers was
 /// always contradicting the menu item that opened it.
+///
+/// [allowAuto] offers **Automatic** and returns the string `'auto'` for it —
+/// the sentinel the pen already uses for "whatever contrasts with what this
+/// is drawn on". Only for callers that have a default to go back to: a box's
+/// background has "Remove background" in its own menu instead.
 Future<String?> showOnoteColorPicker(BuildContext context, AppState app,
-    {String? initial, String title = 'Text colour'}) {
+    {String? initial, String title = 'Text colour', bool allowAuto = false}) {
   return showOnoteDialog<String>(
     context: context,
-    builder: (ctx) =>
-        _ColorPickerDialog(app: app, initial: initial, title: title),
+    builder: (ctx) => _ColorPickerDialog(
+        app: app, initial: initial, title: title, allowAuto: allowAuto),
   );
 }
 
@@ -39,9 +44,15 @@ const _baseHues = <double>[0, 25, 48, 90, 140, 175, 210, 240, 275, 320];
 
 class _ColorPickerDialog extends StatefulWidget {
   const _ColorPickerDialog(
-      {required this.app, this.initial, required this.title});
+      {required this.app,
+      this.initial,
+      required this.title,
+      this.allowAuto = false});
   final AppState app;
   final String? initial;
+
+  /// Whether to offer Automatic. See [showOnoteColorPicker].
+  final bool allowAuto;
 
   /// What the colour is FOR, so the heading agrees with the menu item that
   /// opened it.
@@ -96,17 +107,44 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     });
   }
 
-  void _done() {
-    final hex = _toHex(_color);
+  void _done() => _apply(_color);
+
+  void _apply(Color c) {
+    final hex = _toHex(c);
     widget.app.rememberCustomColor(hex);
     Navigator.pop(context, hex);
+  }
+
+  /// **A swatch is a choice, not a proposal.**
+  ///
+  /// The owner: *"i dont like that i have to click the colour and then apply,
+  /// id like to just click the colour and then have it automatically apply.
+  /// There isnt a preview and its easily undone so in my view no need to
+  /// stage the change."* Quite right — the dialog shows the colour on a
+  /// swatch and nothing else, so the second click bought nothing and cost one
+  /// per colour change.
+  ///
+  /// The mixer is the exception, and it is the owner's too: *"unless they have
+  /// already expanded the 'mix your own colour' menu, in which case it should
+  /// set the colour in there but not automatically close the dialouge box
+  /// (unless they then click the same box again while its still selected, in
+  /// which case close and apply it)."* Someone who has opened the mixer is
+  /// using the swatches as starting points to adjust, so closing on the first
+  /// one would throw away the thing they opened it for — and clicking the
+  /// same one twice is an unambiguous "no, that one".
+  void _pick(Color c) {
+    if (!_customOpen || _color.toARGB32() == c.toARGB32()) {
+      _apply(c);
+      return;
+    }
+    _setColor(c);
   }
 
   @override
   Widget build(BuildContext context) {
     Widget swatch(Color c, {double size = 24}) => InkWell(
           mouseCursor: WidgetStateMouseCursor.clickable,
-          onTap: () => _setColor(c),
+          onTap: () => _pick(c),
           borderRadius: BorderRadius.circular(4),
           child: Container(
             width: size,
@@ -132,6 +170,56 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // **Automatic first, because it is the way back.** A colour is
+              // easy to find and "no colour" was not findable at all: the
+              // owner, on the colour picker, *"its not imedietley clear how
+              // to set it to the auto colour"*. Top left is where the eye
+              // starts and where OneNote keeps it too.
+              if (widget.allowAuto) ...[
+                InkWell(
+                  mouseCursor: WidgetStateMouseCursor.clickable,
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => Navigator.pop(context, 'auto'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 6),
+                    child: Row(children: [
+                      // Half light, half dark: the swatch cannot show one
+                      // colour, because the point of it is that the colour is
+                      // decided when the text is drawn.
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: OnoteColors.paper300),
+                          gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                OnoteColors.graphite900,
+                                OnoteColors.moon0
+                              ],
+                              stops: [0.5, 0.5]),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Automatic'),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                            'dark on a light page, light on a dark one',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: context.surfaces.textSecondary)),
+                      ),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
               // Theme + standard grid
               Wrap(spacing: 5, runSpacing: 5, children: [
                 for (final c in OnoteColors.penColors) swatch(c),
@@ -280,7 +368,12 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        // Still here with the mixer shut, where every swatch applies on the
+        // click: it is the way to keep the colour you arrived with, and a
+        // button that appears and disappears is worse than one that is
+        // sometimes redundant.
         FilledButton(onPressed: _done, child: const Text('Apply')),
       ],
     );

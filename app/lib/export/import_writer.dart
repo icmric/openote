@@ -1,70 +1,43 @@
-/// The import writer isolate — the fix for "interactions aren't completed until
-/// the import is finished" (v0.10 latency plan, Option C).
+/// Runs a whole OneNote import in its own isolate, so the app stays usable while
+/// it happens.
 ///
-/// ## What was still wrong after v0.9
+/// The isolate owns everything: it reads the `.onepkg`, runs the Rust parse, opens
+/// its **own** SQLite connection on the brand-new `.onote`, and writes pages,
+/// blobs and the op log directly. The UI thread does nothing but receive progress.
 ///
-/// v0.9 moved the *parse* off the UI thread and batched the write phase, yielding
-/// `Future.delayed(Duration.zero)` between batches. That buys **one event-loop
-/// turn**, which is enough for a vsync callback and not enough for an
-/// interaction. A click is not one event; it is a conversation — pointer-down,
-/// pointer-up, gesture resolution, the handler, a state change, a rebuild, a
-/// paint, and for anything real an async continuation that reads the database.
-/// Every leg had to fit in a sliver between 57 ms batches, and each sliver was
-/// followed immediately by the next one. So paint survived (the progress card
-/// animated, which is why it *looked* fine) and input starved. Verbatim the
-/// report: *"Visually it updates with the popup, however interactions with the
-/// page aren't completed until the import is finished."*
-///
-/// ## The shape now
-///
-/// One isolate owns the whole import: it reads the `.onepkg`, runs the Rust
-/// parse, opens its **own** SQLite connection on the brand-new `.onote`, and
-/// writes pages, blobs and the op log directly. The UI thread does nothing but
-/// receive progress messages.
-///
-/// The property that makes this safe is that the target is a **brand-new
-/// notebook**: no other code holds its container, its log files, or any
-/// in-memory state derived from them. `Repository.closeNotebook` hands over the
-/// one handle that did exist. There is no shared mutable anything, so there is
-/// nothing to lock.
+/// **What makes that safe is that the target is a brand-new notebook.** No other
+/// code holds its container, its log files, or any in-memory state derived from
+/// them, and `Repository.closeNotebook` hands over the one handle that did exist.
+/// There is no shared mutable anything, so there is nothing to lock. Do not point
+/// this at an existing notebook.
 ///
 /// ## The one thing that cannot leave the main isolate
 ///
 /// [restackFlows] corrects the parser's naive line-pitch layout using real text
 /// measurement, and `TextPainter` throws *"UI actions are only available on root
-/// isolate"* anywhere else. Measured, it costs **1.2 ms per page** — small, but
-/// unavoidably main-side.
+/// isolate"* anywhere else. So the writer asks the main side for layout — **per
+/// batch of four pages, and for nine fields per box**, sending only
+/// [flowMeasurementInput] rather than the tag lists and style runs the parser also
+/// attached.
 ///
-/// So the writer asks — **per batch, and for nine fields per box**. Both halves
-/// of that were learned the hard way. The first shape asked once, up front, for
-/// the whole notebook, and it reproduced the original report almost exactly:
-/// the progress card showed the page total (the `parsed` message) and the app
-/// then froze, because receiving an isolate message is a deep copy the receiver
-/// does in **one uninterruptible go** — no amount of frame pacing inside the
-/// restack loop helps, since the block is over before the loop starts. It also
-/// meant nothing was written until every page had been laid out, so a big
-/// notebook sat on a total that did not move.
+/// Both halves of that shape are load-bearing. Asking **once, up front**, for the
+/// whole notebook freezes the app: receiving an isolate message is a deep copy the
+/// receiver does in one uninterruptible go, so no amount of frame pacing inside
+/// the restack loop helps — the block is over before the loop starts. It also
+/// meant nothing was written until every page had been laid out, so a large
+/// notebook sat on a page total that never moved.
 ///
-/// Now each batch of four pages asks for its own layout immediately before
-/// writing, sending only [flowMeasurementInput] — the fields the restack
-/// actually reads, not the tag lists and style runs the parser also attached.
-/// Measured on a synthetic 3000-page notebook, the worst interaction stall
-/// during the layout pass went from **48 ms to 4 ms**, and progress now moves
-/// from the first batch.
-///
-/// The images still never cross, which remains why the parse lives here rather
-/// than in a `compute` on the main side.
+/// Images never cross the boundary at all, which is why the parse lives in here
+/// rather than in a `compute` on the main side.
 library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:sqlite3/open.dart';
-import 'package:sqlite3/sqlite3.dart';
+import '../store/sqlite_backend.dart';
 
 import '../core/onote_ffi.dart';
 import '../ink/ink_codec.dart';
@@ -266,7 +239,7 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
   }
 
   Future<void> run() async {
-    Database? db;
+    CommonDatabase? db;
     // The terminal message is BUILT here and SENT in the `finally`, after the
     // container is closed. Sending it inline looked fine and wasn't: the main
     // isolate reopens the notebook the instant it hears "done", and it won an
@@ -275,7 +248,7 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
     Map<String, Object?>? terminal;
     try {
       if (config.sqliteLibrary != null) {
-        open.overrideForAll(() => DynamicLibrary.open(config.sqliteLibrary!));
+        useSqliteLibraryAt(config.sqliteLibrary!);
       }
 
       final Map<String, dynamic> parsed;
@@ -372,7 +345,7 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
     } catch (e, st) {
       terminal = {'t': 'error', 'message': '$e', 'stack': '$st'};
     } finally {
-      // ALWAYS, including after a cancel. sqlite3's Database is a native
+      // ALWAYS, including after a cancel. sqlite3's CommonDatabase is a native
       // resource; an isolate that exits without disposing leaks the handle for
       // the life of the process — and on Windows an open handle is why the
       // teardown's file delete would then fail, leaving a half-imported
@@ -397,7 +370,7 @@ class IsolateImportSink implements ImportSink {
 
   /// Open a sink over an already-open container, attaching an op-log recorder
   /// unless logging is off.
-  factory IsolateImportSink.open(Database db, ImportWriterConfig config) {
+  factory IsolateImportSink.open(CommonDatabase db, ImportWriterConfig config) {
     final writer = NotebookWriter(db);
     // **Built even with the log switched off.** From v0.17 Step 6 the
     // container stores no blob bytes, so this store is the only place an

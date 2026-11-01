@@ -1,17 +1,10 @@
 /// **Everything you can add to a page, defined once.**
 ///
-/// The owner's report: *"In insert, we have some redundant options (such as
-/// text box, that doesnt need to be there), and it also just feels kinda
-/// messy at the moment"*, and of the canvas's right-click menu, *"this should
-/// more closley match the insert menu we already have"*.
-///
-/// The two surfaces had drifted because each carried its own copy of the
-/// work. `_insertTable` on the ribbon and `case 'table'` in the menu both
-/// spelled out the literal `[['Header','Header'],['','']]`; board and page
-/// window were duplicated the same way; and the menu had a CSV importer the
-/// ribbon did not while the ribbon had eight things the menu did not. This
-/// file is the single list they now both render, so "the menu matches Insert"
-/// is true by construction rather than by anyone remembering.
+/// **The Insert ribbon and the canvas's right-click menu render this one list**,
+/// so "the menu matches Insert" is true by construction rather than by anyone
+/// remembering. They had drifted badly when each carried its own copy of the work:
+/// both spelled out the same literal table, board and page window were duplicated,
+/// and each surface had items the other did not.
 ///
 /// **The ribbon is one row of thirteen; the menu shows ten of them.**
 ///
@@ -57,13 +50,13 @@ import '../export/csv_import.dart';
 import '../export/pdf_import.dart';
 import '../model/models.dart';
 import '../l10n/l10n.dart';
+import '../core/capabilities.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
 import 'insert_portal_dialog.dart';
 import 'link_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
-import 'sidebar.dart';
 
 /// Put one thing on the page. [at] is the top-left the block should take.
 typedef InsertRun = Future<void> Function(
@@ -81,6 +74,7 @@ class InsertItem {
     this.opensPicker = false,
     this.showLabel = true,
     this.onMenu = true,
+    this.needs,
     this.extras = const [],
   });
 
@@ -132,15 +126,38 @@ class InsertItem {
 
   /// **Is this on the right-click menu as well as the ribbon?**
   ///
-  /// Three are not, and each has the same reason: the gesture that opens the
+  /// Two are not, and each has the same reason: the gesture that opens the
   /// menu already does the thing. A right click on the page is a click on the
-  /// page, which makes a text box; a flashcard is made from the line you are
-  /// on, which a right click on empty canvas is not; and applying a template
-  /// lays out a whole PAGE, which is not "put this here".
+  /// page, which makes a text box; and a flashcard is made from the line you
+  /// are on, which a right click on empty canvas is not.
   ///
   /// A field rather than a second list, so the difference is one word beside
   /// the item that has it, and the test can read it.
   final bool onMenu;
+
+  /// **What this item needs from the platform, or null when it needs
+  /// nothing.**
+  ///
+  /// Null is the common case and costs nothing to get right: most things on
+  /// this list are pure Dart and work anywhere, so they say nothing and
+  /// nobody has to think about them. An item that names a [Capability] is
+  /// greyed out, with its own reason on hover, wherever that capability is
+  /// absent — the browser demo being the only such build today.
+  ///
+  /// **The dependency, not the availability.** It would be easier to write
+  /// `web: false` here, and it would rot: the value that greys the button
+  /// would be a second copy of the value that drives the fallback behind it,
+  /// and the two would disagree within a release or two. Naming the
+  /// capability means [Capabilities.has] answers both from one place.
+  ///
+  /// A field rather than a second list, for the reason [onMenu] gives: the
+  /// difference is one word beside the item that has it, and the test can
+  /// read it.
+  final Capability? needs;
+
+  /// True when this build can actually do this. The ribbon and the menu both
+  /// ask, so neither can be the one that forgets.
+  bool get available => needs == null || Capabilities.has(needs!);
 
   /// The extra choices behind a split button's arrow. A plain menu ignores
   /// these and offers the main action only, which is the right default in
@@ -200,12 +217,20 @@ Offset insertAnchor(AppState app, InsertItem item) {
 List<InsertItem> get kInsertItems =>
     [for (final g in kInsertGroups) ...g.items];
 
-/// **The ribbon: one row, in the order it has always been in.**
+/// **The ribbon: one row, in the order the owner put them in.**
 ///
 /// The groups below are for the right-click MENU, which shows them as three
 /// short columns. The ribbon is a row and has no columns to put a heading on,
-/// so it reads them out flat — in the order a student learned, which is not
-/// the order the columns happen to fall in.
+/// so it reads them out flat.
+///
+/// The order is not the groups' and is not alphabetical; it is the owner's,
+/// given as a list — *"i recon the first two should remain the same, then pdf,
+/// table, image, video, file, flashcard, board, link, page window"*. The first
+/// two are the two things you MAKE here that have no other way in (an
+/// equation, a code block); then the things you bring in from elsewhere,
+/// commonest first; then the two that point at something that already exists.
+/// The previous order grew by appending whatever was built next, which is how
+/// a graph ended up between a picture and a PDF.
 ///
 /// A test asserts this names every item in the catalog exactly once, so the
 /// two cannot drift apart.
@@ -216,16 +241,15 @@ const List<String> kRibbonOrder = [
   // the text box option from the insert window, its redundant now"*.
   'equation',
   'code',
-  'table',
-  'board',
-  'image',
   'pdf',
-  'file',
+  'table',
+  'image',
   'video',
+  'file',
   'flashcard',
+  'board',
   'pagelink',
   'portal',
-  'template',
 ];
 
 /// The ribbon's items, in [kRibbonOrder]. Anything the order forgets goes on
@@ -287,6 +311,7 @@ final List<InsertGroup> kInsertGroups = [
       extras: [
         InsertItem(
           id: 'table-file',
+      needs: Capability.localFiles,
           icon: Icons.grid_on_outlined,
           label: (l) => l.insertTableFromFile,
           tooltip: (l) => l.insertTableFromFileTip,
@@ -344,6 +369,7 @@ final List<InsertGroup> kInsertGroups = [
   InsertGroup(title: (l) => l.insertGroupBringIn, items: [
     InsertItem(
       id: 'image',
+      needs: Capability.localFiles,
       icon: Icons.image_outlined,
       // "Picture", not "Image": one is a word a student uses.
       label: (l) => l.insertPicture,
@@ -353,6 +379,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'pdf',
+      needs: Capability.localFiles,
       icon: Icons.picture_as_pdf_outlined,
       label: (l) => l.insertPdfSlides,
       opensPicker: true,
@@ -360,6 +387,7 @@ final List<InsertGroup> kInsertGroups = [
       extras: [
         InsertItem(
           id: 'pdf-here',
+      needs: Capability.localFiles,
           icon: Icons.vertical_align_bottom,
           label: (l) => l.insertPdfPrintout,
           opensPicker: true,
@@ -369,6 +397,7 @@ final List<InsertGroup> kInsertGroups = [
         ),
         InsertItem(
           id: 'pdf-pages',
+      needs: Capability.localFiles,
           icon: Icons.auto_stories_outlined,
           label: (l) => l.insertPdfPerSlide,
           opensPicker: true,
@@ -378,6 +407,7 @@ final List<InsertGroup> kInsertGroups = [
         ),
         InsertItem(
           id: 'pdf-card',
+      needs: Capability.localFiles,
           icon: Icons.branding_watermark_outlined,
           label: (l) => l.insertPdfAsCard,
           opensPicker: true,
@@ -391,6 +421,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'video',
+      needs: Capability.video,
       icon: Icons.play_circle_outline,
       label: (l) => l.insertVideo,
       tooltip: (l) => l.insertVideoTip,
@@ -400,6 +431,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'file',
+      needs: Capability.localFiles,
       icon: Icons.attach_file,
       label: (l) => l.insertFile,
       opensPicker: true,
@@ -434,18 +466,6 @@ final List<InsertGroup> kInsertGroups = [
       size: const Size(380, 260),
       run: (context, app, at) => showInsertPortalDialog(context, app, at),
     ),
-    InsertItem(
-      id: 'template',
-      icon: Icons.dashboard_customize_outlined,
-      label: (l) => l.insertTemplate,
-      opensPicker: true,
-      // Not on the right-click menu: this lays out a whole PAGE, which is not
-      // "put this thing here". It is on the page's own menu as well, beside
-      // Save as template, which is where it belongs by meaning.
-      onMenu: false,
-      size: Size.zero,
-      run: (context, app, at) => promptApplyTemplate(context, app),
-    ),
   ]),
 ];
 
@@ -477,32 +497,26 @@ Future<void> insertPickedImage(
   final file = await _pick(context, groups: [
     XTypeGroup(
         label: L.of(context).insertPickImages,
-        extensions: const ['png', 'jpg', 'jpeg', 'gif', 'webp'])
+        extensions: const ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
   ]);
   if (file == null) return;
   final Uint8List bytes = await file.readAsBytes();
-  final ext = file.name.split('.').last.toLowerCase();
-  final mime = switch (ext) {
-    'jpg' || 'jpeg' => 'image/jpeg',
-    'gif' => 'image/gif',
-    'webp' => 'image/webp',
-    _ => 'image/png',
-  };
+  // The one table, in `media_drop.dart`, so the menu and the drop cannot
+  // disagree about what a file is — which is how .svg came to be a picture by
+  // one route and an attachment by the other.
+  final mime = mimeForExtension(file.name);
   // Caret first. If a text box has focus the picture belongs IN it, in the
   // flow of the writing — the same thing paste and drag-and-drop already do.
   if (insertImageAtCaret(app, bytes, mime) != null) return;
 
-  // `tryAddBlob`: a full disk or read-only folder throws out of `writeBlob`
-  // synchronously, and a block referencing unstored bytes must not be made.
-  final hash = app.tryAddBlob(bytes, mime);
-  if (hash == null) return;
-  final b = app.addBlock(Block(
-      type: BlockType.image,
-      x: at.dx,
-      y: at.dy,
-      w: 320,
-      content: {'blob': 'sha256:$hash', 'mime': mime}));
-  app.select(b.id);
+  // And with no caret, a box of its own carrying the same reference — NOT a
+  // standalone picture block. This was the second of the two routes that
+  // still made one; the other was a drop onto empty canvas. See
+  // [insertImageInNewBox], which also handles the failed-write case.
+  //
+  // Centred on [at] rather than cornered there, which is what every other
+  // route does with the point it is given.
+  insertImageInNewBox(app, bytes, mime, at);
 }
 
 Future<void> insertPickedFile(

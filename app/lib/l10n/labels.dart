@@ -16,6 +16,7 @@
 /// see, so leaving one available is leaving the trap armed.
 library;
 
+import '../core/pen_buttons.dart' show PenButtonAction;
 import '../export/import_status.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart' show TouchDrawing;
@@ -32,6 +33,15 @@ extension TagKindLabel on TagKind {
         TagKind.critical => l.tagCritical,
         TagKind.contact => l.tagContact,
         TagKind.custom => l.tagCustom,
+      };
+}
+
+extension PenButtonActionLabel on PenButtonAction {
+  String label(L l) => switch (this) {
+        PenButtonAction.lasso => l.penButtonLasso,
+        PenButtonAction.eraser => l.penButtonEraser,
+        PenButtonAction.select => l.penButtonSelect,
+        PenButtonAction.nothing => l.penButtonNothing,
       };
 }
 

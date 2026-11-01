@@ -7,7 +7,7 @@ library;
 
 import 'package:flutter/gestures.dart';
 
-import '../model/models.dart';
+import '../core/pen_buttons.dart';
 import '../state/app_state.dart';
 
 /// **Which pen buttons mean "erase".**
@@ -56,8 +56,34 @@ bool penGestureErases({
   required int buttons,
   bool heldWhileHovering = false,
   bool penInRange = false,
+  PenButtonAction side = PenButtonAction.eraser,
 }) {
+  // **The tail is unconditional**: that end of a pen IS an eraser, and no
+  // setting about the SIDE button has anything to say about it.
   if (kind == PointerDeviceKind.invertedStylus) return true;
+  return side == PenButtonAction.eraser &&
+      penGestureHoldsButton(
+          kind: kind,
+          buttons: buttons,
+          heldWhileHovering: heldWhileHovering,
+          penInRange: penInRange);
+}
+
+/// **Whether a side button is held, whatever it has been set to do.**
+///
+/// Separated from what it MEANS because the two answers have different
+/// owners: this one is about the hardware and the platform, and the meaning
+/// is the student's setting. It also matters that it is one function rather
+/// than two: on Linux the barrel arrives through here (GTK reports a pen as
+/// `GDK_SOURCE_PEN` and passes the real button number through), while on
+/// Windows it arrives through `PenButtons` from the runner — and both have to
+/// honour the same setting or the app means different things on two desktops.
+bool penGestureHoldsButton({
+  required PointerDeviceKind kind,
+  required int buttons,
+  bool heldWhileHovering = false,
+  bool penInRange = false,
+}) {
   final fromAPen = kind == PointerDeviceKind.stylus ||
       // Some drivers report a pen with no kind at all rather than lying about
       // it; a pen in range is what makes that believable.
@@ -83,39 +109,28 @@ bool penGestureErases({
 /// - [stylusActive] means a stylus was seen recently (not necessarily now):
 ///   a palm rests between strokes as well as during them, so the window has to
 ///   outlive the gap.
+/// - [penEverSeen] means one has been used on this machine **at all**, which
+///   is the question that actually matters and the one a grace window only
+///   approximated. Reported: *"it sometimes will still use finger input when
+///   im drawing with the pen as drawing, it should never use regular touch to
+///   draw when a pen has been used, and unless explicitly set it should always
+///   under any circumstance treat touch inputs as navigational."* Two seconds
+///   after the last stylus event is not "when a pen has been used": a hand
+///   rests on the page for longer than that between words.
+///
+///   It does not take ink away from anybody. A touch-only tablet has never
+///   seen a pen, so a finger still draws there, which is the whole of INK-1.
+///   Somebody who writes with a pen on a machine that also has a touchscreen
+///   gets what they asked for: a finger that navigates. `always` overrides it,
+///   which is what explicitly set means.
 bool touchShouldDraw({
   required TouchDrawing mode,
   required int activeTouches,
   required bool stylusActive,
+  bool penEverSeen = false,
 }) {
   if (mode == TouchDrawing.never) return false;
   if (activeTouches > 1) return false;
   if (mode == TouchDrawing.always) return true;
-  return !stylusActive;
-}
-
-/// **How tall a picture is, before anything has measured it.**
-///
-/// A PDF slide is written by `pdf_import.dart` with a width and no height:
-/// the height is whatever the page turns out to be, and the importer has no
-/// business guessing it. Everything that needs a slide's rectangle therefore
-/// falls back to the size the block reported after it was laid out — and that
-/// is written silently, during layout, without a rebuild. So the frame that
-/// decides where the pictures are is the frame BEFORE any of them has said.
-///
-/// Reported: *"Auto pen colour doesnt work on images/pdfs either, still
-/// coming up as white on a white pdf background."* Quite so — the fallback of
-/// last resort is sixty pixels, so every slide was reckoned to be a sixty-
-/// pixel strip and ink below it was ink on the page.
-///
-/// The picture's own proportions answer it without waiting for anybody:
-/// `naturalW`/`naturalH` are stored the moment a picture is added, and the
-/// view lays the picture out at exactly that aspect. Null when they are
-/// missing — an old block, or a picture that has never loaded — and the
-/// caller falls back as before.
-double? aspectHeight(Block b) {
-  final nw = (b.content['naturalW'] as num?)?.toDouble();
-  final nh = (b.content['naturalH'] as num?)?.toDouble();
-  if (nw == null || nh == null || nw <= 0 || nh <= 0 || b.w <= 0) return null;
-  return b.w * nh / nw;
+  return !penEverSeen && !stylusActive;
 }

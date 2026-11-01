@@ -1,255 +1,23 @@
-import 'dart:ffi';
-import 'dart:io';
-
-import 'package:ffi/ffi.dart';
-import 'package:path/path.dart' as p;
-
 /// Dart bindings for the Rust core (`rust/onote_core`) over `dart:ffi`.
 ///
-/// Loading is **optional and forgiving**: [instance] returns null if the native
-/// library can't be found or opened, and every caller is expected to fall back
-/// to the pure-Dart path. This means linking the Rust core can never break the
-/// app — with the library present it's used (and shown in the status bar); with
-/// it absent the app behaves exactly as the Dart-only build did.
+/// Loading is **optional and forgiving**: [OnoteCore.instance] returns null if
+/// the native library can't be found or opened, and every caller is expected to
+/// fall back to the pure-Dart path. This means linking the Rust core can never
+/// break the app — with the library present it's used (and shown in the status
+/// bar); with it absent the app behaves exactly as the Dart-only build did.
 ///
 /// The C ABI is defined in `rust/onote_core/src/ffi.rs`. Every string the
 /// native side returns is owned by us and freed via `onote_core_string_free`.
+///
+/// **The web gets "absent" for free, and that is why this split is cheap.**
+/// `dart:ffi` is a hard compile error in a browser build, so the bindings live
+/// in `onote_ffi_native.dart` and `onote_ffi_web.dart` answers null from
+/// [OnoteCore.instance] — the state the paragraph above already promises every
+/// caller handles. No caller learns a new case.
+library;
 
-typedef _VersionNative = Pointer<Utf8> Function();
-typedef _MergeNative = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef _HashNative = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef _ImportOneNative = Pointer<Utf8> Function(Pointer<Uint8>, IntPtr);
-typedef _ImportOne = Pointer<Utf8> Function(Pointer<Uint8>, int);
-typedef _FreeNative = Void Function(Pointer<Utf8>);
-typedef _Free = void Function(Pointer<Utf8>);
-
-class OnoteCore {
-  // The library handle isn't retained: once opened, the OS keeps it mapped for
-  // the process lifetime, so the looked-up function pointers stay valid.
-  OnoteCore._(DynamicLibrary lib)
-      : _version =
-            lib.lookupFunction<_VersionNative, _VersionNative>('onote_core_version'),
-        _merge =
-            lib.lookupFunction<_MergeNative, _MergeNative>('onote_core_merge'),
-        _hash = lib.lookupFunction<_HashNative, _HashNative>('onote_core_page_hash'),
-        _importOne =
-            lib.lookupFunction<_ImportOneNative, _ImportOne>('onote_core_import_one'),
-        _importOnepkg = lib.lookupFunction<_ImportOneNative, _ImportOne>(
-            'onote_core_import_onepkg'),
-        _repairFields = lib.lookupFunction<_HashNative, _HashNative>(
-            'onote_core_repair_field_codes'),
-        _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free'),
-        // Looked up leniently, and that is the whole point: a library built
-        // before this symbol existed is exactly the stale library we are trying
-        // to detect, and it must still load and work rather than taking OneNote
-        // import down with it. Null here means "old core", which is reported.
-        _buildId = _optional(lib, 'onote_core_build_id');
-
-  static _VersionNative? _optional(DynamicLibrary lib, String symbol) {
-    try {
-      return lib.lookupFunction<_VersionNative, _VersionNative>(symbol);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  final _VersionNative _version;
-  final _VersionNative? _buildId;
-  final _MergeNative _merge;
-  final _HashNative _hash;
-  final _ImportOne _importOne;
-  final _ImportOne _importOnepkg;
-  final _HashNative _repairFields;
-  final _Free _free;
-
-  static bool _tried = false;
-  static OnoteCore? _instance;
-
-  /// The loaded core, or null if the native library isn't available. Loading
-  /// is attempted once; failures are cached so we don't retry every call.
-  static OnoteCore? get instance {
-    if (!_tried) {
-      _tried = true;
-      _instance = _tryLoad();
-    }
-    return _instance;
-  }
-
-  /// True when the Rust core is linked and usable.
-  static bool get available => instance != null;
-
-  /// Absolute path of the library that actually loaded (diagnostics / staleness
-  /// checks). Null until a successful load.
-  static String? loadedFrom;
-
-  static OnoteCore? _tryLoad() {
-    // Prefer the NEWEST existing candidate by mtime. In development the app
-    // runs an old copy next to the exe while `cargo build` refreshes
-    // target/release; picking the newest means a rebuild is picked up without a
-    // manual copy — the recurring "tested a stale DLL" trap. In a shipped build
-    // only the exe-dir library exists, so this is a no-op there.
-    final existing = _candidatePaths()
-        .map((c) => File(c))
-        .where((f) => f.existsSync())
-        .toList()
-      ..sort((a, b) =>
-          b.statSync().modified.compareTo(a.statSync().modified));
-    // Fall back to the bare name last (lets the OS loader search its paths).
-    final ordered = [...existing.map((f) => f.path), _libName];
-    for (final candidate in ordered) {
-      try {
-        final lib = DynamicLibrary.open(candidate);
-        final core = OnoteCore._(lib);
-        // Prove the symbols resolve and a call round-trips before committing.
-        if (core.version().isNotEmpty) {
-          loadedFrom = candidate;
-          return core;
-        }
-      } catch (_) {
-        // Try the next location.
-      }
-    }
-    return null;
-  }
-
-  static String get _libName {
-    if (Platform.isWindows) return 'onote_core.dll';
-    if (Platform.isMacOS) return 'libonote_core.dylib';
-    return 'libonote_core.so';
-  }
-
-  /// Locations to look for the library:
-  /// 1. next to the executable (where a packaged build bundles it),
-  /// 2. the crate's release build output (developer convenience from `app/`),
-  /// 3. the bare name (lets the OS loader search its default paths).
-  static List<String> _candidatePaths() {
-    final name = _libName;
-    final paths = <String>[];
-    try {
-      final exeDir = p.dirname(Platform.resolvedExecutable);
-      paths.add(p.join(exeDir, name));
-    } catch (_) {}
-    paths
-      ..add(p.join('..', 'rust', 'onote_core', 'target', 'release', name))
-      ..add(p.join('rust', 'onote_core', 'target', 'release', name));
-    return paths;
-  }
-
-  /// When this library was built, and from which commit — or null when the
-  /// loaded library predates the stamp, which itself means it is old.
-  ///
-  /// Answers the question git cannot: the app loads a compiled artefact, so
-  /// "my checkout is on the right commit" and "the code running is that commit"
-  /// are different claims. This is the second one.
-  ({DateTime built, String commit})? get buildId {
-    final f = _buildId;
-    if (f == null) return null;
-    final raw = _takeString(f());
-    final parts = raw.split(' ');
-    final secs = int.tryParse(parts.first);
-    if (secs == null || secs <= 0) return null;
-    return (
-      built: DateTime.fromMillisecondsSinceEpoch(secs * 1000),
-      commit: parts.length > 1 ? parts[1] : '?',
-    );
-  }
-
-  /// Core version string (e.g. "0.1.0").
-  String version() {
-    final ptr = _version();
-    return _takeString(ptr);
-  }
-
-  /// Conflict-free merge of two page-mirror JSON documents.
-  String mergeMirrors(String local, String remote) {
-    final lp = local.toNativeUtf8();
-    final rp = remote.toNativeUtf8();
-    try {
-      return _takeString(_merge(lp, rp));
-    } finally {
-      malloc
-        ..free(lp)
-        ..free(rp);
-    }
-  }
-
-  /// Stable content hash of a page mirror (empty on malformed input).
-  String pageHash(String mirrorJson) {
-    final mp = mirrorJson.toNativeUtf8();
-    try {
-      return _takeString(_hash(mp));
-    } finally {
-      malloc.free(mp);
-    }
-  }
-
-  /// Turn Word/OneNote `HYPERLINK` field codes in already-imported text into
-  /// `[label](url)`, stripping every leftover field marker.
-  ///
-  /// Fixing the importer does nothing for notes imported before the fix — by
-  /// then the `﷟HYPERLINK "…"` junk is stored user data. Callers should check
-  /// [textNeedsFieldRepair] first: it is a substring test on text already in
-  /// memory, so clean pages pay nothing.
-  String repairFieldCodes(String text) {
-    // **Strip NULs before crossing.** `toNativeUtf8` writes a Dart U+0000 as
-    // a literal zero byte and the Rust side reads the pointer with
-    // `CStr::from_ptr`, i.e. `strlen` — so one interior NUL silently
-    // amputates everything after it, and the caller writes that PREFIX back
-    // over the note and saves it. Imported OneNote prose really does carry
-    // interior NULs (the parser strips only a TRAILING one, deliberately, so
-    // run-index offsets stay valid), and the repair fires on any text holding
-    // a `$` or a field marker. That is a page "cutting off mid sentence" —
-    // not at import, but the first time it is opened, permanently.
-    //
-    // A NUL is never legitimate note text, so removing it here is a repair in
-    // its own right rather than a workaround.
-    final clean = text.contains('\u0000') ? text.replaceAll('\u0000', '') : text;
-    final tp = clean.toNativeUtf8();
-    try {
-      final fixed = _takeString(_repairFields(tp));
-      // Belt and braces. If a result ever comes back as a strict PREFIX of
-      // text that contained a NUL, something truncated it — drop the repair
-      // rather than persist a shortened page.
-      if (text != clean &&
-          fixed.length < clean.length &&
-          clean.startsWith(fixed)) {
-        return clean;
-      }
-      return fixed;
-    } finally {
-      malloc.free(tp);
-    }
-  }
-
-  /// Import a OneNote `.one` section file. Returns the parser's JSON string
-  /// (`{ok, error?, pages:[...]}`); see the Rust `onenote` module.
-  String importOne(List<int> bytes) => _importBytes(_importOne, bytes);
-
-  /// Import a OneNote `.onepkg` notebook package (a cabinet of `.one`
-  /// sections). Returns `{ok, error?, sections:[{name, group?, section}]}`;
-  /// see the Rust `onepkg` module.
-  String importOnepkg(List<int> bytes) => _importBytes(_importOnepkg, bytes);
-
-  String _importBytes(_ImportOne f, List<int> bytes) {
-    final ptr = malloc.allocate<Uint8>(bytes.length);
-    try {
-      ptr.asTypedList(bytes.length).setAll(0, bytes);
-      return _takeString(f(ptr, bytes.length));
-    } finally {
-      malloc.free(ptr);
-    }
-  }
-
-  /// Copy a native string into Dart and free the native allocation.
-  String _takeString(Pointer<Utf8> ptr) {
-    if (ptr == nullptr) return '';
-    try {
-      return ptr.toDartString();
-    } finally {
-      _free(ptr);
-    }
-  }
-}
+export 'onote_ffi_native.dart'
+    if (dart.library.js_interop) 'onote_ffi_web.dart';
 
 /// Does this text carry anything the import repair can fix?
 ///
@@ -263,9 +31,13 @@ class OnoteCore {
 /// box. A page containing no dollar at all — almost all of them — still costs
 /// one substring scan and nothing else, and the repair itself leaves real
 /// equations alone.
+///
+/// Pure Dart, so it stays in the shared file: the test for "does this page
+/// need repairing" is worth having on every platform even where the repair
+/// itself cannot run.
 bool textNeedsFieldRepair(String s) =>
-    s.contains('\uFDDF') ||
-    s.contains('\uFDDE') ||
+    s.contains('﷟') ||
+    s.contains('﷞') ||
     s.contains('\u0013') ||
     s.contains('\u0014') ||
     s.contains('\u0015') ||

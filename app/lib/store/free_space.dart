@@ -1,8 +1,11 @@
-import 'dart:ffi';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+
+// The FFI call lives in the native half; the web half answers null, which is
+// already this class's documented "could not measure".
+import 'free_space_native.dart'
+    if (dart.library.js_interop) 'free_space_web.dart';
 
 /// How much room is left on the volume a path lives on.
 ///
@@ -31,7 +34,7 @@ abstract final class FreeSpace {
         ? path
         : File(path).parent.path;
     try {
-      return Platform.isWindows ? _windows(dir) : _posix(dir);
+      return Platform.isWindows ? windowsFreeBytes(dir) : _posix(dir);
     } catch (e) {
       // Never rethrow: "I could not measure" is a legitimate answer that the
       // caller already has to handle, and an exception here would abort the
@@ -46,36 +49,6 @@ abstract final class FreeSpace {
   /// **skip** on Windows ("a fixed-size VHD via `diskpart` is flaky").
   @visibleForTesting
   static int? Function(String path)? overrideForTest;
-
-  /// `GetDiskFreeSpaceExW`, and specifically its **first** out-parameter.
-  ///
-  /// `lpFreeBytesAvailableToCaller` respects a per-user disk quota where
-  /// `lpTotalNumberOfFreeBytes` does not, and a quota is exactly the
-  /// circumstance — a school machine — where the volume looks empty and the
-  /// write still fails.
-  static int? _windows(String dir) {
-    final name = dir.toNativeUtf16();
-    final free = calloc<Uint64>();
-    final total = calloc<Uint64>();
-    final totalFree = calloc<Uint64>();
-    try {
-      final ok = _getDiskFreeSpaceExW(name, free, total, totalFree);
-      return ok == 0 ? null : free.value;
-    } finally {
-      calloc
-        ..free(name)
-        ..free(free)
-        ..free(total)
-        ..free(totalFree);
-    }
-  }
-
-  static final _getDiskFreeSpaceExW = DynamicLibrary.open('kernel32.dll')
-      .lookupFunction<
-          Int32 Function(Pointer<Utf16>, Pointer<Uint64>, Pointer<Uint64>,
-              Pointer<Uint64>),
-          int Function(Pointer<Utf16>, Pointer<Uint64>, Pointer<Uint64>,
-              Pointer<Uint64>)>('GetDiskFreeSpaceExW');
 
   /// `df -Pk`. `-P` is the POSIX output format, which is specified rather than
   /// implementation-defined, and `-k` fixes the block size at 1024 so macOS's

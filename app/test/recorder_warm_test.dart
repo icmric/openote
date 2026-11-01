@@ -75,28 +75,43 @@ void main() {
           reason: 'a status read must not write to disk');
     });
 
-    test('the device count still comes from the real log files', () async {
+    test('the device count comes from the real log files', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, app, nb, _) = await fixture('onote_warm_count_');
 
       // Two devices' logs on disk, written directly — no recorder involved.
       final store = logOf(repo, nb);
       store.ensureInitialised(notebookId: nb, title: 'Warm');
-      for (final dev in ['dev-a', 'dev-b']) {
+      void writeAs(String dev, int daysAgo) {
         store.append(dev, [
           Op(
               device: dev,
               seq: 1,
               lamport: 1,
-              timestamp: 1,
+              timestamp: DateTime.now()
+                  .subtract(Duration(days: daysAgo))
+                  .millisecondsSinceEpoch,
               kind: OpKind.notebookMeta,
               data: {'title': 'Warm'})
         ]);
       }
 
+      writeAs('dev-a', 0);
+      writeAs('dev-b', 2);
       expect(app.syncDeviceCount(nb), 2,
           reason: 'the cheap path must report the same truth the expensive '
               'one did — the log files themselves');
+
+      // And the counting rule the number now carries: a log nobody has written
+      // to in months is an identity, not a device. `ops/` keeps every log any
+      // device ever wrote and nothing deletes one, so counting files made the
+      // number climb for ever — see `OpLogStore.activeDeviceIds`.
+      writeAs('dev-from-last-year', 400);
+      app.invalidateDeviceCountForTest(nb);
+      expect(app.syncDeviceCount(nb), 2,
+          reason: 'a third log, and still two devices');
+      expect(logOf(repo, nb).deviceIds(), hasLength(3),
+          reason: 'but every log is still on disk, and replay still reads it');
     });
   });
 

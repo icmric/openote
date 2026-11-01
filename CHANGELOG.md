@@ -2,6 +2,556 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [Unreleased]
+
+## [1.0.2] — 2026-11-01
+
+### Changed — updating on Linux and macOS
+
+- **The update button opens openote.org**, which offers the right file for
+  your system, instead of the GitHub release page with its seven files and
+  its release notes to scroll past.
+- **It says you install it yourself**, in one line, because the old wording
+  explained the mechanism and people read the browser opening as the button
+  having failed. Openote still installs its own update on Windows.
+- **The update notice is translated**, in all seven languages. It was English
+  everywhere.
+
+### Fixed — handwriting shows up in a browser
+
+- **Ink draws in the web demo.** It never has. Two separate faults in the same
+  path made sure of it: the browser could not decompress a stroke blob at all,
+  and the one that unpacks coordinates read every backwards stroke as a line
+  roughly 268 million pixels long. Each is invisible on a desktop, and the
+  first fails quietly by design — a drawing whose bytes will not decode is
+  skipped rather than allowed to break the page — so the demo showed no
+  handwriting and said nothing about why.
+- **Nothing you have saved was affected**, on any platform. The bytes were
+  always written correctly; only reading them in a browser was wrong, and the
+  encoder still produces exactly the same bytes it did before.
+
+### Fixed — a page you locked can be unlocked again
+
+- **"Every time it is opened" works.** If you chose that when setting a
+  passcode, the page could never be opened again — the right passcode was
+  accepted and the lock screen came straight back. The other three choices
+  were unaffected. It has been that way since passcodes arrived.
+- **The warning when you lock something is shorter, and says beta.** It still
+  tells you the two things that matter — anyone with your notebook file can
+  read the page, and a forgotten passcode cannot be recovered — but it no
+  longer reads as though that is permanent. Real encryption is planned.
+
+### Fixed — a dragged box keeps up with the cursor
+
+- **Boxes move with the pointer at every zoom level.** Zoomed out they ran
+  ahead of it, zoomed in they lagged behind — the further from 100% the worse
+  it got. Resize handles had the same fault and are fixed with it.
+
+### Fixed — touch zoom
+
+- **Two fingers zoom even when one is on a box**, which on a page of notes is
+  most of the time. Before, one finger scrolled and the other zoomed, and the
+  page lurched between them instead of zooming at all.
+- **The zoom holds the point you started on** instead of drifting as your
+  fingers move, and the page travels with them, so a pinch that also slides
+  does both. Pinching slowly used to be worse than pinching quickly; now they
+  are the same.
+- **Two fingers still pan at the furthest zoom in or out**, where the page
+  used to freeze under them.
+
+### Fixed — pasting a box into a box
+
+- **The caret ends up after what you pasted.** Pasting a box that ends in a
+  picture left it inside the picture's reference, where the next key you
+  pressed would turn the picture back into a long code.
+- **One Ctrl+Z undoes the paste**, and it takes the pasted picture's or
+  table's data with it. Undo used to need more than one press, and could
+  leave the data behind.
+- **Ctrl+V pastes the box you cut** even when your clipboard also holds a
+  picture with text beside it — copied from a web page or a document, which is
+  the usual case. It pasted the picture instead.
+- **Undo while writing in a box no longer closes the box.**
+
+### Changed — clicking a colour applies it
+
+- **The colour pickers apply on the click.** Pick a colour and it is used;
+  there is no second button to press. If you have opened "Mix your own
+  colour", a swatch loads into the mixer instead so you can adjust it — and
+  clicking the same one again applies it.
+
+### Added — highlight in any colour
+
+- **The highlighter has a colour picker**, like the text colour beside it.
+  The button highlights in the colour you last chose, or takes the highlight
+  off again; the little arrow opens the full picker. It was one fixed yellow.
+- **A highlight and a text colour are separate**, so a word can have both and
+  you can change either one without disturbing the other.
+- **In dark mode your colour is softened rather than swapped**, so the words
+  on top of it stay readable and the colour is still the one you picked.
+- Highlights written as `==like this==` still mean the usual yellow, and still
+  work everywhere they did.
+
+### Added — pictures behave like pictures
+
+- **Clicking a picture selects it**, so you can copy, cut or delete it the way
+  you would anything else. It shows as selected while it is.
+- **Backspace next to a picture deletes the picture**, all of it. It used to
+  take one character off the end of the reference behind it, which made the
+  picture disappear and left a long code in its place.
+- **A picture keeps its own line.** Typing next to one, deleting back into
+  one, or pasting one into the middle of a sentence used to break it the same
+  way; now the picture stays whole and what you type goes above or below it.
+
+### Added — paste a box into a box
+
+- **Cut a box, click into another box, and paste**: its writing lands at the
+  caret instead of whatever else was on the clipboard. Several boxes come in
+  the order they sat on the page, a code box comes as code, an equation as an
+  equation, and a picture or a table comes with it properly.
+- **Boxes with no writing in them are left alone** — handwriting, a graph, a
+  board, a page window, an attachment. Those still paste onto the canvas,
+  which is where they can go.
+- **Ctrl+V no longer errors** when another program is holding the clipboard.
+
+### Fixed — a passcode covers page windows too
+
+- **A window onto a page with a passcode asks for the passcode**, and asks
+  again each time you open the page it is on. Before, dragging a locked page
+  onto another page showed its contents, and so did picking it in Insert ▸
+  Page window. Unlocking a section to read it does not open its windows
+  elsewhere, and opening a window does not unlock the section.
+
+### Fixed — touch
+
+- **Dragging a finger across a box scrolls the page**, instead of selecting
+  its words — a box covers most of a page, so there was almost nowhere left
+  to scroll from. A mouse still selects, and once the caret is in a box a
+  finger drag still picks out words.
+- **Pinch to zoom comes back where it started.** It drifted as you pinched,
+  and pinching past the furthest zoom and back left the page at a different
+  size than it began.
+
+### Fixed — a passcode keeps AI helpers out
+
+- **An AI helper cannot see or change anything with a passcode.** It is not
+  listed, not searched, not opened and not changed — even while you have it
+  unlocked in Openote, because you unlocked it to read it yourself. Nor can
+  an AI helper be given a passcode, so there is nothing for it to guess.
+  Before, one set up on this computer could read and edit a locked page.
+- **The AI page says so**, and says plainly what a passcode does not do: it
+  locks Openote, not the notebook file, so an AI tool that can open files on
+  your computer could still read the file itself.
+
+### Fixed — flashcards keep their own history
+
+- **A flashcard keeps its review history when you add a line above it.**
+  Typing a new line above two cards written in a box gave the first card the
+  second's history, and the second started over as if never reviewed.
+- **Undo and redo carry the history with the card**, and so does dropping a
+  picture into the box above it.
+- **Dropping a picture into a box no longer clears a to-do's due date** on
+  the lines below it.
+
+### Fixed — handwriting stays inside its box at the edge of the page
+
+- **Put a selection down near the edge and the writing comes with it.**
+  Dragged up into the title area, or past the edge of a paper page, the box
+  was pulled back onto the page and the handwriting stayed where you had
+  dropped it.
+
+### Added — drawings, and pictures that live in the writing
+
+- **SVG drawings work.** Drop one on a page, or Insert ▸ Image, and it is
+  drawn as a drawing — sharp at any zoom, and still sharp in an exported PDF,
+  because it is exported as vector rather than as a photograph of itself.
+  Before, a dropped .svg became an attachment chip on a page that could have
+  drawn it.
+- **A picture dropped on empty canvas makes a box you can type in.** It used
+  to make a picture-only block: opaque, higher than the text, and with nothing
+  to type into — so a picture dropped on a note covered it. Now there is one
+  shape a picture has on a page, whichever way it arrives, and it is part of
+  the writing: select it, cut it, paste it, write under it.
+  - **Nothing already on your pages changes.** Picture blocks still open,
+    still move and still export; the only two routes that made new ones have
+    stopped.
+- **The middle button no longer highlights text while it pans.** Panning over
+  a box dragged the page and selected the box's words at the same time.
+- **A pinch no longer leaves the alignment grid on the page.** Once the grid
+  appeared on every page and stayed until a restart: the second finger of a
+  pinch cancels the first, and a cancelled drag never told the canvas it had
+  ended.
+
+### Added — group anything with anything
+
+- **Select several things and group them**: Ctrl+G, the right-click menu, or
+  the button above the selection. A text box, a graph, a picture, some
+  handwriting, any combination — selecting one of them then selects all of
+  them, and they move, copy, cut and delete as a unit. Ctrl+Shift+G takes a
+  group apart again. Both are on the menu and the button as well, because
+  neither shortcut is on a tablet held in one hand with a pen in the other.
+- **A written word can be one thing to pick up.** Every stroke is its own
+  mark now, so group the strokes of a word and it moves as one.
+- **Nothing moves either way.** A group is a relationship, not a container:
+  every block keeps its own geometry, its own type and its own place on the
+  page, so grouping and ungrouping are both free and an undo puts it back.
+- **A grouped box can still be typed in**: the first click takes the group,
+  and the next reaches the box under the pointer.
+- **A copy is its own group**, never a new member of the one it came from —
+  otherwise dragging the original would walk the copies across the page with
+  it. Paste part of a group and you get a group of just that part; a group
+  left with one member stops being a group.
+- **A notebook with no groups in it is written byte for byte as before**, so
+  this costs nothing until it is used. An older version of Openote keeps your
+  groups intact; it just moves each member on its own.
+
+### Changed — the lasso selects, and stops rearranging
+
+- **The lasso no longer re-homes your strokes.** It used to splice everything
+  it caught into one new piece of handwriting, permanently — so a loop drawn
+  to move a word left the word welded together afterwards, and taking it apart
+  again meant lassoing each stroke. It selects what it caught and changes
+  nothing else; the selection going away leaves the strokes exactly as they
+  were. To make a lasting group, group it.
+
+### Changed — Settings is one group at a time
+
+- **A list of groups down the left, one group's settings on the right** —
+  Appearance, Writing and drawing, Connections, Help, About. It was one long
+  page with headings in it: the headings named the groups, but you still had
+  to scroll past every one of them to read the names.
+- **Fewer words on it, and lines between them.** Every description was read
+  again and either shortened or deleted: one was a three-line tooltip being
+  used as a label, one repeated the link underneath it, and the rest said at
+  length what their own control already said. A hairline now separates one
+  setting from the next, and a group with two distinct kinds of setting in it
+  (writing, then the pen and the screen) says so with a heading.
+
+### Fixed — the pen, the lasso and the flick
+
+- **The lasso selects boxes, pictures and graphs, not only handwriting.** It
+  only ever looked at ink. Anything at least half inside the loop is caught,
+  which is the same rule the rectangular selection uses — so a loop drawn
+  inside a slide still does not pick the slide up.
+- **An imported slide stays out of a lasso**, as it already stayed out of a
+  rectangular selection. Sweeping one up left the selection holding something
+  that cannot be moved, which is why a box in that selection appeared not to
+  move with everything else.
+- **One lassoed stroke offers a Delete**, like a selection of several things
+  does. Handwriting is painted rather than boxed, so it has no bar of its own
+  to put a cross on — and neither does a box while a drawing tool is in hand.
+- **What you lasso stays selected when you let the button go**, and the pen
+  then drags it. Releasing the side button handed the pen back, and the pen
+  coming back threw the selection away — so a loop drawn to move something
+  selected it for exactly as long as you held the button down.
+- **Anything selected can be dragged with a drawing tool in hand.** A drag
+  that starts inside the selection moves it; a press anywhere else puts it
+  down and draws, exactly as though nothing had been selected. So there is no
+  mode to leave and nothing to put back: the pen draws, and the selection is
+  dragged, and where you pressed is the whole difference. (An eraser still
+  erases, wherever it is aimed.)
+- **The eraser shows how far it reaches.** A faint ring follows the pointer
+  whenever a press would rub something out — including a hovering pen, so you
+  can see what the next touch will take before it takes it.
+- **The pen's buttons stopped being a coin toss.** The lasso setting did
+  nothing and the eraser one worked "most times but not every time": the
+  engine reports every pen event with no buttons at all on Windows, and those
+  arrive at stylus rate, so each one undid what the button had just said a
+  millisecond earlier.
+- **The Draw tab is shorter.** Pen size is one control with the presets and
+  the exact slider behind it, and the two hardware preferences — what the
+  pen's side button does, and whether a finger draws — are in Settings, where
+  you go looking for a setting. What is left on the row is what you change
+  while you are drawing.
+- **Each pen button does what you told Windows it was for.** A button your
+  pen driver maps to the eraser erases — Windows reports that one as "the pen
+  is inverted", which is its own way of saying eraser, so there is nothing to
+  configure. The other kind, which Windows only calls "barrel button",
+  **lassoes by default**, as it does in OneNote; the Draw tab can set it to
+  Select, Eraser or nothing instead. Before this, both ended up as the
+  eraser.
+- **Your pen's side button works.** It never could: Flutter reads a pen's
+  pressure and rotation from Windows and never looks at its buttons, reporting
+  every pen touch as a plain left-click — so the barrel press did not reach
+  Openote at all, whatever Openote did with it. It is read directly now. The
+  Draw tab chooses what it does: eraser (as before), Select, or nothing. The
+  tail of the pen always erases, because that end of a pen is an eraser.
+  - A pen with two side buttons reports both the same way, so they cannot be
+    told apart — not by us and not by Windows.
+- **Settings › Pen and touch test** shows exactly what your pen, your finger
+  and your buttons report, and what the app makes of it. It is there so a
+  report about input can be answered with evidence instead of a guess.
+- **A finger stops drawing once a pen has been used on the machine.** It used
+  to stop only for two seconds after the last stylus event, which is shorter
+  than the pause between two written words — so a resting hand drew. A
+  touch-only tablet still inks with a finger, and "Always" still means always.
+- **The lasso draws its loop as you draw it.** The outline only appeared once
+  the gesture ended.
+- **Ctrl+Shift+C swaps the last two colours** instead of toggling one colour
+  against none, so you can flick between two while writing. Out of the box the
+  pair is your colour and Automatic, which is the "a couple of words, not
+  every word" case.
+
+### Added — Automatic text colour, and dark text on a slide
+
+- **There is a way back to the default colour.** The picker opens with
+  **Automatic** at the top: dark text on a light page, light on a dark one.
+  The colour button's own bar shows what Automatic will actually come out as,
+  rather than the near-black it usually becomes.
+- **Default text on a slide is dark, in either theme.** A PDF or a picture
+  brings its own background, so text on top of one contrasts with the
+  document rather than with the page — the rule the pen has followed since
+  automatic ink turned out to be white on a white scan. A colour you chose is
+  never overridden.
+
+### Added — the handwriting format is written down
+
+- **Anyone can read Openote handwriting without Openote.** The ink
+  specification now carries the stroke format's byte layout, with a worked
+  example to check an implementation against. It was the one part of a
+  notebook that nothing but Openote could read.
+
+### Fixed — handwriting, and annotating a PDF
+
+- **An edit to handwriting is no longer undone by the next save.** Moving,
+  erasing, recolouring or resizing a note written on an earlier day wrote the
+  new position and the old strokes, so one page reload later the selection box
+  was in the place you dragged it to and the handwriting was where it started.
+  Reported as boxes that "suddenly jump to different positions" and drags that
+  "only move the selection box".
+- **Middle-drag pans over a PDF or a picture**, not just over blank page. A
+  slide covers the whole page, so on an annotated PDF there was nowhere left
+  that panning worked.
+- **You can box-select your notes on top of a slide.** A drag over the slide
+  now draws a selection box, because an imported slide is the surface you are
+  writing on and has no use for a drag of its own. Before, there was no empty
+  space left to start one from.
+- **A locked slide behaves like the page behind your notes.** A selection box
+  passes over it, and clicking it no longer picks it up — so it cannot be
+  dragged, resized or carried off while you are writing on it, and a selection
+  of notes made over the top of one moves the notes. Right-clicking it still
+  reaches its own menu, which is where Unlock is.
+- **A PDF locks and unlocks as one document.** "Unlock every page of this PDF"
+  does the whole import at once, which on a forty-page deck was forty
+  right-clicks on forty pages. Unlocking the one slide in front of you is
+  still there beside it.
+- **A selection box takes in what it covers, not what it grazes.** It now
+  wants about half of something before claiming it, so brushing the corner of
+  a picture on the way past leaves the picture behind.
+- **Every stroke is its own mark.** Nothing decides which of your strokes
+  belong together any more. Anything drawn within two seconds of the last one
+  used to join it wherever on the page it was, so annotating the top of a
+  slide and then the bottom produced one piece of handwriting the size of the
+  slide — which every selection box then caught. To treat several strokes as
+  one thing, group them.
+- **A selection of handwriting is still drawn as one box**, not one per
+  stroke — which is what it looked like when a word was one piece, and the
+  selection is one thing you are about to move.
+- **And it costs no more space than it used to.** Separate strokes are stored
+  together and come back apart, so a page of handwriting takes the same room
+  it took when a whole word was one piece — measured, 200 strokes went from
+  26 KB to 123 KB when each became its own object, and they are back to 26 KB.
+- **An imported picture keeps its real format.** Everything brought in from
+  OneNote was labelled a PNG whatever it was, so exporting that notebook to a
+  folder wrote JPEGs with a `.png` name. The format is read from the bytes,
+  and an exported picture is named accordingly.
+
+### Fixed — text styles work together
+
+- **Any style can be combined with any other, in either order.** Bold and a
+  colour, italic inside bold, a highlighted link, a coloured superscript —
+  before, only the outer style showed and the inner one's symbols were left
+  on the page as text. Notes you wrote before this show what you meant
+  straight away; nothing needs re-doing.
+- **Italicising the last word of a bold phrase** no longer leaves a stray
+  asterisk. Nor does doing the same at its start, or with strike-through.
+- **Taking a style off works whatever else is on the word.** Removing the
+  colour from a bold red word used to add a second colour instead, and a
+  selection made by dragging could miss the style it was meant to change.
+- **Backspace at the end of a styled word deletes the last letter**, even
+  when several styles end there together — it used to break one of them.
+- **Recolouring part of a coloured phrase** keeps the rest of it coloured.
+- Pressing Ctrl+_ three times now gives bold italic, the way Ctrl+* does.
+
+### Fixed — board cards, flashcards, and where each notebook was
+
+- **Board cards can be edited and deleted.** Clicking a card opened it and
+  then ignored everything you typed, unless you happened to come from another
+  box. Now it takes your typing, and so do column titles and "Add a card".
+  To delete a card, right-click it, or hover over it and press the small
+  cross — and Ctrl+Z puts it back. Right-clicking a card used to show the
+  menu for the whole board, where Delete removed every card at once.
+- **A flashcard grows and shrinks with its box.** Drag the edge of the box
+  and the card follows it. Before, the card stayed the same size whatever
+  you did to the box, and changed width slightly every time you clicked
+  into it.
+- **Each notebook opens on the page you left it on.** Switching to another
+  notebook and back used to take you to the first page every time — only
+  the notebook you had open when you closed the app was remembered.
+
+### Changed — the AI page says what it actually knows
+
+- **"Set up", not "connected".** The AI page said a helper was connected
+  when all Openote knew was that it had saved the helper's settings. Now it
+  says when an AI helper last actually used Openote — "Last used by an AI
+  helper 3 minutes ago" — which is the real answer to "is it working?".
+- **If nothing has used it yet, it says why that might be.** An AI helper
+  only looks for Openote when it starts, so one that was already open needs
+  restarting. The page now says so, instead of leaving you to guess.
+
+### Added — an AI helper can tidy a page, not only add to it
+
+- **It can change what is already there**: edit a box, move things around,
+  rename, move or delete a page. Deleted pages go to the recycle bin, the
+  same as yours do, and everything it does is a normal edit that Ctrl+Z
+  undoes.
+- **Tables and code arrive as tables and code.** An AI helper writing a
+  table or a piece of code used to leave symbols on the page; it now becomes
+  a real table you can edit, or a code box with its colours.
+
+### Fixed — the page title takes one click
+
+- **Clicking a page's title lets you type in it.** It used to open the title
+  and then hand the keyboard somewhere else: the letters went into a box that
+  had appeared on the page, and it took a second click on the title to get the
+  caret back. Two separate things were doing it. The same click was also being
+  read as a click on the blank page, which is what makes a new box; and when
+  you came to the title from a paragraph you had been writing in, that
+  paragraph took the keyboard back a moment later.
+
+### Added — Rename and Duplicate, on the right-click menu
+
+- **Rename is in the right-click menu** for a page, a section and a section
+  group. Double-clicking the name has always worked — it was just the only
+  way, and a right-click menu is where people look to find out what they can
+  do to a thing.
+- **Duplicate makes a copy of a page**, filed directly beneath it with its
+  name ready to be typed over. Pictures are not stored twice: the copy points
+  at the same ones. A page with a passcode on it makes a copy with the same
+  passcode.
+- Long menu labels shorten with an ellipsis instead of running past the
+  edge of the menu, which a longer translation could already do.
+
+### Changed — a new page looks like the page above it, and templates are gone
+
+- **A new page takes its ruling, grid, width and paper from the page it is
+  filed next to.** Set a section's pages to graph paper once and the next page
+  in it is graph paper. Before, only the paper size came across, and it came
+  from whichever page you happened to be looking at — so adding a page to
+  Maths straight after reading an essay in English gave you a page shaped like
+  the essay.
+- **Page templates have been removed.** They asked you to choose a layout from
+  a list of names, showing you nothing of what it would do, from a menu you
+  could only reach once the page already existed — and what they laid down was
+  a few headings. A layout you want again is a page you keep: Duplicate copies
+  it, and you can look at it first. **Nothing you saved has been deleted** —
+  anything kept as a template is still in your workspace.
+
+### Fixed — the device count, and why it kept climbing
+
+- **"N devices" counts devices that are in use**, not every identity that ever
+  wrote. It was a listing of the log files in a notebook, and nothing deletes
+  one, so a reinstall or a restored backup added one for ever. It now counts
+  devices that have written in the last month, plus the one you are using
+  whether or not it has. The timestamp comes from the last change that device
+  made, not from the file, so a cloud client copying a log does not make an old
+  device look new.
+- **A crash no longer gives this computer a second identity**, which is what was
+  creating the extra logs. Openote remembers how far it has written into each
+  notebook, and forks its own identity if the notebook turns out to have gone
+  further — the one honest sign that a second copy of Openote is writing to the
+  same place. That memory lived in a file written a moment after the fact, so
+  closing the lid at the wrong time, or a crash, left it behind and the identity
+  forked for no reason. It is now written before the change it covers, and
+  somewhere that survives.
+- **Nothing is lost either way.** An old device's history is still read when a
+  notebook is rebuilt; it simply stops being counted as somebody's laptop.
+
+### Added — which Google Drive account is which
+
+- **The folder picker names the account.** Google Drive mounts one drive letter
+  per signed-in account, so two accounts were two identical rows both saying
+  "Google Drive". Each now carries the account it belongs to and its drive
+  letter — `Google Drive · you@example.com (G:)`.
+- Drives that cannot say anything useful are left alone: a folder inside your
+  home directory is still just "Dropbox", with no drive letter to add noise.
+
+
+
+### Added — try Openote in a browser before you download it
+
+- **There is a web demo.** It opens on a notebook with three pages already in
+  it — writing, equations, a plotted graph, a table, flashcards — so you can
+  see what the app is before deciding whether to install it. Everything you
+  can reach works for real: it is the same editor, not a picture of one.
+- **Nothing in the demo is saved**, and the status bar says so in six words
+  and never mentions it again. The whole notebook lives in the tab's memory
+  and goes when you refresh. Nothing is written to your computer, and nothing
+  is sent anywhere.
+- **Features a browser cannot do are greyed out rather than hidden** —
+  pictures, PDFs, video, file attachments, code blocks, OneNote import. They
+  are still on the toolbar, and hovering one says why it is off, because what
+  the app can do is part of what the demo is there to show.
+
+### Fixed — the caret stays where you put it
+
+- **Clicking a box while another one is open now works.** The caret used to
+  land there and vanish again on the next redraw, leaving the box you came
+  from still lit. Two different things were taking the keyboard back — the
+  paragraph you were in, and the equation you were in — and each had been
+  written to pick it up once when a box opened, but was running after every
+  redraw. They now ask whether the keyboard is actually free. The box you
+  came from also closes properly, which it did not before.
+
+### Added — equations take formulas, not just functions of x
+
+- **Plug values into a formula with more than one letter in it.** `F = m·a`,
+  `v = u + at`, `A = l·w`, `c = √(a² + b²)` — every one of these used to be
+  refused with "unknown m". An Evaluate box now asks for each letter the
+  formula needs, in the order it is written, and the answer is **named**:
+  `v = 14`, not a bare `= 14`. While it is waiting it says which letters it
+  is waiting for. Letters keep the case you wrote them in, so `V = I·R` asks
+  for I and R.
+- **Evaluate is a button on the equation toolbar**, beside Graph, instead of
+  the second item of a `⋯` menu. Nobody finds a feature by opening a fold.
+- **Prefilled large operators.** The blank ones are unchanged, and beside
+  them are the forms you write over and over: `∑` from i = 1 to n, `∑` to
+  infinity, `∏` from i = 1 to n, `∫` from a to b with its `dx`, and limits
+  as x → 0 and x → ∞. The caret lands exactly where the maths goes.
+- **A symbol answers to more than one shortcut.** `\infty`, `\inf` and
+  `\infinity` all give you ∞, and every symbol now also answers to the word
+  it is called by — `\integral`, `\limit`, `\derivative`, `\fraction`,
+  `\gradient`. Plus the short forms you would reach for anyway: `\le`, `\ge`,
+  `\ne`, `\x`, `\empty`, `\del`, `\degree`, `\arrow`.
+- **Highlight part of an equation and press `(`, `[` or `{` to wrap it**
+  rather than replace it — the same thing brackets do in ordinary writing.
+  What you wrapped keeps its structure: a fraction is still a fraction.
+
+### Changed — the toolbar behaves the same way everywhere
+
+- **Every tab switch animates.** Home to Insert always had the fade; Home to
+  Draw, Home to Page and Draw to Page cut straight across. All four now
+  behave the same.
+- **The Equation badge is a button.** Tapping another tab while an equation
+  was open used to be a one-way trip — the equation's own controls were gone
+  until you closed it and opened it again. Press the badge to go back.
+- **The equation toolbar is in a more logical order**, and every drawer is
+  named with a word: `∑ ∫` is now **Calculus**, and it has collected the
+  derivative, the partial and the prime that were filed under Shapes, so
+  differentiating and integrating are no longer two different drawers. The
+  row reads shapes → arithmetic → comparisons → calculus → Greek → sets →
+  functions → subjects, which is the order the topics arrive in at school.
+- **The equation toolbar fits any window.** On a narrow one the far drawers
+  fold into a **More** drawer, under their own headings, rather than running
+  off the edge where only a drag could reach them.
+- **The buttons in those drawers are big enough to read.** Twenty-seven of
+  them were being quietly shrunk to fit a box built for a single character —
+  worst of all the large operators, whose limits stack above and below. Each
+  button is now as wide as what is in it.
+- **The Evaluate box is readable.** Its answer used to be smaller than the
+  writing on the page around it; the equation is now drawn at the size an
+  equation gets, the answer is the biggest thing in the box, and making the
+  box wider makes all of it bigger.
+
 ## [1.0.1] — 2026-10-01
 
 ### Fixed — the markup never shows itself
@@ -803,7 +1353,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   repository. Adding a language is a single `.arb` file and a codegen run —
   no code to change — which is exactly how the six languages above arrived a
   day later. The rest of the migration is tracked in
-  [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md).
+  [v0.24 — the road to 1.0](docs/planning/archive/v0.24-road-to-1.0.md).
 
 ### Fixed — layout and consistency in the dialogs (2026-09-02)
 
@@ -1366,7 +1916,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **A new equation takes the keyboard straight away.** Nothing you typed
   registered until you happened to click a button on the bar.
 - **A space is a space.** There was no way to put one in at all.
-- **Only `\commands` turn into symbols now.** Typing `lpha` then a space
+- **Only `\commands` turn into symbols now.** Typing `\alpha` then a space
   gives you α; typing `alpha` gives you the word alpha. Before, the editor
   converted any word it recognised — so writing "a in b", "sin x" or "cap" in
   your own sentence turned into symbols you never asked for. An unrecognised
@@ -2014,7 +2564,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   thread until it finishes — the UI always gets its answer on time.
 - Other languages (including ones installed on your system) are planned —
   behind real per-platform OS sandboxing, not a trust prompt. See
-  docs/planning/v0.14-local-code.md.
+  docs/planning/archive/v0.14-local-code.md.
 
 ### Added — a task board on the page
 
@@ -2265,7 +2815,7 @@ Some pages still lay out wrongly: a text box can be drawn over a diagram, two
 boxes can land on top of each other, paragraphs can come in out of order, and
 blank lines between bullets are dropped. The content itself is imported — it is
 the positions that are wrong. Diagnosed in
-`docs/planning/v0.11-size-and-speed-overhaul.md`.
+`docs/planning/archive/v0.11-size-and-speed-overhaul.md`.
 
 ### Fixed — passcodes now behave like passcodes
 
@@ -2587,7 +3137,7 @@ one. See docs/RELEASING.md.
 ### Fixed — the app no longer freezes while it works (2026-08-06)
 
 Four reports, one thread. Full reasoning and every measurement in
-[the v0.10 plan](docs/planning/v0.10-responsiveness-and-storage.md).
+[the v0.10 plan](docs/planning/archive/v0.10-responsiveness-and-storage.md).
 
 - **Importing a notebook no longer locks the app up.** The whole import — read,
   parse, write — moved to a second isolate. Measured on a 200-page notebook:
@@ -2923,7 +3473,7 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - There is no first-party sync service, by design — Openote never talks to a server, so nothing of yours passes through us.
 - Two people editing **the same paragraph at the same moment** in a shared notebook resolve last-writer-wins. Different pages, different blocks and different paragraphs all merge correctly; true concurrent editing of one paragraph waits for the structured text model.
 
-*(This entry grows as the release is built — see [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) for the full plan.)*
+*(This entry grows as the release is built — see [docs/planning/archive/v0.2-release-plan.md](docs/planning/archive/v0.2-release-plan.md) for the full plan.)*
 
 ## [0.1.0] · unreleased baseline
 

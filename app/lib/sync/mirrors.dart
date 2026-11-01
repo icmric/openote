@@ -79,6 +79,25 @@ Future<String?> mirrorNotebook(String sourceDir, MirrorTarget target,
     DateTime? now}) async {
   final src = Directory(sourceDir);
   if (!src.existsSync()) return null;
+
+  // **Refuse a destination that overlaps the source.** Copying a directory
+  // into itself, or into one of its own children, means each run copies the
+  // last run's output — and the walk below is recursive, so it compounds.
+  //
+  // Observed on the owner's own machine, 2026-10-05, three generations deep:
+  //
+  //     assets/demo/demo.onotebook/2026-10-05_133141/demo.onotebook/…
+  //     assets/demo/demo.onotebook/…
+  //     assets/demo/…
+  //
+  // Reported as *"the backup copy also has a copy of all its backups … lots
+  // of extra space being taken up for no reason"*. See v1.0.2 §18b.
+  //
+  // Checked here and not only when the target is chosen, because a notebook
+  // can be moved after the fact — `moveNotebookTo` and `adoptLogDirectory`
+  // both rewrite where the source lives, and neither knows what targets exist.
+  if (_overlaps(sourceDir, target.path)) return null;
+
   final name = p.basename(sourceDir);
 
   final destPath = target.isBackup
@@ -133,6 +152,21 @@ Future<String?> mirrorNotebook(String sourceDir, MirrorTarget target,
 
   if (target.isBackup) await _prune(p.join(target.path, name), target.keepVersions);
   return destPath;
+}
+
+/// Does one of these paths contain the other, or are they the same place?
+///
+/// Both directions matter. A target **inside** the source is the compounding
+/// copy above; a source inside the target is the same walk seen from the other
+/// end, and would copy the notebook into a folder that already holds it.
+///
+/// Compared as absolute, normalised paths so that `.`, `..` and a trailing
+/// separator cannot defeat it. Case is left to `package:path`, which already
+/// knows that Windows does not care and POSIX does.
+bool _overlaps(String a, String b) {
+  final x = p.canonicalize(a);
+  final y = p.canonicalize(b);
+  return p.equals(x, y) || p.isWithin(x, y) || p.isWithin(y, x);
 }
 
 /// `2026-08-03_141530` — sorts lexicographically, which is what makes pruning

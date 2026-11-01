@@ -1,14 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
+import 'dart:io' hide Directory, File, FileMode, FileStat,
+    FileSystemEntity, FileSystemEntityType, FileSystemException,
+    OSError, RandomAccessFile;
+
+import '../core/off_thread.dart';
+import 'demo_notebook.dart';
+import 'fs.dart';
+import 'workspace_fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'sqlite_backend.dart';
 
 import '../core/ids.dart';
 import '../core/open_target.dart' show workingCopyFileName;
@@ -229,12 +235,12 @@ class ContainerDemotion {
       : 'refused: $refusal';
 }
 
-/// Workspace + notebook persistence. One SQLite Database handle per open
+/// Workspace + notebook persistence. One SQLite CommonDatabase handle per open
 /// .onote (File Format Spec §2); workspace.json registry per spec §7.
 class Repository {
   Repository._(this.workspaceDir);
   final Directory workspaceDir;
-  final Map<String, Database> _open = {}; // notebookId -> db
+  final Map<String, CommonDatabase> _open = {}; // notebookId -> db
   final List<NotebookRef> notebooks = [];
   // Soft-deleted notebooks (ORG-7). Their .onote file stays on disk so a
   // restore is lossless; purge removes the file for good.
@@ -245,7 +251,14 @@ class Repository {
     final repo = Repository._(dir);
     await repo._loadWorkspace();
     if (repo.notebooks.isEmpty) {
-      await repo.createNotebook('My Notebook');
+      // The browser demo opens on something rather than on a blank page: a
+      // visitor who sees an empty rectangle learns nothing about what this is.
+      // See store/demo_notebook.dart, which is content and no machinery.
+      if (workspaceIsOnDisk) {
+        await repo.createNotebook('My Notebook');
+      } else {
+        await seedDemoNotebook(repo);
+      }
     }
     return repo;
   }
@@ -263,60 +276,65 @@ class Repository {
   /// Where the workspace lives: **app data first, and Documents only if a
   /// notebook is already there.**
   ///
+  /// Public because `main()` needs the answer before it opens anything — the
+  /// single-instance lock lives in this folder, and a second Openote has to find
+  /// it and step aside before it paints a window.
+  ///
   /// ## Why not Documents, which is where this used to go
   ///
-  /// Windows Defender's **Controlled Folder Access** — its anti-ransomware
-  /// feature — guards Documents, Desktop, Pictures, Videos, Music and
-  /// Favourites, and refuses writes from any program not on its allow list.
-  /// Openote is not on it, so every write into `Documents\Openote` was
-  /// refused and the app came up saying it could not read the notebook.
-  /// Measured on the owner's machine, repeatedly, over three weeks:
+  /// Windows Defender's **Controlled Folder Access** guards Documents, Desktop,
+  /// Pictures, Videos, Music and Favourites, and refuses writes from any program
+  /// not on its allow list. Openote is not on it, so every write into
+  /// `Documents\Openote` was refused and the app came up unable to read the
+  /// notebook.
   ///
-  ///     Event 1123: openote.exe has been blocked from modifying
-  ///     %userprofile%\Documents\Openote\ by Controlled Folder Access
-  ///
-  /// Three things about that are worth writing down, because all three are
-  /// the opposite of what the symptom suggests:
+  /// Three things about that are the opposite of what the symptom suggests, and
+  /// each one cost time:
   ///
   ///  1. **Nothing was detected as malware.** SQLite merely happened to be
-  ///     holding the pen when the write was refused, so the failure surfaced
-  ///     as a database error and read as "Defender is blocking SQLite".
-  ///  2. **Code signing would not have helped.** Controlled Folder Access is
-  ///     an allow list, not a reputation check; signed and well-known
-  ///     applications are blocked by it too until a human allows them.
-  ///  3. **The old fallback could never fire.** It fell back to app data only
-  ///     when `dir.create()` THREW — and creating a directory that already
-  ///     exists succeeds, blocked or not. It tested creatability and the
-  ///     thing that fails is writability.
+  ///     holding the pen when the write was refused, so it surfaced as a database
+  ///     error and read as "Defender is blocking SQLite".
+  ///  2. **Code signing would not help.** This is an allow list, not a reputation
+  ///     check — signed and well-known applications are blocked too.
+  ///  3. **The old fallback could never fire.** It fell back to app data only when
+  ///     `dir.create()` threw, and creating a directory that already exists
+  ///     succeeds whether writes are blocked or not. It tested creatability, and
+  ///     the thing that fails is writability.
   ///
-  /// App data is not on the guarded list, so a fresh install cannot hit any of
-  /// this. Notebooks are still reachable from anywhere the student likes: the
-  /// sync folder, "Save the whole notebook as folders and files…", and opening
-  /// a `.onotebook` by double-click all work on paths of their choosing.
+  /// App data is not guarded, so a fresh install cannot hit any of this. Notebooks
+  /// stay reachable from anywhere: a sync folder, the open-folder export, and
+  /// double-clicking a `.onotebook` all work on paths of the user's choosing.
   ///
-  /// ## Why an existing Documents workspace is left where it is
+  /// ## Why an existing Documents workspace is left alone
   ///
-  /// Moving somebody's notes without asking is worse than the bug. If a
-  /// workspace is already in Documents this keeps using it, and
-  /// [workspaceIsWritable] is what the shell asks before deciding whether to
-  /// offer the move — because a Documents workspace on a machine with the
-  /// feature turned off is working perfectly and must not be disturbed.
+  /// Moving somebody's notes without asking is worse than the bug. A workspace
+  /// already in Documents keeps being used, and [workspaceIsWritable] is what the
+  /// shell asks before offering to move it — because a Documents workspace on a
+  /// machine with the feature turned off works perfectly and must not be disturbed.
   ///
-  /// Note the one-way constraint if it is NOT working: reading out of
-  /// Documents is allowed and writing into app data is allowed, but *deleting*
-  /// from Documents is itself a modification and is refused. So the move is a
-  /// copy that leaves the original in place.
-  ///
-  /// Public because `main()` needs the answer *before* it opens anything: the
-  /// single-instance lock lives in this folder, and a second Openote has to
-  /// find it and step aside before it paints a window (see
-  /// `core/single_instance.dart`).
+  /// **If it is not working, the move is a copy.** Reading out of Documents is
+  /// allowed and writing into app data is allowed, but *deleting* from Documents is
+  /// itself a modification and is refused, so the original stays where it is.
   static Future<Directory> resolveWorkspaceDir() async {
-    Future<Directory?> at(Future<Directory> Function() base,
+    // **The browser demo has one place and no decision to make.** Everything
+    // below is about which of two real folders a real operating system will
+    // let us write to; a tab has neither folder and no Controlled Folder
+    // Access to dodge. `path_provider` has no web implementation either, so
+    // the loop below would fail every candidate and throw the StateError at
+    // the end — which is what the demo did before this line existed.
+    if (!workspaceIsOnDisk) {
+      return Directory('/openote')..createSync(recursive: true);
+    }
+
+    // Takes a function returning a PATH rather than one returning a
+    // `Directory`, because `path_provider`'s are `dart:io` directories and the
+    // workspace's are whichever this build uses (see store/fs.dart). A string
+    // is the one thing both halves agree about.
+    Future<Directory?> at(Future<String> Function() base,
         {required bool create}) async {
       try {
         final root = await base();
-        final dir = Directory(p.join(root.path, 'Openote'));
+        final dir = Directory(p.join(root, 'Openote'));
         if (create) await dir.create(recursive: true);
         return dir;
       } catch (_) {
@@ -325,17 +343,17 @@ class Repository {
     }
 
     // Already living in app data: nothing to decide.
-    final appData = await at(getApplicationSupportDirectory, create: false);
+    final appData = await at(() async => (await getApplicationSupportDirectory()).path, create: false);
     if (appData != null && _looksLikeWorkspace(appData)) return appData;
 
     // Already living in Documents: stay, so nobody's notes move on their own.
-    final docs = await at(getApplicationDocumentsDirectory, create: false);
+    final docs = await at(() async => (await getApplicationDocumentsDirectory()).path, create: false);
     if (docs != null && _looksLikeWorkspace(docs)) return docs;
 
     // A fresh install, and the whole point of this method: app data, where
     // Controlled Folder Access has no say.
-    final made = await at(getApplicationSupportDirectory, create: true) ??
-        await at(getApplicationDocumentsDirectory, create: true);
+    final made = await at(() async => (await getApplicationSupportDirectory()).path, create: true) ??
+        await at(() async => (await getApplicationDocumentsDirectory()).path, create: true);
     if (made == null) {
       throw StateError(
           'Openote could not create a workspace folder in app data or Documents.');
@@ -924,7 +942,7 @@ class Repository {
     }
   }
 
-  Database _db(String notebookId) {
+  CommonDatabase _db(String notebookId) {
     final nb = notebooks.firstWhere((n) => n.id == notebookId);
     return _open.putIfAbsent(notebookId,
         () => openExistingOnote(nb.file, notebookId: nb.id, title: nb.title));
@@ -2118,7 +2136,7 @@ class Repository {
     _writeReclaimMarker(notebookId, 'rebuild-from-log');
     final tmpPath = _rebuildTempPath(ref.file);
     final asidePath = _rebuildAsidePath(ref.file);
-    Database? fresh;
+    CommonDatabase? fresh;
     try {
       // Never onto an existing destination, anywhere in this method.
       // `File.renameSync` on Windows replaces silently — verified directly, and
@@ -2878,7 +2896,7 @@ class Repository {
   /// 329 pages "identical" over 278 hashes with no bytes anywhere and 193 broken
   /// image blocks. Gate 4 in [rebuildContainerFromLog] re-hashes the files; this
   /// is only the half that compares structure and content.
-  List<String> _rebuildDifferences(Database db, Materializer state) {
+  List<String> _rebuildDifferences(CommonDatabase db, Materializer state) {
     final out = <String>[];
     for (final r in db.select('SELECT id,kind,parent_id,title,position,color,'
         'level,created_at,updated_at,deleted_at FROM nodes')) {
@@ -2985,11 +3003,16 @@ class Repository {
         starts([0x57, 0x45, 0x42, 0x50], at: 8)) {
       return 'image/webp';
     }
+    if (starts([0x42, 0x4d])) return 'image/bmp';
+    // Both byte orders: 'II' little-endian, 'MM' big-endian.
+    if (starts([0x49, 0x49, 0x2a, 0x00]) || starts([0x4d, 0x4d, 0x00, 0x2a])) {
+      return 'image/tiff';
+    }
     if (starts([0x4f, 0x49, 0x53, 0x31])) return inkMimeType; // 'OIS1'
     return 'application/octet-stream';
   }
 
-  static int _count(Database db, String table) =>
+  static int _count(CommonDatabase db, String table) =>
       db.select('SELECT count(*) c FROM $table').first['c'] as int;
 
   /// How many blob files one background hash costs, matching
@@ -3003,7 +3026,7 @@ class Repository {
   /// file — 1.8 MB of binary ink — is a 164 ms block that no per-file yield can
   /// divide. Null for anything unreadable, which matches no hash.
   static Future<List<String?>> _hashFiles(List<String> paths) =>
-      Isolate.run(() => [
+      offThread(() => [
             for (final path in paths)
               () {
                 try {
@@ -3420,7 +3443,7 @@ class Repository {
   bool hasNode(String notebookId, String nodeId) =>
       _db(notebookId).select('SELECT 1 FROM nodes WHERE id=?', [nodeId]).isNotEmpty;
 
-  List<String> _descendants(Database db, String id) {
+  List<String> _descendants(CommonDatabase db, String id) {
     final out = <String>[id];
     final queue = [id];
     while (queue.isNotEmpty) {
@@ -3980,6 +4003,26 @@ class Repository {
   /// to describe it for third-party writers. Scanning JSON is ~10 ms for a
   /// 300-page notebook, which is well inside "instant" for a search box.
   /// Revisit when a real notebook makes it slow, not before.
+  /// Every page whose stored JSON contains [needle], by id.
+  ///
+  /// The cheap, exact way to find where one import's slides ended up: the
+  /// mirror holds each page as text, the needle is a content hash, and
+  /// nothing has to be decoded to answer. [searchPageContent] runs the same
+  /// scan for words and then builds a readable snippet, which this has no use
+  /// for.
+  List<String> pageIdsContaining(String notebookId, String needle) {
+    if (needle.isEmpty) return const [];
+    final out = <String>[];
+    final rows =
+        _db(notebookId).select('SELECT page_id, json FROM page_mirror');
+    for (final r in rows) {
+      if ((r['json'] as String).contains(needle)) {
+        out.add(r['page_id'] as String);
+      }
+    }
+    return out;
+  }
+
   List<({String pageId, String snippet})> searchPageContent(
       String notebookId, String query,
       {int limit = 50}) {

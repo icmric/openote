@@ -49,16 +49,19 @@ const int opPatchVersion = 2;
 
 /// What an operation does.
 ///
-/// Ops are **block-level** by decision (ADR-0006 §6a.1): the smallest text
-/// change we can express is "this block now holds this content". Concurrent
-/// edits to different blocks of a page merge cleanly; concurrent edits to the
-/// *same* block resolve last-writer-wins.
+/// Ops are **block-level** by decision (ADR-0006 §6a.1): the smallest change
+/// that can be expressed is "this block now holds this content". Edits to
+/// different blocks of a page merge cleanly, and two edits to the *same* block
+/// resolve last-writer-wins.
 ///
-/// That is deliberately not permanent. Character-level text editing arrives as
-/// **new op kinds** (a `text.splice` alongside `block.set`) once the structured
-/// `nodes` model lands, which is why unknown kinds must survive rather than
-/// abort — a v1 device replaying a newer device's log has to skip what it
-/// cannot apply without corrupting everything it can.
+/// [blockPatch] and [inkStrokes] narrow what a *write* costs without changing
+/// that: both still resolve last-writer-wins on a collision, by design. Real
+/// convergence inside one paragraph needs per-element identity, which is the
+/// structured text model of data model §5.1 and is not built.
+///
+/// **An unknown kind must survive rather than abort.** A reader replaying a
+/// newer device's log has to carry what it cannot apply, or it corrupts
+/// everything it can. See [unknown].
 enum OpKind {
   nodeUpsert('node.upsert'),
   nodeDelete('node.delete'),

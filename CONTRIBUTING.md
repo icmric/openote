@@ -1,52 +1,123 @@
 # Contributing to Openote
 
-Thank you for your interest in Openote — an open-source, cross-platform alternative to Microsoft OneNote, built so that no one is ever locked into their notes again.
+Thanks for your interest. Openote is an open-source cross-platform alternative to Microsoft OneNote, built so nobody is ever locked into their notes again.
 
-> **Current phase: implementation.** There is a working desktop app — Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) (including its **stale-DLL warning**) before touching the core. Design critique on [`docs/`](docs/README.md) is still very welcome.
->
-> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (1,071 tests) and `cargo test` (53 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
+There is a working desktop app: Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) — including its stale-DLL warning — before touching the core. Design critique on [`docs/`](docs/README.md) is welcome too.
 
-> **Never assert on wall-clock time.** `flutter test` runs test files in
-> parallel, so a `Stopwatch` bar measures how much CPU the machine had going
-> spare — it passes alone, fails in a full suite, and fails *every* time on a
-> two-core CI runner. This has taken CI down twice: once on a study-cache ratio,
-> once on four per-keystroke bars and an import-progress ratio, each while the
-> code under test was working perfectly.
->
-> Count the work instead, on the one code path the change exists to alter:
-> `Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
-> `OpLogStore.debugDirectoryListings` and
-> `ImportWriterHandle.debugMeasureRequests` all exist for this. A working cache
-> adds zero and a broken one adds hundreds, and neither answer moves with the
-> weather.
->
-> **Pair every `expect(count, 0)` with a test that makes the same counter move.**
-> A counter watching the wrong layer reads zero for the wrong reason, and the
-> guard is then worthless while looking strict — which is exactly what happened
-> the first time these were converted.
->
-> Wall-clock is equally untestable in *product* code that a widget test drives:
-> the sidebar's double-click window uses an injectable `sidebarNow` for the same
-> reason.
->
-> **A timeout is the one number that should be generous.** It is a hang guard,
-> not a performance bar, so it must clear the slowest machine that will ever run
-> it. The `test` package's 30-second default is chosen for an ordinary unit
-> test; a case that spawns real subprocesses (the git suites run `init`,
-> `config`, `clone`, `commit`, `push`) takes 20 s on an idle sixteen-core
-> machine and simply does not fit. Those files carry
-> `@Timeout(Duration(minutes: 3))`, and the failure it prevents is the nastiest
-> kind: intermittent, one platform, one test at a time, reported as
-> "TimeoutException after 0:00:30" with nothing in it about git.
+## Before submitting code
 
-> **Reproducing a CI-only failure: constrain the cores, don't add load.** GitHub
-> runners have about two. Piling burner threads onto a sixteen-core box does not
-> emulate that — the suite passed sixteen burners deep and still failed on CI.
-> Pinning the test process to two cores reproduced it on the first run
-> (`$p.ProcessorAffinity = [IntPtr]3` around `flutter test`), and turned one
-> intermittent failure into six deterministic ones.
+`flutter analyze` clean of errors and warnings, `flutter test` and `cargo test` passing, `cargo clippy --all-targets` clean.
 
-> **Licensing is ratified** ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27): **AGPL-3.0-or-later** for the app, **Apache-2.0** for `onote_core`, **CC0-1.0** for the format specs. Contributions are accepted under the licence of the directory they touch. See [LICENSING.md](LICENSING.md) — and note the invariant that **`onote_core` must never gain a copyleft dependency**.
+**Comments explain why, not what.** Lead with one line saying what the thing is for. Then the contract a caller needs and any invariant that is not obvious from the code. Put a comment about one edge case *at* that case, not at the top of the file.
+
+What does **not** belong in a comment: measurements, a quote from a bug report, the history of what the code used to be, or an argument against an approach that was not taken. All four are worth recording — in the commit message, or in the planning document for the release. Keeping them next to the code means the same fact exists in two places that can disagree, and it is the code's copy that goes stale.
+
+### Writing tests
+
+**Never assert on wall-clock time.** `flutter test` runs files in parallel, so
+a `Stopwatch` bar measures how much CPU the machine had spare. It passes
+alone, fails in a full suite, and fails every time on a two-core CI runner.
+This has taken CI down twice while the code under test was working perfectly,
+and a third time through a `retry:` that could not launder it — three
+attempts, 1,248 ms against 81 ms for the same code run alone. **A retry is not
+a fix for a wall-clock bar**; it only widens the window in which the machine
+has to behave.
+
+Count the work instead, on the one path your change exists to alter.
+`Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
+`OpLogStore.debugDirectoryListings` and `ImportWriterHandle.debugMeasureRequests`
+exist for this: a working cache adds zero and a broken one adds hundreds,
+and neither answer moves with the weather. `AppShell.clock` and
+`PageCanvas.clock` are the product-code half, for the two places a decision
+genuinely depends on elapsed time. Product code that a widget test
+drives needs the same treatment — the sidebar's double-click window takes an
+injectable `sidebarNow`.
+
+**Pair every `expect(count, 0)` with a test that makes the same counter move.**
+A counter watching the wrong layer reads zero for the wrong reason, and the
+guard is then worthless while looking strict.
+
+**A timeout is a hang guard, not a performance bar**, so make it generous
+enough for the slowest machine that will ever run it. The 30-second default
+suits an ordinary unit test; a file that spawns real subprocesses — the git
+suites run `init`, `config`, `clone`, `commit`, `push` — takes 20 s on an idle
+sixteen-core machine and does not fit. Those carry
+`@Timeout(Duration(minutes: 3))`. The failure this prevents is the nastiest
+kind: intermittent, one platform, one test at a time, reported as
+"TimeoutException after 0:00:30" with nothing in it about git.
+
+**A fifth way a test has passed against broken code here: the assertion was
+satisfied by something else.** "A pen carried off mid-press does not stay
+lassoing" asserted the tool was `select` afterwards — and it is, because a
+mouse arriving with no pen in range puts the pen down on its own, fix or no
+fix. Deleting the fix did not fail it. The real cost of the missing fix was a
+STALE LATCH, so the test had to go one step further: choose a tool
+deliberately, then release the button, and watch the latch restore over the
+top of it. **If the mutation passes, the assertion is downstream of something
+you did not change** — look for the other thing that produces the same
+observable.
+
+**A sixth way, and the quietest: the premise stopped being true.** A test
+called "a pen cannot be in hand with something selected" proved it by calling
+`setTool(Tool.pen)` and watching the selection go — and went on passing after
+the app started keeping the selection when a pen's side button hands the tool
+back, because the manual `setTool` it used still clears. It was green, it was
+wrong, and the rule it existed to protect had inverted. **When you change a
+rule, grep the tests for sentences about it**, not just for the symbol you
+edited; a test's comment is where its premise lives, and nothing compiles a
+comment. In the same pass, a fixture made a locked-block test pass for the
+wrong reason: the block was big enough that the area rule excluded it anyway,
+so the lock under test did nothing. Make every rule but the one you are
+testing say "yes", and assert that in a line of its own.
+
+And a process one: **do not mutate a file while a full suite is running.**
+`flutter test` compiles each test file as it reaches it, so a lib file
+reverted for thirty seconds mid-run is compiled into whichever files start in
+that window — and reads as a real failure somewhere unrelated.
+
+**Never hand a `CustomPainter` a collection you go on mutating.** Its
+`shouldRepaint` is then comparing an object with itself, so it returns false
+and nothing repaints — which is how the lasso's outline came to appear only
+once the gesture had ended. Pass a copy, or carry a `Listenable` the painter
+repaints on. The symptom is invisible to a widget test that only asks what the
+tree contains, so count the paints: a `static int debugPaints` incremented in
+`paint()` is what pins it (`OverlayPainter`).
+
+**And when an input device does not behave, read the embedder before theorising
+about it.** The engine's source ships inside the SDK —
+`<flutter>/engine/src/flutter/shell/platform/windows/flutter_window.cc` is the
+Windows one — and it is the difference between "the pen's barrel button is not
+reaching us" and three rounds of guessing at bit masks. `grep -rn "PEN_FLAG"`
+over that directory answered a report that had been open for months.
+
+**A widget test is on Android unless it says otherwise**, and a good deal of
+framework behaviour turns on that. `EditableText` unfocuses on a tap outside
+on Windows, macOS and Linux and deliberately does not on Android and iOS — so
+a desktop-only focus bug is simply not reachable under the default, and a test
+written against it greens on a broken build. Set
+`debugDefaultTargetPlatformOverride` and **clear it inside the test body**: the
+framework checks the foundation debug flags before any `addTearDown` callback
+runs, so clearing it there fails the test that just passed.
+
+**Never put a control character in a source file.** Ripgrep treats a file holding
+one as binary and skips it, so the file becomes invisible to every code search —
+which is how nine hundred lines of one widget hid from the audits looking for
+defects in it. The trap is a backslash escape typed through a shell that
+interprets it — `\frac` arrives as a form feed followed by `rac`, and
+`\alpha` as a bell followed by `lpha`. Write `\u000c` if you genuinely need one.
+`test/source_hygiene_test.dart` enforces this over `lib/` and `test/`.
+
+**To reproduce a CI-only failure, constrain the cores rather than adding**
+**load.** GitHub runners have about two. Burner threads on a sixteen-core box
+do not emulate that — the suite passed sixteen burners deep and still failed
+on CI. Pinning the test process to two cores
+(`$p.ProcessorAffinity = [IntPtr]3` around `flutter test`) reproduced it on
+the first run and turned one intermittent failure into six deterministic ones.
+
+One invariant worth knowing before you add a dependency: **`onote_core` must
+never gain a copyleft one.** It is Apache-2.0 so that any tool, including a
+closed one, can read and write `.onote` files — see
+[LICENSING.md](LICENSING.md).
 
 ## Ways to help right now
 
@@ -61,12 +132,22 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 - **CRDTs & local-first sync** (Yjs/`yrs`, Loro, Automerge; E2E-encrypted sync)
 - **Math input & rendering** (UnicodeMath/LaTeX/MathML, KaTeX/MathJax/MathLive)
 - **Open file-format design** and long-term data durability
-- **Flutter, Qt, or the other candidate frameworks** — especially real ink/text experience
-- **Accessibility** on custom-drawn canvases
+- **Accessibility** on custom-drawn canvases — the editor's semantics tree is
+  rejected by the Windows bridge today, which is the single worst defect we have
 
-**3. Review the decisions.** The major technical decisions are recorded as [Architecture Decision Records](docs/adr/README.md) — framework (Flutter + Rust core), CRDT (Loro), storage container (SQLite `.onote`), editor engine (keep the engine we own, behind a swappable seam), licensing (proposed), and the sync storage layout (proposed). Each documents its revisit triggers; reasoned challenges backed by evidence are welcome.
+**3. Review the decisions.** The major technical decisions are recorded as
+[Architecture Decision Records](docs/adr/README.md), each with the context, the
+options weighed, and explicit revisit triggers. A reasoned challenge backed by
+evidence is welcome — several of these are marked provisional precisely because
+they should be reopened if the evidence changes.
 
-**4. Prototype a spike.** The remaining open work is spike-shaped: the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)), the first-party canvas core, the Saber-style ink pipeline feel-check, and the Loro-via-FFI round-trip benchmark. If you want to build one, say so in an issue — spike evidence settles arguments here.
+**4. Run a build nobody has run.** The most useful thing anyone with a Mac or
+a Linux machine can do: CI builds all three platforms on every push, and only
+Windows has been used by a human. Launch it, import a PDF (pdfium is a
+per-platform native binary and the likeliest thing to fail differently), draw
+something, sync a notebook between two machines, and open an issue about
+whatever went wrong. Same for ink on real stylus hardware — pressure, tilt,
+palm rejection and the barrel button cannot be tested headlessly.
 
 **5. Translate Openote.** This is the one job that needs no Dart at all. Copy `app/lib/l10n/app_en.arb` to `app/lib/l10n/app_<code>.arb`, translate the values, drop the `@` description entries (those belong to the English template), and run `flutter gen-l10n` from `app/`. Nothing else changes — the list of supported languages is generated from the files present, and any message you leave out falls back to English, so a partial translation is a useful contribution rather than a broken build.
 
@@ -78,7 +159,7 @@ Two things to know before you start. The English `.arb` is still growing: the
 welcome flow, the toolbars, the navigator, the insert catalogue and Settings
 read their words from it, but several dialogs (sync, AI access, the planner and
 study panels) are still Dart string literals — the order they are being
-converted in is in [v0.24 §1](docs/planning/v0.24-road-to-1.0.md). And every
+converted in is in [v0.24 §1](docs/planning/archive/v0.24-road-to-1.0.md). And every
 message carries an `@` entry describing where it appears and what any
 placeholder holds; read it, because it is the only context you get, and it is
 where "this is a Windows menu path", "this is a file extension, leave it alone"
@@ -116,6 +197,28 @@ git commit -s -m "your message"
 ```
 
 That adds a `Signed-off-by:` line certifying you have the right to submit the work under the project's licence — AGPL-3.0-or-later for the app, Apache-2.0 for `onote_core`, CC0-1.0 for `docs/specs/` ([ADR-0005](docs/adr/ADR-0005-licensing.md), [LICENSING.md](LICENSING.md)). There is deliberately no CLA: it would buy the project an option to relicense that we are not preserving. Contributors will be credited.
+
+## Branches
+
+`master` is the released branch — it should always be what the latest published
+release was cut from. Work does not land on it directly.
+
+```
+master                  ← releases only, tagged from here
+  └── v1.0.2            ← one branch per patch/minor release
+        ├── feature-a    ← one branch per piece of work
+        └── feature-b
+```
+
+- **A release branch per version**, named for it: `v1.0.2`.
+- **A branch per piece of work**, off the release branch, merged back into it.
+- **The release branch merges into `master`** when the release is ready, and
+  the tag is cut there — see [docs/RELEASING.md](docs/RELEASING.md), which
+  assumes you are on `master` for good reasons it explains.
+
+The default branch is `master`, not `main`. It is not being renamed: people
+have the repository cloned now, and a rename breaks their remotes and any open
+pull request for no benefit.
 
 ## Releasing
 

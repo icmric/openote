@@ -22,6 +22,8 @@ import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
+import 'package:openote/theme/onote_theme.dart';
+import 'package:openote/theme/tokens.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/math_bar.dart';
 
@@ -334,6 +336,97 @@ void main() {
     });
   });
 
+  group('a chip is big enough to read', () {
+    // *"The boxes to select maths stuff is quite small, particularly an issue
+    // for large operators. I dont know if it would be better to boost the
+    // size of all the items or just the large operators, but worth finding a
+    // solution."*
+    //
+    // Both, because measuring says they are one problem: **27 of the 231
+    // previews did not fit the old fixed 34x32 cell** and were silently
+    // shrunk by the `FittedBox` inside it. The tallest is `\sum` at 37.3px,
+    // whose limits stack above and below; the widest is `\gcd(a,b)` at
+    // 98.2px. One cell size cannot serve both, so the cell is uniform in
+    // height and follows its content in width.
+
+    Future<Size> chip(WidgetTester tester, String id,
+        {bool dense = false}) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: MathChip(
+                item: mathItemsById[id]!,
+                onTap: (_) {},
+                surfaces: OnoteSurfaces.light,
+                dense: dense),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      return tester.getSize(find.byType(MathChip));
+    }
+
+    testWidgets('tall enough for a summation, which is what prompted it',
+        (tester) async {
+      final s = await chip(tester, 'sum');
+      // The preview measures 37.3px at 12px type and 40.4 at the 13 it is
+      // drawn at now; the old cell was 32 high.
+      expect(s.height, greaterThanOrEqualTo(MathChip.roomyHeight));
+      expect(s.height, greaterThan(OnoteSize.button),
+          reason: 'the old cell was the height of a toolbar button');
+    });
+
+    testWidgets('and its width follows what is in it', (tester) async {
+      // The part that cannot be done with one number. `\gcd(a,b)` needs
+      // nearly three times the width of a `\sum`, and a cell sized for the
+      // first would make every panel absurd.
+      final sum = await chip(tester, 'sum');
+      final gcd = await chip(tester, 'fn-gcd');
+      final pi = await chip(tester, 'pi');
+      expect(gcd.width, greaterThan(sum.width * 2));
+      expect(pi.width, lessThan(gcd.width));
+      expect(sum.height, gcd.height,
+          reason: 'uniform HEIGHT is what keeps a Wrap of these tidy');
+    });
+
+    testWidgets('never past the ceiling, so one template cannot set the width',
+        (tester) async {
+      // Six rows are wide enough to hit it — the gcd/lcm/max/min/nCr/nPr
+      // templates — and they scale down a couple of per cent rather than
+      // making every panel as wide as the worst case.
+      for (final id in ['fn-gcd', 'fn-lcm', 'fn-nCr', 'fn-nPr']) {
+        final s = await chip(tester, id);
+        expect(s.width, lessThanOrEqualTo(MathChip.roomyMaxWidth + 4),
+            reason: id);
+      }
+    });
+
+    testWidgets('nothing in the whole table overflows its cell',
+        (tester) async {
+      for (final item in mathItems) {
+        await chip(tester, item.id);
+        expect(tester.takeException(), isNull, reason: item.id);
+      }
+    });
+
+    testWidgets('the four on the command row stay dense', (tester) async {
+      // That row is 44px tall and a picker-sized chip would fill it edge to
+      // edge. Its four previews are also the four simplest in the table, and
+      // the complaint was about the pickers, where the operators live.
+      for (final id in kMathQuickShapes) {
+        final s = await chip(tester, id, dense: true);
+        expect(s.height, OnoteSize.button, reason: id);
+      }
+    });
+  });
+
   group('what the bar itself offers', () {
     // Round two of this bar measured 1725-2230 px against a 1280 px default
     // window, with no scrollbar and a dead mouse wheel, so the search box and
@@ -369,24 +462,124 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the whole row fits a 1280 px window', (tester) async {
-      await pumpBar(tester, onInsert: (_) {});
-      final w = tester.getSize(find.byType(MathBar)).width;
-      // Measured, and reported here so a regression names its own number.
-      // Below this the row scrolls (drag or wheel, added with the doors) —
-      // but the first cut was 1725-2230 px with NO scroll at all, and half of
-      // "chaotic" was controls the student could not reach.
+    testWidgets('given room, every door is on the row', (tester) async {
+      // The shape this guard used to have was `width < 1240`, measured at a
+      // 2600 px view: a promise that the NATURAL row fits the smallest window
+      // the app opens. It was true, and then it stopped being affordable.
+      // Round four gave every kind of thing its own named door at the owner's
+      // request, which spent the headroom; this guard's own comment said what
+      // that cost — "the next thing that wants a place on it has to take
+      // something else off". Two things then wanted a place: a Calculus door
+      // where `∑ ∫` was, and an Evaluate button whose entire purpose is to
+      // not be in a fold. Measured at 1415 px.
       //
-      // 1150 → 1240 when Graph came out of the `...` fold and onto the row,
-      // at the owner's request: *"i dont love the location of the 'graph
-      // this' button, isnt super intuitive. Could we maybe break this out
-      // into its own button?"* It costs 72 px of what was 135 px of
-      // headroom. The row still fits a 1280 window; there is simply less
-      // room than there was, and the next thing that wants a place on it has
-      // to take something else off.
-      expect(w, lessThan(1240),
-          reason: 'measured ' + w.toString() + ' px; the row has to fit the '
-              'smallest window the app opens, which is 1280');
+      // So the row folds rather than paying, and what is worth guarding
+      // changes with it: not a number, but that nothing is ever unreachable.
+      // The pair of tests below is that promise at both ends.
+      await pumpBar(tester, onInsert: (_) {});
+      for (final door in kMathDoors) {
+        expect(find.text(door.label), findsOneWidget,
+            reason: '${door.label} should be on the row when there is room');
+      }
+      expect(find.text(kMathFoldLabel), findsNothing,
+          reason: 'and the fold does not sit there doing nothing');
+    });
+
+    testWidgets('squeezed, the far doors fold and stay reachable',
+        (tester) async {
+      // 1280 is the smallest window the app opens, and the row is wider than
+      // that now. The doors are listed in the order a student meets the
+      // topics, so the ones that fold are the far ones.
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: MathBar(
+              latexMode: false,
+              onToggleLatex: () {},
+              onInsert: (_) {},
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull,
+          reason: 'no overflow: the row fits whatever it is given');
+
+      expect(find.text(kMathFoldLabel), findsOneWidget,
+          reason: 'something had to fold at this width');
+      expect(find.text('Shapes'), findsOneWidget,
+          reason: 'the nearest door never folds');
+      expect(find.text('Subjects'), findsNothing,
+          reason: 'the furthest one goes first');
+
+      // **And the commands keep their places**, which is the whole reason the
+      // doors are what folds: Evaluate was taken out of a fold on purpose.
+      expect(find.text('Graph'), findsOneWidget);
+      expect(find.text('Evaluate'), findsOneWidget);
+
+      // Reachable, not merely alive: the fold's panel is the hidden doors'
+      // own contents under their own names.
+      await tester.tap(find.text(kMathFoldLabel));
+      await tester.pumpAndSettle();
+      expect(find.text('Subjects'), findsOneWidget,
+          reason: "the folded door's name is the heading over its symbols");
+    });
+
+    testWidgets('a panel closes when resizing takes its button away',
+        (tester) async {
+      // Both directions of the same fault: a panel can outlive the control
+      // that opened it. Widen until nothing folds and the fold's own panel
+      // would be left showing an empty list; narrow until the open door
+      // folds and its panel is left anchored to a button that is gone.
+      // `pumpBar` widens to 2600 itself, so the squeeze comes after it.
+      await pumpBar(tester, onInsert: (_) {});
+      tester.view.physicalSize = const Size(1280, 900);
+      await tester.pumpAndSettle();
+
+      // **Counting chips, not finding text.** A door's name appears both as
+      // its button on the row and as a heading inside the fold's panel, so
+      // `find.text('Subjects')` cannot tell an open panel from a closed one
+      // — a first version of this test asserted on it and passed with the
+      // fix disabled. Only the quick shapes put a `MathChip` on the row, so
+      // the count says whether a panel is up.
+      final onRowOnly = kMathQuickShapes.length;
+      expect(find.byType(MathChip), findsNWidgets(onRowOnly),
+          reason: 'nothing open yet');
+
+      await tester.tap(find.text(kMathFoldLabel));
+      await tester.pumpAndSettle();
+      expect(find.byType(MathChip).evaluate().length,
+          greaterThan(onRowOnly), reason: "the fold's panel is open");
+
+      // Widen past the point where anything folds: the panel it belonged to
+      // would now be an empty list under no headings.
+      tester.view.physicalSize = const Size(2600, 900);
+      await tester.pumpAndSettle();
+      expect(find.text(kMathFoldLabel), findsNothing,
+          reason: 'nothing folds at this width');
+      expect(find.byType(MathChip), findsNWidgets(onRowOnly),
+          reason: 'and its panel closed rather than showing nothing');
+
+      // Now the other direction: open a door, then narrow until it folds.
+      await tester.tap(find.text('Subjects'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MathChip).evaluate().length, greaterThan(onRowOnly),
+          reason: "Subjects' panel is open");
+
+      tester.view.physicalSize = const Size(900, 900);
+      await tester.pumpAndSettle();
+      expect(find.text('Subjects'), findsNothing,
+          reason: 'its button folded');
+      expect(find.byType(MathChip), findsNWidgets(onRowOnly),
+          reason: 'and its panel went with it, rather than being left '
+              'anchored to a button that no longer exists');
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('the row carries no answer readout at all any more',
@@ -615,38 +808,42 @@ void main() {
     });
 
     group('evaluating at a value', () {
-      // Unlike Graph, this lives in the fold rather than on the row itself —
-      // a deliberate, smaller-footprint choice for a second command sharing
-      // the same equation, not an oversight; these pin that placement down
-      // the same way the Graph tests above pin ITS placement.
-      testWidgets('is one item behind the more menu, not a row button',
+      // **This used to live in the fold, and these tests used to pin it
+      // there** — "a deliberate, smaller-footprint choice for a second
+      // command sharing the same equation, not an oversight". The owner
+      // reversed it twice over, once gently and once not:
+      //
+      //   *"this is super helpful and i like it (although its rather buried
+      //   away at the moment, this isnt ideal because those who would want it
+      //   probably wont just stumble across it)"*
+      //
+      //   *"We are also hiding this option in a menu, making it hard to find,
+      //   anoying to get to, and basically impossible to just stumble across,
+      //   which is how most people learn about these features."*
+      //
+      // Stumbling across it was the requirement the fold could not meet, so
+      // it is a labelled button beside Graph — the other thing you can do
+      // with the equation you just wrote.
+      testWidgets('is a labelled button on the row, beside Graph',
           (tester) async {
         var evaluated = 0;
         await pumpBar(tester,
             onInsert: (_) {}, onEvaluateAtValue: () => evaluated++);
-        expect(find.textContaining('Evaluate'), findsNothing,
-            reason: 'nothing on the row itself until the menu is opened');
-
-        await tester.tap(find.byTooltip('More'));
-        await tester.pumpAndSettle();
-        expect(find.textContaining('Evaluate at a value'), findsOneWidget);
-        await tester.tap(find.textContaining('Evaluate at a value'));
+        expect(find.text('Evaluate'), findsOneWidget,
+            reason: 'readable without opening anything');
+        await tester.tap(find.text('Evaluate'));
         await tester.pumpAndSettle();
         expect(evaluated, 1);
       });
 
-      testWidgets('is greyed out when there is nothing to evaluate',
-          (tester) async {
-        // Same rule the LaTeX toggle already follows for `latexAvailable`:
-        // a menu item that does nothing when pressed is worse than none.
-        await pumpBar(tester, onInsert: (_) {}, onEvaluateAtValue: null);
+      testWidgets('and is no longer in the fold at all', (tester) async {
+        // Two routes to one command is how a menu quietly becomes the place
+        // people look first again.
+        await pumpBar(tester,
+            onInsert: (_) {}, onEvaluateAtValue: () {});
         await tester.tap(find.byTooltip('More'));
         await tester.pumpAndSettle();
-        final item = tester.widget<PopupMenuItem<String>>(
-            find.ancestor(
-                of: find.textContaining('Evaluate at a value'),
-                matching: find.byType(PopupMenuItem<String>)));
-        expect(item.enabled, isFalse);
+        expect(find.textContaining('Evaluate at a value'), findsNothing);
       });
 
       testWidgets('is on the LaTeX face too, the same as Graph', (tester) async {
@@ -655,9 +852,7 @@ void main() {
             onInsert: (_) {},
             latexMode: true,
             onEvaluateAtValue: () => evaluated++);
-        await tester.tap(find.byTooltip('More'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.textContaining('Evaluate at a value'));
+        await tester.tap(find.text('Evaluate'));
         await tester.pumpAndSettle();
         expect(evaluated, 1);
       });

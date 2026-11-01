@@ -15,7 +15,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:sqlite3/sqlite3.dart';
+import 'sqlite_backend.dart';
 
 import '../model/history.dart';
 import '../sync/op.dart';
@@ -23,7 +23,7 @@ import '../sync/op_log.dart';
 
 class HistoryStore {
   HistoryStore(this.db);
-  final Database db;
+  final CommonDatabase db;
 
   /// Read the index back, plus the node shadow it needs to name a section in
   /// plain words and to collapse a subtree into one entry.

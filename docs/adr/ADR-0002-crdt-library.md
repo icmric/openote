@@ -1,7 +1,27 @@
 # ADR-0002: CRDT library — Loro, behind our own Rust API
 
-> **Status:** Accepted (provisional) · 2026-07-22
-> **Related:** [File Format Spec §5](../specs/10-file-format-spec.md) · [Architecture §3.3](../04-architecture-overview.md)
+> **Status:** Accepted, **not implemented**. Loro has never been a dependency.
+> **Related:** [ADR-0006](ADR-0006-sync-transport-and-text-model.md) · [Data Model §5.1](../specs/11-data-model-spec.md)
+>
+> **What changed under it.** This was decided when the CRDT document was going
+> to be the on-disk source of truth. [ADR-0006](ADR-0006-sync-transport-and-text-model.md)
+> replaced that with an append-only op log, which took over two of the four
+> reasons Loro was chosen: the **movable tree** that was going to order sections
+> and pages is now `node.*` ops over fractional indices, and the **snapshot and
+> time-travel** that was going to give version history is now a replay of the
+> log. The container stores no CRDT at all.
+>
+> So the decision stands but its **scope has narrowed to one thing: the text
+> sequence.** Two text edits to one paragraph still resolve last-writer-wins,
+> which is the one problem nothing else has solved, and `block.patch` narrows
+> the cost of a keystroke without converging. The open question this leaves is
+> worth stating rather than inheriting: **Loro was chosen largely on
+> movable-tree model fit, and that is no longer what it would be for.** A
+> choice made for text alone should be re-argued, against `yrs` and Automerge
+> on rich-text merge quality and binding cost, before anyone integrates
+> anything. The one assumption already known to be wrong is the integration
+> path — this assumed `flutter_rust_bridge`, and `onote_core` is reached by
+> hand-written `dart:ffi`.
 
 ## Context
 
@@ -26,6 +46,8 @@ The document model is CRDT-backed from day one (conflict-free multi-device merge
 
 ## Revisit triggers
 
-1. The note-shaped benchmark shows Loro ≥2× worse than `yrs` on page-open or memory for realistic pages.
-2. Loro development stalls (no maintained release for 12 months) before Openote 1.0.
-3. Yjs wire-protocol compatibility becomes a product requirement (e.g., interop with an external collaboration service).
+1. **Anyone starting the text-sequence work.** The narrowed scope above means
+   the original comparison no longer decides this; redo it for text.
+2. The note-shaped benchmark shows Loro ≥2× worse than `yrs` on page-open or memory for realistic pages.
+3. Loro development stalls (no maintained release for 12 months).
+4. Yjs wire-protocol compatibility becomes a product requirement — interop with an external collaboration service, say.

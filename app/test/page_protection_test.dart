@@ -154,11 +154,42 @@ void main() {
       expect(app.isLocked(section.id), isFalse);
     });
 
-    test('"every time" never caches the unlock', () {
+    test('"every time" unlocks this visit, and only this visit', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The gate is read at BUILD time — `isLocked` decides what the page
+      // area renders, every frame — so an unlock that is recorded nowhere is
+      // an unlock that never happened: this policy left the page permanently
+      // unopenable with the right passcode in hand. It must open the page it
+      // was given for, and ask again on the next one.
+      // A second page under the same passcode, to show the unlock does not
+      // travel to it.
+      final sibling = app.importNode(
+          app.notebookId!,
+          TreeNode(
+              kind: NodeKind.page,
+              parentId: section.id,
+              title: 'Diary 2',
+              position: 'b3'));
+      app.reloadNodes();
+      app.protectNode(section.id, 'pw', UnlockPolicy.always);
+      await app.selectPage(page.id);
+      expect(app.unlockNode(page.id, 'pw'), isTrue);
+      expect(app.isLocked(page.id), isFalse, reason: 'readable now');
+
+      await app.selectPage(sibling.id);
+      expect(app.isLocked(sibling.id), isTrue, reason: 'the next page asks');
+      await app.selectPage(page.id);
+      expect(app.isLocked(page.id), isTrue, reason: 'and so does coming back');
+      app.cancelPendingSave();
+    });
+
+    test('"every time" is not written down anywhere', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The point of the policy: nothing survives the visit, so "Lock now"
+      // and a notebook switch have nothing to find.
       app.protectNode(section.id, 'pw', UnlockPolicy.always);
       expect(app.unlockNode(page.id, 'pw'), isTrue);
-      // The caller got its yes for THIS open, and the next one asks again.
+      app.lockAll();
       expect(app.isLocked(page.id), isTrue);
     });
 

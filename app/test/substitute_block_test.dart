@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/substitute_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
+import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -246,10 +247,15 @@ void main() {
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
+            // **The block's own width, not a fixed 260.** On the canvas
+            // `BlockView` sizes a block to `b.w`, so the type scale and the
+            // room available move together; a harness that pinned the width
+            // while a test changed `w` created a geometry the app cannot
+            // produce, and the Row inside duly overflowed.
             builder: (_, __) => Align(
               alignment: Alignment.topLeft,
               child: SizedBox(
-                  width: 260, child: SubstituteBlockView(block: s, app: app)),
+                  width: s.w, child: SubstituteBlockView(block: s, app: app)),
             ),
           ),
         ),
@@ -262,7 +268,9 @@ void main() {
       final s = app.insertSubstitute(latex: 'y=3x+10');
       await pump(tester, s);
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.textContaining('enter a value'), findsOneWidget);
+      // Names what it is waiting for rather than saying "enter a value",
+      // which with several fields does not say WHICH.
+      expect(find.text('enter x'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -272,7 +280,9 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '2');
       await tester.pump();
-      expect(find.text('= 16'), findsOneWidget);
+      // Named, not a bare `= 16`: *"ensure the answer is clear, as at the
+      // moment its not super clear to me."*
+      expect(find.text('y = 16'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -282,7 +292,69 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '2');
       await tester.pump();
-      expect(s.content['value'], '2');
+      expect(s.content['values'], {'x': '2'},
+          reason: 'keyed by name, because there can be more than one now');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and one name keeps the old spelling in step', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The same notebook opened by a v1.0.1 build, which reads `value` and
+      // knows nothing of `values`. Reading both spellings stops v1.0.2
+      // losing what v1.0.1 wrote; this is the other direction.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField), '2');
+      await tester.pump();
+      expect(s.content['value'], '2',
+          reason: 'a v1.0.1 build can still show this');
+      expect(s.content['values'], {'x': '2'});
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and several names do not pretend to', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `value` never recorded WHICH variable it was, and a v1.0.1 build
+      // labels whatever it finds `x`. It cannot evaluate a formula with
+      // several names anyway, so there is nothing to be in step with — and
+      // writing one of them there would be a number under the wrong label.
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(0), '2');
+      await tester.pump();
+      expect(s.content['value'], '',
+          reason: 'left exactly as insertSubstitute made it');
+      expect(s.content['values'], {'u': '2'});
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a value stored the pre-v1.0.2 way still shows', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // One string under `value`, which is all a block could hold before the
+      // equation was allowed more than one name. Read, not rewritten — so a
+      // v1.0.1 build opening the same notebook still shows it.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      s.content.remove('values');
+      s.content['value'] = '2';
+      await pump(tester, s);
+      expect(find.text('y = 16'), findsOneWidget);
+      expect(s.content.containsKey('values'), isFalse,
+          reason: 'reading a notebook is not editing it');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and touching a field commits the migrated reading',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      s.content.remove('values');
+      s.content['value'] = '2';
+      await pump(tester, s);
+      // `2` was the only value an old block had, so it belongs to the first
+      // name — u — and typing into `a` must not lose it.
+      await tester.enterText(find.byType(TextField).at(1), '3');
+      await tester.pump();
+      expect(s.content['values'], {'u': '2', 'a': '3'});
       app.cancelPendingSave();
     });
 
@@ -292,8 +364,169 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '+');
       await tester.pump();
-      expect(find.text('= 16'), findsNothing);
+      expect(find.text('y = 16'), findsNothing);
       expect(tester.takeException(), isNull);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a formula with three names gets three fields', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The whole point: *"its unable to handle multi variable stuff at the
+      // moment."* Before this, `v=u+a*t` showed one field labelled `x =` and
+      // the error `unknown "u"` where the answer should be.
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      expect(find.byType(TextField), findsNWidgets(3));
+      expect(find.text('u ='), findsOneWidget);
+      expect(find.text('a ='), findsOneWidget);
+      expect(find.text('t ='), findsOneWidget);
+      expect(find.text('enter u, a and t'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('filling them in works it out', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(0), '2');
+      await tester.enterText(find.byType(TextField).at(1), '3');
+      await tester.enterText(find.byType(TextField).at(2), '4');
+      await tester.pump();
+      expect(find.text('v = 14'), findsOneWidget);
+      expect(s.content['values'], {'u': '2', 'a': '3', 't': '4'});
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a partly filled block says what it is still waiting for',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The common state for a block with three fields, and not an error.
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(1), '3');
+      await tester.pump();
+      expect(find.text('enter u and t'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('editing the equation keeps the values that still apply',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // An equation can change under a block that is on screen — a graph and
+      // a substitute both follow theirs live. Fields are keyed by name so the
+      // ones that survive keep their numbers.
+      final s = app.insertSubstitute(latex: 'A=l*w');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(0), '3');
+      await tester.enterText(find.byType(TextField).at(1), '7');
+      await tester.pump();
+      expect(find.text('A = 21'), findsOneWidget);
+
+      s.content['latex'] = 'A=l*w*h';
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNWidgets(3));
+      expect(tester.widget<TextField>(find.byType(TextField).at(0)).controller
+              ?.text, '3',
+          reason: 'l kept what was typed into it');
+      expect(find.text('enter h'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('nothing in it is smaller than the page it sits on',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // *"The equation solver is smaller text wise than the text on the rest
+      // of the page with no way of scaling it up, it should by default be
+      // larger and more readable."*
+      //
+      // Measured, and exact: the equation was drawn at 16 against a
+      // `kMathBlockFontSize` of 22, and every label, field and answer at
+      // `OnoteType.small` — 12 — against a `kEditorBodyFontSize` of 15. The
+      // answer, the one thing the block exists to show, was a fifth smaller
+      // than the prose around it.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField), '2');
+      await tester.pump();
+
+      double sizeOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+      expect(sizeOf('y = 16'), greaterThan(kEditorBodyFontSize),
+          reason: 'the ANSWER is the biggest text in the block');
+      expect(sizeOf('x ='), greaterThanOrEqualTo(kEditorBodyFontSize),
+          reason: 'and a label is never smaller than body text');
+      expect(
+          tester
+              .widget<TextField>(find.byType(TextField))
+              .style!
+              .fontSize!,
+          greaterThanOrEqualTo(kEditorBodyFontSize),
+          reason: 'nor is what you type into it');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and the equation is drawn at equation size', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      final math = tester.widget<OnoteMath>(find.byType(OnoteMath));
+      expect(math.textStyle.fontSize, kMathBlockFontSize,
+          reason: 'it IS an equation in a box of its own');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('widening the box scales it up, and only up', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The first of the two ways offered: *"whether than be resizing the
+      // actual thing itself like we have with images."* No new control, and
+      // dragging a block is already how it is made bigger.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      final atBase =
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!;
+
+      s.w = 520; // twice the width insertSubstitute gives it
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!,
+          greaterThan(atBase * 1.5),
+          reason: 'twice the width, near twice the type');
+
+      // Narrower than the base must NOT shrink it below the default — the
+      // whole complaint was that it was too small.
+      s.w = 120;
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!,
+          atBase,
+          reason: 'the floor is the default');
+
+      // And it stops, so a page-wide box cannot produce absurd type.
+      s.w = 4000;
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!,
+          atBase * 2.2,
+          reason: 'capped');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a formula needing nothing just shows its value',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `x = 3` used to be refused with the GRAPHER's words — "a vertical
+      // line has no value to work out" — because a substitute block borrowed
+      // the grapher's reading whole. Read as a formula it has no names to
+      // fill in and the answer is simply 3.
+      final s = app.insertSubstitute(latex: 'x=3');
+      await pump(tester, s);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('x = 3'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -305,11 +538,11 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '2');
       await tester.pump();
-      expect(find.text('= 16'), findsOneWidget);
+      expect(find.text('y = 16'), findsOneWidget);
 
       app.pushEquationToSubstitutes(eq.id, 'y=2x+6');
       await tester.pump();
-      expect(find.text('= 10'), findsOneWidget);
+      expect(find.text('y = 10'), findsOneWidget);
       app.cancelPendingSave();
     });
 

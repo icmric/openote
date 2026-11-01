@@ -20,7 +20,7 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:sqlite3/sqlite3.dart';
+import 'sqlite_backend.dart';
 
 import '../ink/ink_storage.dart';
 import '../model/models.dart';
@@ -32,7 +32,7 @@ class NotebookWriter {
   /// opens or closes it, because the two owners disagree about lifetime
   /// (Repository pools handles for the session; the isolate opens one and
   /// exits).
-  final Database db;
+  final CommonDatabase db;
 
   List<TreeNode> loadNodes() {
     final rows = db.select(

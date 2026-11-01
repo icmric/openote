@@ -181,6 +181,38 @@ void main() {
     });
   });
 
+  group('wrapping a selection can never produce undrawable TeX', () {
+    testWidgets('every bracket, around every structure the palette offers',
+        (tester) async {
+      // The same generated sweep as Backspace above, and for the same
+      // reason: wrapping moves real nodes into a `\left…\right` pair, so
+      // anything the palette can build can end up inside one.
+      //
+      // The curly pair is why this is worth sweeping rather than spot
+      // checking. `MDelim` emits `\left$left`, and `\left{` is not a
+      // delimiter — TeX reads it as `\left` followed by a group and gives
+      // up — so both ends need escaping, and the first cut escaped only the
+      // closing one and produced `\left{ x+1\right\{`.
+      for (final open in MathEditor.wrapBrackets.keys) {
+        for (final item in mathItems.where((i) => i.cat == MathCat.structure)) {
+          final e = MathEditor.empty()..insertItem(item);
+          e.insertChar('x');
+          // Select the whole root row, then wrap it.
+          e.placeAt(0);
+          while (e.caretIndex < e.root.length) {
+            e.extendBy(1);
+          }
+          if (!e.hasSelection) continue;
+          expect(e.wrapSelection(open), isTrue, reason: '${item.id} / $open');
+          final r = await render(tester, e.latex);
+          expect(r.drew, isTrue,
+              reason: '${item.id} wrapped in `$open` stores ${e.latex}, '
+                  'which cannot be drawn');
+        }
+      }
+    });
+  });
+
   group('the shortcuts do not fire on ordinary maths', () {
     test('x < -3 stays an inequality', () {
       // `<-` used to become ←, and the space between could not stop it because
@@ -255,9 +287,55 @@ void _qol() {
       // Nineteen of the shapes had no `typeIt` at all, so the only way to a
       // matrix was the mouse. The route is what makes moving twelve chips off
       // the row honest.
-      for (final item in mathItems.where((i) => i.cat == MathCat.structure)) {
+      //
+      // A VARIANT is exempt, and `MathItem.variantOf` is how it says so: a
+      // prefilled `∑` from i = 1 to n is the `sum` shape with its slots
+      // already filled, and `\sum` plus the slots is the route to it. A
+      // control word of its own would be a string nobody would guess sitting
+      // in the autocorrect table.
+      for (final item in mathItems.where(
+          (i) => i.cat == MathCat.structure && i.variantOf == null)) {
         expect(item.typeIt, isNotNull,
             reason: '${item.id} can only be reached with the mouse');
+      }
+    });
+
+    test('and a variant shows on its face exactly what it inserts', () {
+      // Nothing tied a button's PREVIEW to what pressing it builds, and the
+      // first cut of the prefilled integral drifted: its face read
+      // `\int_{a}^{b}\square\,dx`, promising an empty box for the
+      // integrand, while it built `\int_{a}^{b}dx` with no box at all. The
+      // caret lands in the right place either way, so only the face was
+      // wrong — and a face that promises an affordance the equation does not
+      // have is the kind of thing nobody reports, they just stop trusting
+      // the buttons.
+      //
+      // Variants only, and that is not a cop-out: a variant has no empty
+      // slots by definition, which is the whole of what makes it one, so its
+      // LaTeX is fully determined. A BLANK shape's preview legitimately
+      // differs, because it draws `\square` where the built tree has a
+      // genuinely empty row.
+      String squash(String tex) => tex.replaceAll(' ', '');
+      for (final item in mathItems.where((i) => i.variantOf != null)) {
+        final preview = item.preview;
+        expect(preview, isNotNull, reason: '${item.id} has no face');
+        final row = MRow()..addAll(item.build());
+        expect(squash(rowToTex(row, const MathTexCtx())), squash(preview!),
+            reason: '${item.id} shows one thing and inserts another');
+      }
+    });
+
+    test('and a variant names a shape that really has one', () {
+      // The exemption above is only honest if `variantOf` points at something
+      // real and reachable — otherwise it is a way to opt out of the rule.
+      for (final item in mathItems.where((i) => i.variantOf != null)) {
+        final parent = mathItemsById[item.variantOf];
+        expect(parent, isNotNull,
+            reason: '${item.id} is a variant of "${item.variantOf}", '
+                'which does not exist');
+        expect(parent!.typeIt, isNotNull,
+            reason: '${item.id} is exempt via ${parent.id}, which has no '
+                'keyboard route either');
       }
     });
   });

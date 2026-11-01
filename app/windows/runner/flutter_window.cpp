@@ -25,7 +25,14 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  pen_buttons_ =
+      std::make_unique<PenButtons>(flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  // **Onto the VIEW's window, not this one.** The engine's own source says
+  // "the view owns the child window", and Win32 sends pointer messages to the
+  // window under the cursor without bubbling them to parents — so watching
+  // this window's procedure saw nothing at all. See pen_buttons.h.
+  pen_buttons_->Attach(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -40,6 +47,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  pen_buttons_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

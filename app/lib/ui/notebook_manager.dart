@@ -7,6 +7,7 @@ import '../export/md_import.dart';
 import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../l10n/l10n.dart';
+import '../core/capabilities.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'join_git_dialog.dart';
@@ -237,24 +238,39 @@ class _NotebookManagerState extends State<_NotebookManager> {
   /// this route, so neither can go stale under an import that takes a minute.
   Widget _importRow() {
     final l = L.of(context);
+    // Every route on this row reaches the disk, and three of them also need
+    // the Rust core that parses OneNote. In the browser demo none of that
+    // exists — so they are greyed with their reason on hover rather than
+    // removed, because "it can take your OneNote notebooks" is one of the
+    // things a visitor most needs to learn that the app does.
     Widget choice(IconData icon, String label,
-            Future<void> Function(ScaffoldMessengerState, BuildContext) run) =>
-        Padding(
-          padding: const EdgeInsets.only(right: 6, top: 6),
-          child: OutlinedButton.icon(
-            icon: Icon(icon, size: 16),
-            label: Text(label, style: const TextStyle(fontSize: 13)),
-            onPressed: () async {
+            Future<void> Function(ScaffoldMessengerState, BuildContext) run,
+            {Capability needs = Capability.localFiles}) {
+      final off = !Capabilities.has(needs);
+      final button = OutlinedButton.icon(
+        icon: Icon(icon, size: 16),
+        label: Text(label, style: const TextStyle(fontSize: 13)),
+        onPressed: off
+            ? null
+            : () async {
               final messenger = ScaffoldMessenger.of(context);
               final rootContext = Navigator.of(context, rootNavigator: true).context;
               setState(() => _importOpen = false);
               // Close the panel first: the imports that still show a modal put
               // it over the shell, not over a list the user has finished with.
-              Navigator.pop(context);
-              await run(messenger, rootContext);
-            },
-          ),
-        );
+                Navigator.pop(context);
+                await run(messenger, rootContext);
+              },
+      );
+      return Padding(
+        padding: const EdgeInsets.only(right: 6, top: 6),
+        child: off
+            ? Tooltip(
+                message: '$label — ${l.commandNotInDemo}', child: button)
+            : button,
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Wrap(children: [
@@ -264,11 +280,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
         // platforms out of three the file routes below are not a slower
         // option, they are no option.
         choice(Icons.cloud_sync_outlined, l.oneNoteCloudTitle,
-            (m, c) => showOneNoteCloudDialog(c, app)),
+            (m, c) => showOneNoteCloudDialog(c, app),
+            needs: Capability.onenoteImport),
         choice(Icons.library_books_outlined, l.nbImportOnepkg,
-            (m, _) => importOneNotePackageWithFeedback(m, app)),
+            (m, _) => importOneNotePackageWithFeedback(m, app),
+            needs: Capability.onenoteImport),
         choice(Icons.upload_file_outlined, l.nbImportOne,
-            (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m)),
+            (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m),
+            needs: Capability.onenoteImport),
         choice(Icons.drive_folder_upload_outlined, l.nbImportMarkdown,
             (m, _) => importMarkdownWithFeedback(m, app)),
         // The other end of "put this notebook on GitHub". It sits with the

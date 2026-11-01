@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' hide Directory, File, FileMode, FileStat,
+    FileSystemEntity, FileSystemEntityType, FileSystemException,
+    OSError, RandomAccessFile;
+
+import '../store/fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart'; // ThemeMode + widgets
 import 'package:path/path.dart' as p;
 import 'package:super_clipboard/super_clipboard.dart'
@@ -18,9 +23,11 @@ import '../core/onote_ffi.dart';
 import '../core/secret_store.dart';
 import '../core/open_target.dart'
     show isOpenoteWorkingCopy, notebookFolderNamedBy;
+import '../editor/live_markdown_controller.dart' show LiveMarkdownController;
 import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
+import '../model/block_metrics.dart';
 import '../model/history.dart';
 import '../model/inline_atom.dart';
 import '../math/active_math.dart';
@@ -47,6 +54,7 @@ import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../editor/inline_table.dart' show tableColumnWidths;
 import '../editor/list_editing.dart';
+import '../core/pen_buttons.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
@@ -59,10 +67,10 @@ import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
-import 'builtin_templates.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/device_identity.dart';
+import '../sync/device_seq.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
 import '../sync/op_log.dart';
@@ -89,9 +97,10 @@ enum EraserMode {
 
 /// Whether a finger draws when an ink tool is selected (INK-1 / INK-4).
 enum TouchDrawing {
-  /// Draw with touch, unless a stylus is in use — then touch pans so a resting
-  /// palm can't mark the page. The default: it gives pen users OneNote's palm
-  /// rejection while leaving ink reachable on a touch-only tablet.
+  /// Draw with touch only on a machine where **no pen has ever been used**.
+  /// The default: a touch-only tablet can still ink (INK-1), and anybody who
+  /// has ever picked up a pen here gets a finger that navigates instead of a
+  /// palm that draws.
   auto,
 
   /// Always draw with touch, even with a stylus present.
@@ -411,6 +420,25 @@ class AppState extends ChangeNotifier
   int? mcpPort;
   String? mcpError;
 
+  /// Whether the server actually bound — not whether it was asked to. The
+  /// AI dialog says "Ready" off this, and only this.
+  bool get mcpListening => _mcpServer?.running ?? false;
+
+  /// When an AI helper last reached the server; see [McpServer.lastRequest].
+  /// Null until the server has been started at least once.
+  ValueListenable<DateTime?>? get mcpLastRequest => _mcpServer?.lastRequest;
+
+  /// Hand the app a server a test has already started, **without** going
+  /// through [setMcpEnabled] — which rewrites the `openote` entry in every
+  /// AI client config on the machine running the test.
+  @visibleForTesting
+  void debugUseMcpServer(McpServer server) {
+    _mcpServer = server;
+    mcpEnabled = true;
+    mcpPort = server.port;
+    notifyListeners();
+  }
+
   /// Turn the local MCP server on or off. Off is the default forever; on
   /// generates a bearer token once and binds 127.0.0.1 (spec 14 §4). The
   /// chosen port persists so pasted client configs stay valid.
@@ -479,6 +507,19 @@ class AppState extends ChangeNotifier
   /// Unlocked subtree roots → when the unlock expires (null = this session).
   final Map<String, DateTime?> _unlocked = {};
 
+  /// Unlocked subtree roots for **this visit to the open page** — what
+  /// [UnlockPolicy.always] ("Every time it is opened") grants.
+  ///
+  /// It needs a home of its own because that policy's unlock must not be
+  /// cached past the page it was given for, and because the gate is read at
+  /// BUILD time, not on the click: `isLocked` decides what the page area
+  /// renders every frame (see `_LockedPage` in app_shell). An unlock that is
+  /// recorded nowhere is therefore an unlock that never happened — picking
+  /// "Every time it is opened" made the node permanently unopenable, the
+  /// right passcode included, from the day the feature shipped. Cleared
+  /// alongside [_windowUnlocks] when the open page changes.
+  final Set<String> _visitUnlocks = {};
+
   /// Bumped whenever the set of locked nodes could have changed. Caches that
   /// filter on [isLocked] must include it in their key, or they answer from
   /// before the lock.
@@ -509,6 +550,8 @@ class AppState extends ChangeNotifier
   void reloadProtection() {
     _protectedIds.clear();
     _unlocked.clear();
+    _visitUnlocks.clear();
+    _windowUnlocks.clear();
     if (notebookId == null) return;
     final prefix = 'protect:${notebookId!}:';
     for (final k in _repo.settingKeys()) {
@@ -525,55 +568,33 @@ class AppState extends ChangeNotifier
   /// whose passcode actually governs it. Null when nothing above it is
   /// protected.
   ///
-  /// Walking UP rather than marking descendants is what makes protection apply
-  /// to pages added to a locked section later, without any bookkeeping.
+  /// The walk is [ProtectionTree]'s, shared with the AI helpers' door so the
+  /// two can never disagree about which pages a passcode covers — including
+  /// the subpage rule, which is the part that has gone wrong before.
   String? governingNode(String nodeId) {
     if (!_anyProtection) return null;
-    final byId = {for (final n in nodes) n.id: n};
-    String? cur = nodeId;
-    // Bounded: a corrupt parent cycle must not hang the page-open path.
-    for (var i = 0; cur != null && i < 64; i++) {
-      if (_protectedIds.contains(cur)) return cur;
-      cur = _protectionParent(byId[cur]);
-    }
-    return null;
+    return ProtectionTree(nodes, _protectedIds.contains).governing(nodeId);
   }
 
-  /// The node one step up the hierarchy the USER sees.
+  /// **Every node with a passcode on it in notebook [nb]** — open or not.
   ///
-  /// For everything except a sub-page that is `parentId`. A sub-page is the
-  /// exception, and it is why locking a page did not lock the pages indented
-  /// beneath it: sub-pages are not children in the data model at all. Every
-  /// page's `parentId` is its SECTION — `makeSubpageOf` sets
-  /// `parentId = target.parentId` — and the nesting the navigator draws is
-  /// [TreeNode.level] plus position order. So walking `parentId` from a
-  /// sub-page steps straight past its parent page to the section, and a
-  /// passcode on the parent governs nothing.
-  ///
-  /// The rule here is the one the rest of the app already uses for exactly
-  /// this relationship (`sidebar._pageEntriesFor`, `sortSection`): a page's
-  /// parent is the nearest PRECEDING page in the section, in position order,
-  /// with a strictly smaller level.
-  String? _protectionParent(TreeNode? n) {
-    if (n == null) return null;
-    if (n.kind != NodeKind.page || n.level == 0) return n.parentId;
-    final siblings = pagesOf(n.parentId ?? '');
-    final i = siblings.indexWhere((p) => p.id == n.id);
-    // Not found: an id from another notebook, or nodes mid-reload. Falling
-    // back to parentId keeps the walk terminating on something real.
-    if (i < 0) return n.parentId;
-    for (var j = i - 1; j >= 0; j--) {
-      if (siblings[j].level < n.level) return siblings[j].id;
-    }
-    // Indented with nothing shallower above it — malformed, but a real state
-    // an import can produce. The section still governs it.
-    return n.parentId;
+  /// The AI helpers' door reaches every notebook in the workspace, and
+  /// [governingNode] knows only the open one: [_protectedIds] is loaded per
+  /// notebook switch. So this reads the records themselves, which live in
+  /// workspace settings for every notebook at once.
+  Set<String> protectedNodeIdsOf(String nb) {
+    final prefix = 'protect:$nb:';
+    return {
+      for (final k in _repo.settingKeys())
+        if (k.startsWith(prefix)) k.substring(prefix.length)
+    };
   }
 
   /// Is [nodeId] currently hidden behind a passcode?
   bool isLocked(String nodeId) {
     final root = governingNode(nodeId);
     if (root == null) return false;
+    if (_visitUnlocks.contains(root)) return false;
     if (!_unlocked.containsKey(root)) return true;
     final until = _unlocked[root];
     if (until == null) return false; // session-length unlock
@@ -591,8 +612,12 @@ class AppState extends ChangeNotifier
     final rec = protectionFor(root);
     if (rec == null || !rec.matches(passcode)) return false;
     final d = rec.policy.duration;
-    // `always` is not cached at all: the next open asks again.
-    if (rec.policy != UnlockPolicy.always) {
+    // `always` lasts for this visit only — it is not cached, so opening any
+    // other page covered by the same passcode asks again — but it does have
+    // to be recorded somewhere, or the lock screen simply rebuilds itself.
+    if (rec.policy == UnlockPolicy.always) {
+      _visitUnlocks.add(root);
+    } else {
       _unlocked[root] = d == null ? null : DateTime.now().add(d);
     }
     _gateRevision++;
@@ -606,6 +631,7 @@ class AppState extends ChangeNotifier
         _protectKey(nodeId), newProtection(passcode, policy).toJson());
     _protectedIds.add(nodeId);
     _unlocked.remove(nodeId);
+    _visitUnlocks.remove(nodeId);
     _gateRevision++;
     notifyListeners();
   }
@@ -618,6 +644,7 @@ class AppState extends ChangeNotifier
     _repo.setSetting(_protectKey(nodeId), null);
     _protectedIds.remove(nodeId);
     _unlocked.remove(nodeId);
+    _visitUnlocks.remove(nodeId);
     _gateRevision++;
     notifyListeners();
     return true;
@@ -625,10 +652,72 @@ class AppState extends ChangeNotifier
 
   /// Forget every unlock now — the "Lock now" action, and what shutdown does.
   void lockAll() {
-    if (_unlocked.isEmpty) return;
+    if (_unlocked.isEmpty && _visitUnlocks.isEmpty && _windowUnlocks.isEmpty) {
+      return;
+    }
     _unlocked.clear();
+    _visitUnlocks.clear();
+    _windowUnlocks.clear();
     _gateRevision++;
     notifyListeners();
+  }
+
+  // ── Windows onto pages with a passcode (v1.0.2 bug 33) ──────────────────
+  //
+  // A page window draws its source live, and nothing asked about the
+  // passcode: drag a locked page from the navigator onto any other page and
+  // its contents were there. The owner's rule for the fix: *"it requires a
+  // passcode to be able to view it before we insert/select a portion of the
+  // page to show, then require it again every time the page is opened to
+  // unlock the view."*
+  //
+  // So a window keeps its own unlocks, separate from [_unlocked], and they
+  // last for one visit to the page the window is on. Unlocking the section
+  // in the navigator does not open its windows elsewhere, and opening a
+  // window does not unlock the section: the two are different doors.
+
+  /// Passcode roots whose pages windows may show, on this visit to the page
+  /// they are on. Keyed by root, so one passcode opens every window onto the
+  /// pages it covers.
+  final Set<String> _windowUnlocks = {};
+
+  /// **Whether a window may show page [sourcePageId] now.**
+  ///
+  /// Always for a page with no passcode over it, and for the page you are
+  /// looking at — a window onto part of its own page shows nothing you cannot
+  /// already see beside it.
+  bool windowShows(String sourcePageId) {
+    if (sourcePageId == pageId) return true;
+    if (node(sourcePageId) == null) {
+      // In the recycle bin, a page is out of the tree, so nothing says which
+      // section it sat in — and that section may have a passcode. Unable to
+      // tell, a window shows one only where nothing in the notebook has one.
+      return !_anyProtection;
+    }
+    final root = governingNode(sourcePageId);
+    return root == null || _windowUnlocks.contains(root);
+  }
+
+  /// Try [passcode] for the windows onto [sourcePageId], for the rest of this
+  /// visit to the open page. Returns false — and changes nothing — when it
+  /// does not match.
+  bool unlockWindowsOnto(String sourcePageId, String passcode) {
+    final root = governingNode(sourcePageId);
+    if (root == null) return true;
+    final rec = protectionFor(root);
+    if (rec == null || !rec.matches(passcode)) return false;
+    _windowUnlocks.add(root);
+    _gateRevision++;
+    notifyListeners();
+    return true;
+  }
+
+  /// The name the passcode prompt for a window onto [sourcePageId] shows: the
+  /// thing whose passcode it is, which may be the section rather than the page.
+  String windowLockTitle(String sourcePageId) {
+    final root = governingNode(sourcePageId) ?? sourcePageId;
+    final t = nodes.where((n) => n.id == root).firstOrNull?.title.trim() ?? '';
+    return t.isEmpty ? 'This page' : t;
   }
 
   // ── Git as a sync transport (PLANNING: "git/github integration") ──────
@@ -1245,8 +1334,26 @@ class AppState extends ChangeNotifier
   /// open of every imported notebook.
   void rememberImportedSeq(String nb, int seq) {
     if (seq <= 0) return;
+    _seqStoreFor(nb).write(seq);
     _repo.setSetting(DeviceIdentity.seqKey(nb), seq);
   }
+
+  /// Where [nb]'s last-written seq is remembered durably.
+  ///
+  /// **Local**, because the record only means anything as a claim about this
+  /// installation — a copy inside the notebook would travel to a second one and
+  /// agree with it. See `sync/device_seq.dart`.
+  ///
+  /// **And its own directory, not `.cache/<id>/`.** That one belongs to the
+  /// container demotion, which treats anything in it as the leftovers of a
+  /// migration that never committed: `Repository._settleDemotion` deletes it on
+  /// every open of a notebook that is not demoted, and `demoteContainerToCache`
+  /// clears it before it starts. Either would take the record with it.
+  ///
+  /// `findOrphanFiles` collects only `.onote`, `.onotebook` and stray WAL files,
+  /// so this is invisible to it and cannot be offered to anybody as a leftover.
+  DeviceSeqStore _seqStoreFor(String nb) => DeviceSeqStore(
+      Directory(p.join(_repo.workspaceDir.path, '.devseq', nb)));
 
   /// The recorder for [nb], opening one **synchronously** if none exists.
   ///
@@ -1277,6 +1384,8 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
+        seqOf: _seqStoreFor(nb).read,
+        rememberSeq: _seqStoreFor(nb).write,
         // **Always, not only when the notebook looks shared** (v0.17 plan,
         // Step 5). `notebookIsShared` was a disk trade that quietly made the
         // log unable to rebuild the notebook it describes: measured on the
@@ -1398,6 +1507,8 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
+        seqOf: _seqStoreFor(nb).read,
+        rememberSeq: _seqStoreFor(nb).write,
         // Unconditional, exactly as in `_recorderFor` — see the note there.
         materialiseBlobs: true,
       );
@@ -2957,7 +3068,12 @@ class AppState extends ChangeNotifier
     // as long as the replay took. A status read must never pay a writer's
     // setup cost. (A side effect goes with it: painting a dot no longer
     // *creates* `.onotebook` directories for notebooks that had none.)
-    final n = _bareLog(nb)?.deviceIds().length ?? 0;
+    // `activeDeviceIds`, NOT `deviceIds`. A listing of `ops/` counts every
+    // identity that ever wrote, and nothing deletes a log — so a reinstall, a
+    // restored backup or an identity fork each add one for ever and the number
+    // only ever climbs. See `OpLogStore.activeDeviceIds`.
+    final me = _repo.getSetting(DeviceIdentity.settingsKey) as String?;
+    final n = _bareLog(nb)?.activeDeviceIds(alsoCount: me).length ?? 0;
     _deviceCountCache[nb] = (count: n, at: now);
     return n;
   }
@@ -2971,6 +3087,14 @@ class AppState extends ChangeNotifier
   }
 
   final Map<String, ({int count, int at})> _deviceCountCache = {};
+
+  /// Drop [nb]'s cached device count, for a test that changes the logs under it.
+  ///
+  /// The cache holds for five seconds so that painting a dot does not list a
+  /// directory on every frame, which means a test writing a log and asking again
+  /// gets the stale answer and passes for the wrong reason.
+  @visibleForTesting
+  void invalidateDeviceCountForTest(String nb) => _deviceCountCache.remove(nb);
 
   /// Re-check sync status periodically, and notify only when it CHANGES.
   ///
@@ -4054,8 +4178,8 @@ class AppState extends ChangeNotifier
   /// Each of these has been the whole of a video's existence at some moment:
   /// the undo stack is how an accidental delete is taken back, the clipboard
   /// survives switching notebook, [blocks] is the only copy during the save
-  /// debounce, and a template lives in the workspace rather than in any
-  /// notebook at all — so a template saved from THIS notebook's page is a
+  /// debounce, and a template saved by a build that still had page templates
+  /// lives in the workspace rather than in any notebook at all — so it is a
   /// reference the container knows nothing about.
   Iterable<String> _volatileMediaText(String nb) sync* {
     if (notebookId == nb) {
@@ -4065,8 +4189,14 @@ class AppState extends ChangeNotifier
     }
     final clip = _blockClipboard;
     if (clip != null) yield clip;
-    // Not scoped to this notebook: a template is appliable into any of them,
-    // and the name it carries only resolves in the one it was saved from.
+    // **Page templates are gone, and this root is not.** Nothing writes the
+    // setting any more (see the commit that removed them), but what is
+    // already in the workspace was NOT deleted with the feature — a template
+    // saved from a page with a video on it still names that video's file, and
+    // collecting it would quietly hollow out the one copy of somebody's
+    // recording. Reading it costs a map lookup on a path that already reads
+    // several. Not scoped to one notebook: a template could be applied into
+    // any of them.
     final t = _repo.getSetting('templates');
     if (t is Map) yield jsonEncode(t);
     // **The ten notable deletions are a garbage-collection root** (v0.17 plan,
@@ -4646,7 +4776,7 @@ class AppState extends ChangeNotifier
   ///
   /// The gap is the same 12px the align guides settle to, so a block put here
   /// looks placed rather than dropped.
-  Offset belowBlock(Block b) => Offset(b.x, _rectOf(b).bottom + 12);
+  Offset belowBlock(Block b) => Offset(b.x, blockRect(b).bottom + 12);
 
   /// The block a new one should be placed under, or null to fall back to the
   /// middle of the view. Never names a block on another page: [blockById]
@@ -4680,6 +4810,21 @@ class AppState extends ChangeNotifier
   /// Measured render sizes of auto-height blocks (runtime only; used for
   /// culling, marquee hit-testing, and content bounds).
   final Map<String, Size> renderSizes = {};
+
+  /// **A two-finger pinch is under way, so blocks stand down.**
+  ///
+  /// A finger dragged over a box pans the page (v1.0.2 bug 8) and the box's
+  /// own `Listener` does that panning, because the box claimed the pointer
+  /// and the canvas never sees it. With a second finger down that is a second
+  /// navigation fighting the pinch — one finger panning at screen speed while
+  /// the other zooms — which is the owner's *"it getting confused with
+  /// multiple inputs and just registering one or the other as it jumps all
+  /// over the place"*.
+  ///
+  /// Set by `PageCanvas` for the life of the gesture. Not a notifier: it is
+  /// read inside a pointer handler that is already running, and a rebuild per
+  /// finger-down would be a cost with nothing to show.
+  bool pinching = false;
 
   /// Pointer ids claimed by block widgets this gesture, so the canvas-level
   /// handler ignores them (see BlockView / PageCanvas).
@@ -5022,8 +5167,7 @@ class AppState extends ChangeNotifier
     _commitActiveEditor();
     // Blanking only means something on a line that is already a card.
     if (tagsAtCaret().isEmpty) toggleTagOnSelection(TagKind.question);
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
     return true;
   }
 
@@ -5447,6 +5591,33 @@ class AppState extends ChangeNotifier
   /// pan unconditionally, which meant ink was unreachable on a touch-only
   /// tablet — palm rejection implemented as "fingers never draw" rather than
   /// "fingers don't draw *while a pen is in use*".
+  /// **Whether a pen has ever been used on this machine.**
+  ///
+  /// Persisted, because it is a question about the hardware rather than the
+  /// minute: *"it should never use regular touch to draw when a pen has been
+  /// used."* See [touchShouldDraw], which used to ask whether one had been
+  /// seen in the last two seconds — shorter than the pause between two words.
+  bool penSeenHere = false;
+
+  /// Said once, the first time a stylus reports itself.
+  void notePenSeen() {
+    if (penSeenHere) return;
+    penSeenHere = true;
+    _repo.setSetting('penSeenHere', true);
+    notifyListeners();
+  }
+
+  /// What a press of the pen's side button does. See [PenButtons].
+  /// Defaults to the lasso, which is what the barrel does in OneNote — and
+  /// the button a driver calls the eraser erases through its own flag, so the
+  /// two no longer collide on one meaning.
+  PenButtonAction penButton = PenButtonAction.lasso;
+  void setPenButton(PenButtonAction v) {
+    penButton = v;
+    _repo.setSetting('penButton', v.name);
+    notifyListeners();
+  }
+
   TouchDrawing touchDrawing = TouchDrawing.auto;
 
   void setTouchDrawing(TouchDrawing v) {
@@ -5483,13 +5654,36 @@ class AppState extends ChangeNotifier
   /// PRIMARY block alone and says nothing about the others, so the floating
   /// button is the only control that means "all of this".
   ///
-  /// The case this button was built for is not lost by that. It was for ink
-  /// on a tablet, where there is no Delete key — but a lasso leaves the lasso
-  /// tool in hand, not a pen, and a lassoed block shows its bar and its cross
-  /// like any other. A pen cannot be in hand with something selected at all,
-  /// because [setTool] clears the selection on the way to any tool that
-  /// draws.
-  bool get showSelectionDelete => selectedIds.length > 1;
+  /// **Unless the one thing has no bar to put a cross on**, which is the case
+  /// the button was built for in the first place: ink on a tablet, where there
+  /// is no Delete key either. A stroke is its own block and ink is painted
+  /// rather than built, so there is no move bar anywhere on it — and the same
+  /// goes for a box while a drawing tool is in hand, since a block shows no
+  /// chrome at all then. The owner, lassoing: *"When one or more items are
+  /// selected with the lasso, it should have that little delete icon like we
+  /// have when selecting multiple boxes."*
+  ///
+  /// Both halves of that used to be impossible and are not any more: a loop
+  /// round one stroke selects one block, and letting go of a side button
+  /// hands the pen back without dropping the selection.
+  ///
+  /// **Never while the eraser is in hand**, whatever is selected: that tool's
+  /// whole job is to take things away by pointing at them, and a button
+  /// floating in the way of the pointer is worse than no button.
+  bool get showSelectionDelete {
+    if (selectedIds.isEmpty || tool == Tool.eraser) return false;
+    if (selectedIds.length > 1) return true;
+    if (inkToolInHand) return true;
+    return blockById(selectedIds.first)?.type == BlockType.ink;
+  }
+
+  /// Whether the tool in hand draws, which is also the question "does
+  /// anything on the page show its own chrome right now" — a block goes inert
+  /// and loses its bar while one of these is held, so that the pen can write
+  /// over it. One definition, because three of them drifting apart is how a
+  /// box ends up with no way to delete it.
+  bool get inkToolInHand =>
+      tool == Tool.pen || tool == Tool.highlighter || tool == Tool.eraser;
 
   bool get hasInkSelection =>
       blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
@@ -5539,7 +5733,7 @@ class AppState extends ChangeNotifier
     if (moving == null) return;
     final others = [
       for (final b in blocks)
-        if (!selectedIds.contains(b.id)) _rectOf(b)
+        if (!selectedIds.contains(b.id)) blockRect(b)
     ];
     final r = findAlignment(moving, others, threshold: 7.0 / scale);
     alignGuides = r.guides;
@@ -5558,13 +5752,55 @@ class AppState extends ChangeNotifier
     alignGuides = const [];
   }
 
-  Rect _rectOf(Block b) =>
-      Rect.fromLTWH(b.x, b.y, b.w, b.h ?? renderSizes[b.id]?.height ?? 60);
+  /// **The rectangle a block occupies**, for selection, hit-testing, the
+  /// alignment guides and deciding what is on top of what.
+  ///
+  /// [aspectHeight] before the measured height because a picture's own
+  /// proportions are known the moment it is added, while the measurement
+  /// arrives a frame after layout — so a slide was reckoned to be a
+  /// sixty-pixel strip for exactly as long as it took anybody to click on it.
+  ///
+  /// One copy, because there were two: the canvas had this formula and the
+  /// alignment guides had it without the aspect fallback, which is the same
+  /// sixty-pixel bug in a place nobody had reported it from yet.
+  Rect blockRect(Block b) => Rect.fromLTWH(b.x, b.y, b.w,
+      b.h ?? aspectHeight(b) ?? renderSizes[b.id]?.height ?? 60);
+
+  /// Page-space rectangles of everything that brings its own background — an
+  /// imported picture, a PDF page.
+  List<Rect> get documentRects => [
+        for (final b in blocks)
+          if (b.type == BlockType.image ||
+              (b.type == BlockType.file &&
+                  b.content['mime'] == 'application/pdf'))
+            blockRect(b),
+      ];
+
+  /// **Whether [b] sits on top of one of those**, so that what is `auto`
+  /// about it should contrast with the document rather than with the page.
+  ///
+  /// The rule and its reasoning belong to `InkPainter.overDocument`, which
+  /// has asked it per stroke since the report that *"automatic white ink is
+  /// also invisible on white documents in dark mode"*. Text asks it too now:
+  /// *"when typing on a PDF, auto text colour should work like auto ink
+  /// colour where it adjusts between black and white based on the PDF."*
+  ///
+  /// The block's CENTRE decides, as a stroke's midpoint does: a box mostly on
+  /// the slide reads as being on the slide, and half a box changing colour
+  /// would be worse than either answer.
+  bool overDocument(Block b) {
+    if (b.type == BlockType.image || b.type == BlockType.file) return false;
+    final at = blockRect(b).center;
+    for (final r in documentRects) {
+      if (r.contains(at)) return true;
+    }
+    return false;
+  }
 
   Rect? _unionRect(Set<String> ids) {
     Rect? out;
     for (final b in blocks.where((b) => ids.contains(b.id))) {
-      final r = _rectOf(b);
+      final r = blockRect(b);
       out = out == null ? r : out.expandToInclude(r);
     }
     return out;
@@ -5759,7 +5995,22 @@ class AppState extends ChangeNotifier
   void _commitActiveEditor() {
     final ae = activeEditor;
     if (ae == null) return;
-    ae.block.content[ae.contentKey] = ae.controller.text;
+    final now = ae.controller.text;
+    // **Tags and review schedules follow their lines, here too.** Typing does
+    // this in `TextBlockView.onChanged`; a programmatic insert never fires
+    // the field's `onChanged`, so it came through here and wrote the text
+    // alone. A tag records a line INDEX and a flashcard is `blockId:line`, so
+    // pasting three lines above a reviewed card moved the card and left its
+    // history under the name of whatever is now on that line — the exact
+    // swap fixed for typing, by the same two calls.
+    if (ae.block.type == BlockType.text) {
+      final was = ae.block.content[ae.contentKey] as String? ?? '';
+      if (was != now) {
+        NoteTag.rebase(ae.block.content, was, now);
+        study.remapCardStates(ae.block.id, NoteTag.lineMoves(was, now));
+      }
+    }
+    ae.block.content[ae.contentKey] = now;
     ae.block.updatedAt = nowMs();
     markDirty();
   }
@@ -5788,23 +6039,57 @@ class AppState extends ChangeNotifier
   void refreshChrome() => notifyListeners();
 
   /// Insert text at the caret of the active editor (e.g. a page link inline).
-  void insertTextAtActiveCursor(String s) {
+  ///
+  /// [recordUndo] false folds the insert into an undo step the caller has
+  /// already pushed — see [pasteBlocksIntoText], which has to change the
+  /// block's `atoms` in the same step.
+  ///
+  /// **Text and caret go in together, in ONE value assignment.** Setting
+  /// `.text` first makes the selection invalid (Flutter's own setter does
+  /// that), and the controller's guards read the selection: with none,
+  /// `_keepObjectLinesWhole` cannot shift the caret past a line break it had
+  /// to insert and `_snapOutOfHiddenMarkers` stands down entirely, so a
+  /// second assignment of the caret landed it at an offset computed against
+  /// the pre-guard text. Pasting a box ending in a picture left the caret
+  /// INSIDE the picture's reference — one keystroke from the hash appearing
+  /// in the note, which is the thing those guards exist to prevent.
+  void insertTextAtActiveCursor(String s, {bool recordUndo = true}) {
     final ae = activeEditor;
     if (ae == null) return;
     final c = ae.controller;
     final sel = c.selection;
     final at = sel.isValid ? sel.start : c.text.length;
     final end = sel.isValid ? sel.end : c.text.length;
-    pushUndo();
-    c.text = c.text.replaceRange(at, end, s);
-    c.selection = TextSelection.collapsed(offset: at + s.length);
+    if (recordUndo) pushUndo();
+    c.value = TextEditingValue(
+      text: c.text.replaceRange(at, end, s),
+      selection: TextSelection.collapsed(offset: at + s.length),
+    );
     _commitActiveEditor();
     notifyListeners();
   }
 
   // ── Text colour (inline {{#RRGGBB text}}) ──────────────────────────────
 
-  String lastColor = 'C63838'; // last-used ink colour; default red
+  /// **The two colours Ctrl+Shift+C flicks between**, most recent first.
+  ///
+  /// The owner: *"ctrl + shift + c does flick it back to the last colour,
+  /// however pressing it again doesnt then do the other colour. The usecase
+  /// for that shortcut was being able to flick between colours when writing
+  /// some text where i want to set the colour of a couple words, but not
+  /// every word."*
+  ///
+  /// So the shortcut swaps rather than toggling colour against no-colour. It
+  /// reads what the selection already has and applies the OTHER one, which
+  /// alternates however many times it is pressed. `'auto'` is one of the two
+  /// — and it is [prevColor]'s starting value, so out of the box the flick is
+  /// between the last colour and the default, which is the "a couple of words,
+  /// not every word" case.
+  String lastColor = 'C63838'; // the chosen text colour; default red
+
+  /// The one before [lastColor]. Only [applyTextColor] moves it, so flicking
+  /// does not reorder the pair under the student's fingers.
+  String prevColor = 'auto';
   final List<String> customColors = []; // recent/custom, persisted
   void rememberCustomColor(String hex) {
     customColors.remove(hex);
@@ -5814,17 +6099,130 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  static final _colorOpenRe =
-      RegExp(r'\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) $');
-  // Matches a whole wrapper as the entire selection: {{#hex inner}}.
-  static final _colorWholeRe = RegExp(
-      r'^\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\}\}$',
-      dotAll: true);
+  /// The selection without invisible markers at its ends — see
+  /// [LiveMarkdownController.visibleSelection]. Any other controller (a code
+  /// block) has no hidden markers, and its selection is already what it is.
+  static (int, int) _visible(TextEditingController c, int s, int e) {
+    if (c is! LiveMarkdownController || s == e) return (s, e);
+    final r = c.visibleSelection(s, e);
+    return (r.start, r.end);
+  }
 
-  void applyTextColor(String hex) {
+  /// **The run of [kind] whose visible text is exactly [s, e)**, at any
+  /// depth — or null when the selection is not, by itself, such a run.
+  ///
+  /// [kind] is `colour` or `highlightColour`: the two are written the same
+  /// way (`{{#hex …}}` and `{{=hex …}}`) and want exactly the same search,
+  /// so they share it. Looking for one never finds the other, which is what
+  /// lets a word be coloured AND highlighted, each changed on its own.
+  ///
+  /// Descends the way [_runAround] does for the other marks: a colour run is
+  /// found whatever is nested inside it or around it. "Exactly" is judged on
+  /// what can be seen: the colour's inner text, less any invisible markers at
+  /// its own ends, must be the selection — so `{{#c **word**}}` with `word`
+  /// selected is that colour run, and `{{#c big word}}` with `word` selected
+  /// is not, and gets a colour of its own inside it.
+  static ({int open, int innerStart, int innerEnd, int end})? _colourRunFor(
+      TextEditingController c, String t, int s, int e,
+      [MdInline kind = MdInline.colour]) {
+    final lineStart = lineStartOf(t, s);
+    final lineEnd = math.max(lineStart, lineEndOf(t, e));
+    ({int open, int innerStart, int innerEnd, int end})? found;
+    void walk(String scan, int base, int depth) {
+      for (final m in mdInlineRe.allMatches(scan)) {
+        final k = classifyInline(m);
+        if (!inlineKindNests(k.kind) || k.kind == MdInline.extLink) continue;
+        final innerStart = base + m.start + k.openLen;
+        final innerEnd = base + m.end - k.closeLen;
+        if (s < innerStart || e > innerEnd) continue;
+        if (k.kind == kind) {
+          final (vs, ve) = _visible(c, innerStart, innerEnd);
+          if (vs == s && ve == e) {
+            // Keep the innermost: it is the colour on the screen.
+            found = (
+              open: base + m.start,
+              innerStart: innerStart,
+              innerEnd: innerEnd,
+              end: base + m.end
+            );
+          }
+        }
+        if (depth < kInlineNestDepth) {
+          walk(k.inner, innerStart, depth + 1);
+        }
+      }
+    }
+
+    walk(t.substring(lineStart, lineEnd), lineStart, 0);
+    return found;
+  }
+
+  // Matches a whole wrapper as the entire selection: {{#hex inner}} for a
+  // colour, {{=hex inner}} for a highlight.
+  static final _wholeRunRe = {
+    for (final sigil in ['#', '='])
+      sigil: RegExp(
+          '^\\{\\{$sigil([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.*)\\}\\}\$',
+          dotAll: true)
+  };
+
+  /// **Colour the selection**, or clear it back to the default with
+  /// `'auto'`.
+  ///
+  /// `'auto'` is the sentinel the pen already uses ([penInk]): not a
+  /// colour, but "whatever contrasts with what it is drawn on". It is
+  /// what the picker's Automatic entry returns, because *"its not
+  /// imedietley clear how to set it to the auto colour"* — there was no
+  /// way at all, and no way back off a colour except undo.
+  void applyTextColor(String hex, {bool remember = true}) {
+    // A flick is not a choice: it leaves the pair exactly as it is, so
+    // the toolbar goes on showing the colour somebody picked and
+    // pressing the chord again comes back here with the same two to
+    // swap between.
+    if (remember && activeEditor != null) {
+      if (!_sameColour(hex, lastColor)) prevColor = lastColor;
+      lastColor = hex;
+    }
+    _applyBraceRun(hex, sigil: '#', kind: MdInline.colour);
+  }
+
+  /// **Highlight the selection in [hex]**, or clear it with `'auto'`.
+  ///
+  /// Found while fixing GitHub #17 rather than reported: text colour has a
+  /// full picker and the highlighter was one hard-coded yellow, for an app
+  /// whose owner says *"Colour is a really important thing to me that we get
+  /// right"* and whose students highlight to triage a reading list.
+  ///
+  /// `==x==` still means the default yellow — it is in notes already and
+  /// every other Markdown tool understands it — and a chosen colour is
+  /// `{{=RRGGBB text}}`, the colour span's own shape with `=` for `#`. So
+  /// this is [applyTextColor] with one character changed, and the two share
+  /// every case below: re-highlight rather than nest, clear by taking the
+  /// markers away, and a selection that spans a whole wrapper rewritten in
+  /// place.
+  void applyHighlightColor(String hex, {bool remember = true}) {
+    if (remember && activeEditor != null && hex != 'auto') lastHighlight = hex;
+    _applyBraceRun(hex, sigil: '=', kind: MdInline.highlightColour);
+  }
+
+  /// The highlight colour the picker opens on. Not
+  /// `lastColor`'s pair: a highlight and an ink colour that chased each other
+  /// would be two features fighting over one field.
+  String lastHighlight = 'F7E27A';
+
+  /// The body of [applyTextColor] and [applyHighlightColor]. [sigil] is the
+  /// character after `{{` and [kind] the run it makes, which are the only
+  /// two things that differ.
+  void _applyBraceRun(String hex,
+      {required String sigil, required MdInline kind}) {
     final ae = activeEditor;
     if (ae == null) return;
-    lastColor = hex;
+    // `{{#…}}` in a code cell is not a colour, it is somebody's source.
+    // The same guard [wrapSelection] carries, for the same reason.
+    if (ae.block.type != BlockType.text) {
+      notifyListeners();
+      return;
+    }
     final c = ae.controller;
     final sel = c.selection;
     if (!sel.isValid || sel.isCollapsed) {
@@ -5832,27 +6230,46 @@ class AppState extends ChangeNotifier
       return;
     }
     final t = c.text;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
+    final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
+        math.max(sel.baseOffset, sel.extentOffset));
+    if (s == e) {
+      notifyListeners();
+      return;
+    }
 
-    // Re-colour, don't nest (user report): if the selection is already the
-    // inner content of an existing {{#hex …}} wrapper, or the selection spans
-    // a whole wrapper, replace the existing colour in place.
-
-    // Case A: selection is the INNER content of an existing wrapper —
-    //   …{{#oldhex |selected|}}…  → swap oldhex for the new hex.
-    final openBefore = _colorOpenRe.firstMatch(t.substring(0, s));
-    if (openBefore != null &&
-        e + 2 <= t.length &&
-        t.substring(e, e + 2) == '}}') {
+    // Re-colour, don't nest (user report): a selection that already IS a
+    // coloured run gets its colour replaced, never a second run inside it.
+    //
+    // **Found by descending**, through whatever other runs sit between the
+    // selection and the colour. `{{#c **word**}}` has bold markers in the
+    // way, and the old check — the colour's opener immediately before the
+    // selection — did not see that colour at all, so recolouring a bold red
+    // word wrapped a second colour inside the first. Found by descending through whatever other runs
+    // sit between the selection and the colour — `{{#c **word**}}` has bold
+    // markers in the way, and the old check, which looked only immediately
+    // before the selection, did not see the colour at all.
+    // Clearing is the same search with the markers taken away instead of
+    // rewritten, which is why it is a branch here rather than a command of
+    // its own: "no colour" has to find the run it is removing exactly as
+    // precisely as a recolour does.
+    final clearing = hex == 'auto';
+    final run = _colourRunFor(c, t, s, e, kind);
+    if (run != null) {
       pushUndo();
-      final openLen = openBefore.group(0)!.length;
-      const newOpenPrefix = '{{#';
-      final newOpen = '$newOpenPrefix$hex ';
-      c.text = t.replaceRange(s - openLen, s, newOpen);
-      final shift = newOpen.length - openLen;
-      c.selection =
-          TextSelection(baseOffset: s + shift, extentOffset: e + shift);
+      if (clearing) {
+        final openLen = run.innerStart - run.open;
+        c.text = t
+            .replaceRange(run.innerEnd, run.end, '')
+            .replaceRange(run.open, run.innerStart, '');
+        c.selection =
+            TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
+      } else {
+        final newOpen = '{{$sigil$hex ';
+        c.text = t.replaceRange(run.open, run.innerStart, newOpen);
+        final shift = newOpen.length - (run.innerStart - run.open);
+        c.selection =
+            TextSelection(baseOffset: s + shift, extentOffset: e + shift);
+      }
       _commitActiveEditor();
       notifyListeners();
       return;
@@ -5860,53 +6277,114 @@ class AppState extends ChangeNotifier
 
     // Case B: the selection spans an ENTIRE wrapper — {{#oldhex inner}} —
     // e.g. selecting the coloured word including its markers. Rewrite it.
-    final whole = _colorWholeRe.firstMatch(t.substring(s, e));
+    final whole = _wholeRunRe[sigil]!.firstMatch(t.substring(s, e));
     if (whole != null) {
       pushUndo();
       final inner = whole.group(2)!;
-      c.text = t.replaceRange(s, e, '{{#$hex $inner}}');
-      final openLen = hex.length + 4; // '{{#' + hex + ' '
-      c.selection = TextSelection(
-          baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
+      if (clearing) {
+        c.text = t.replaceRange(s, e, inner);
+        c.selection =
+            TextSelection(baseOffset: s, extentOffset: s + inner.length);
+      } else {
+        c.text = t.replaceRange(s, e, '{{$sigil$hex $inner}}');
+        final openLen = hex.length + 4; // '{{' + sigil + hex + ' '
+        c.selection = TextSelection(
+            baseOffset: s + openLen, extentOffset: s + openLen + inner.length);
+      }
       _commitActiveEditor();
       notifyListeners();
       return;
     }
 
-    // Case C: fresh selection — wrap it.
+    // Case C: fresh selection — wrap it. Unless the request was to clear,
+    // in which case there is nothing here to clear and nothing to do.
+    if (clearing) {
+      notifyListeners();
+      return;
+    }
     pushUndo();
     final selText = t.substring(s, e);
-    c.text = t.replaceRange(s, e, '{{#$hex $selText}}');
-    final openLen = hex.length + 4; // '{{#' + hex + ' '
+    c.text = t.replaceRange(s, e, '{{$sigil$hex $selText}}');
+    final openLen = hex.length + 4; // '{{' + sigil + hex + ' '
     c.selection = TextSelection(
         baseOffset: s + openLen, extentOffset: s + openLen + selText.length);
     _commitActiveEditor();
     notifyListeners();
   }
 
-  /// The "flick" hotkey: colour the selection with the last colour, or strip
-  /// the colour if it's already coloured (back to default).
-  void toggleTextColor() {
+  /// The colour the whole selection already carries, or null when it has
+  /// none — or when the selection spans more than one, which is what stops a
+  /// flick deciding on behalf of two.
+  String? get _selectionColor => _selectionRunHex(MdInline.colour);
+
+  /// The highlight colour the whole selection carries, or null. What the
+  /// toolbar's highlight button shows, and what tells it whether there is a
+  /// highlight to take off.
+  String? get selectionHighlight => _selectionRunHex(MdInline.highlightColour);
+
+  String? _selectionRunHex(MdInline kind) {
     final ae = activeEditor;
-    if (ae == null) return;
+    if (ae == null) return null;
     final c = ae.controller;
     final sel = c.selection;
-    if (!sel.isValid || sel.isCollapsed) return;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
+    if (!sel.isValid || sel.isCollapsed) return null;
     final t = c.text;
-    final m = _colorOpenRe.firstMatch(t.substring(0, s));
-    if (m != null && e + 2 <= t.length && t.substring(e, e + 2) == '}}') {
-      pushUndo();
-      final openLen = m.group(0)!.length;
-      c.text = t.replaceRange(e, e + 2, '').replaceRange(s - openLen, s, '');
-      c.selection =
-          TextSelection(baseOffset: s - openLen, extentOffset: e - openLen);
-      _commitActiveEditor();
-      notifyListeners();
-    } else {
-      applyTextColor(lastColor);
+    final (s, e) = _visible(c, math.min(sel.baseOffset, sel.extentOffset),
+        math.max(sel.baseOffset, sel.extentOffset));
+    final run = _colourRunFor(c, t, s, e, kind);
+    if (run == null) return null;
+    // '{{' + the sigil + the hex + ' '
+    return t.substring(run.open + 3, run.innerStart - 1);
+  }
+
+  /// **Is the selection highlighted at all** — in a colour, or with the
+  /// plain `==x==` the toolbar button has always written?
+  /// Either kind, from the ONE scan the toolbar already does for every other
+  /// button: [marksAtCaret] descends and records each kind it passes, so a
+  /// highlight nested inside a colour lights the button like anything else.
+  /// Asking [selectionHighlight] as well would be a second line scan on
+  /// every build of the command bar, which is keyed on this.
+  bool get selectionIsHighlighted {
+    final marks = marksAtCaret();
+    return marks.contains(MdInline.highlight) ||
+        marks.contains(MdInline.highlightColour);
+  }
+
+  /// The highlighter button: highlight in [lastHighlight], or take the
+  /// highlight off if there is one.
+  ///
+  /// No chord of its own — Ctrl+= is subscript, and the marker ladders are
+  /// the grammar's (see [markerChordLadders]), so `==` still toggles a plain
+  /// highlight from the keyboard exactly as it did.
+  ///
+  /// One button for both, because "highlight this" and "stop highlighting
+  /// this" are the same intention and nobody looks for two controls. The
+  /// plain `==x==` form is toggled by the mark machinery that has always
+  /// handled it, so a note written before colours came along toggles off
+  /// exactly as it used to.
+  void toggleHighlight() {
+    if (marksAtCaret().contains(MdInline.highlight)) {
+      wrapSelection('==');
+      return;
     }
+    applyHighlightColor(selectionHighlight != null ? 'auto' : lastHighlight);
+  }
+
+  /// Two colours differing only in case or a leading `#` are one colour.
+  static bool _sameColour(String a, String b) =>
+      a.replaceFirst('#', '').toLowerCase() ==
+      b.replaceFirst('#', '').toLowerCase();
+
+  /// The "flick" hotkey: swap the selection between the last two colours.
+  ///
+  /// Not a toggle against no-colour, which only ever did one of the two
+  /// things somebody flicking wants. Out of the box the pair is your colour
+  /// and Automatic, which is the "a couple of words, not every word" case.
+  /// See [lastColor].
+  void toggleTextColor() {
+    final current = _selectionColor ?? 'auto';
+    applyTextColor(_sameColour(current, lastColor) ? prevColor : lastColor,
+        remember: false);
   }
 
   // ── Text-box font family (box-level) ───────────────────────────────────
@@ -6116,6 +6594,7 @@ class AppState extends ChangeNotifier
     final t = c.text;
     var s = math.min(sel.baseOffset, sel.extentOffset);
     var e = math.max(sel.baseOffset, sel.extentOffset);
+    (s, e) = _visible(c, s, e);
 
     if (s == e) {
       // Ask about the CARET first, before expanding to a word. `_` is a word
@@ -6833,6 +7312,136 @@ class AppState extends ChangeNotifier
     removeSelected();
   }
 
+  /// **What the copied boxes read as inside a paragraph**, or null when one
+  /// of them has no writing to put there.
+  ///
+  /// The owner: *"if i cut a box, begin editing another box and attempt to
+  /// paste it within another box, it just pastes whatever is in my clipboard.
+  /// Id ideally like it to paste the contents of that box into the box im
+  /// currently editing."*
+  ///
+  /// So a box pasted into a box becomes its writing: a paragraph's own text
+  /// (tables and pictures included), a code box as a fence, an equation as
+  /// `$$…$$`, a picture as its reference on a line of its own. Several boxes
+  /// paste in the order they sit on the page, blank line between, which is
+  /// how they read down the page already.
+  ///
+  /// **Null for a box with nothing to write**: handwriting, a graph, a board,
+  /// a page window, an attachment, a flashcard. There is no honest text for
+  /// those, and pasting the ones that do have text while quietly dropping the
+  /// rest would lose work. ALL or nothing — the caller says so and pastes
+  /// them on the canvas instead, which is where they can go.
+  ///
+  /// Atoms get fresh ids (Data Model §2 rule 3: an import mints), because the
+  /// payload is copied into the destination block beside its reference.
+  ({String text, Map<String, dynamic> atoms})? blockClipboardAsText() {
+    final raw = _blockClipboard;
+    if (raw == null) return null;
+    final List<Block> list;
+    try {
+      list = [
+        for (final j in (jsonDecode(raw) as List))
+          Block.fromJson((j as Map).cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return null;
+    }
+    if (list.isEmpty) return null;
+    // Reading order, the same sort the Markdown projection uses.
+    list.sort((a, b) {
+      final dy = a.y.compareTo(b.y);
+      return dy != 0 ? dy : a.x.compareTo(b.x);
+    });
+    final atoms = <String, dynamic>{};
+    final parts = <String>[];
+    for (final b in list) {
+      final part = _blockAsText(b, atoms);
+      if (part == null) return null;
+      if (part.trim().isNotEmpty) parts.add(part.trimRight());
+    }
+    if (parts.isEmpty) return null;
+    return (text: parts.join('\n\n'), atoms: atoms);
+  }
+
+  /// One box's writing, collecting any atoms into [atoms] under fresh ids.
+  /// Null when the box has none.
+  String? _blockAsText(Block b, Map<String, dynamic> atoms) {
+    switch (b.type) {
+      case BlockType.text:
+        var text = b.content['text'] as String? ?? '';
+        for (final a in InlineAtom.allIn(b.content).values) {
+          final fresh = newId();
+          atoms[fresh] = InlineAtom(id: fresh, type: a.type, content: a.content)
+              .toJson();
+          text = text.replaceAll(
+              '${InlineAtom.scheme}${a.id}', '${InlineAtom.scheme}$fresh');
+        }
+        return text;
+      case BlockType.code:
+        final lang = b.content['language'] as String? ?? '';
+        final src = b.content['source'] as String? ?? '';
+        return '```$lang\n$src\n```';
+      case BlockType.math:
+        final latex = b.content['latex'] as String? ?? '';
+        return latex.isEmpty ? '' : '\$\$\n$latex\n\$\$';
+      case BlockType.image:
+        // The in-flow form, which is the one shape a picture has on a page.
+        final blob = b.content['blob'] as String? ?? '';
+        if (blob.isEmpty) return '';
+        final w = b.w.round(), h = (b.h ?? 0).round();
+        final size = h > 0 ? ' =${w}x$h' : '';
+        return '![]($blob$size)';
+      case BlockType.table:
+        // A table BLOCK is the importer's shape; the app converts it to a
+        // paragraph carrying an atom on open, and that is what to paste.
+        final asText = tableBlockAsText(b, madeIn: kAppVersion);
+        return asText == null ? null : _blockAsText(asText, atoms);
+      case BlockType.ink:
+      case BlockType.graph:
+      case BlockType.board:
+      case BlockType.embed:
+      case BlockType.file:
+      case BlockType.flashcard:
+      case BlockType.substitute:
+      case BlockType.frame:
+        return null;
+      case BlockType.unknown:
+        // A box written by a NEWER Openote. Its `rawType` and content are
+        // carried through untouched (Data Model §3.2), and inventing text for
+        // something we cannot read would be the one way to lose it — so this
+        // refuses, and the caller pastes it on the canvas, where it survives.
+        return null;
+    }
+  }
+
+  /// **Paste the copied boxes INTO the paragraph being edited**, as writing.
+  /// False when there is nothing to paste or one of them has no text form
+  /// ([blockClipboardAsText]), so the caller can fall back.
+  bool pasteBlocksIntoText() {
+    final ae = activeEditor;
+    if (ae == null || ae.block.type != BlockType.text) return false;
+    final projected = blockClipboardAsText();
+    if (projected == null) return false;
+    // ONE undo step for the whole paste, and it is taken BEFORE the atoms are
+    // written. It used to be taken inside the insert, which runs after — so
+    // the snapshot Ctrl+Z restored already contained the pasted payloads, and
+    // undo gave back the text while leaving a table's or a picture's data
+    // behind in the block for good.
+    pushUndo();
+    // Atoms land in the destination block, beside the reference that names
+    // them — otherwise the paste would write a pointer to a payload nothing
+    // can reach.
+    if (projected.atoms.isNotEmpty) {
+      final existing = ae.block.content['atoms'];
+      ae.block.content['atoms'] = {
+        if (existing is Map) ...existing.cast<String, dynamic>(),
+        ...projected.atoms,
+      };
+    }
+    insertTextAtActiveCursor(projected.text, recordUndo: false);
+    return true;
+  }
+
   void pasteBlocks({Offset? at}) {
     final raw = _blockClipboard;
     if (raw == null) return;
@@ -6849,11 +7458,22 @@ class AppState extends ChangeNotifier
     // to prevent). The format is the copy, the way it is the API.
     final newIds = <String>[];
     final oldToNew = <String, String>{};
+    // One map for the whole paste, so blocks that shared a group still share
+    // one afterwards.
+    final oldToNewGroup = <String, String>{};
     for (final src in list) {
       final fresh = Block.fromJson({
         ...jsonDecode(jsonEncode(src.toJson())) as Map<String, dynamic>,
         'id': newId(),
       });
+      // A `groupId` is a link WITHIN the pasted selection, so rule 3 remaps it
+      // rather than carrying it: the copies become their own group. Carried
+      // verbatim — which is what cloning through `toJson` does by default —
+      // they would join the group they were copied from, and the next drag of
+      // the original would walk the copies across the page with it. Copy part
+      // of a group and the paste is a group of just that part.
+      final g = fresh.groupId;
+      if (g != null) fresh.groupId = oldToNewGroup.putIfAbsent(g, newId);
       fresh.x = at?.dx ?? src.x + 28;
       fresh.y = at?.dy ?? src.y + 28;
       if (fresh.type == BlockType.ink) {
@@ -6871,6 +7491,9 @@ class AppState extends ChangeNotifier
       oldToNew[src.id] = fresh.id;
     }
     _relinkGraphs(oldToNew);
+    // Pasting one member of a group gives it a fresh id nothing else shares,
+    // which is a group of one — not a group.
+    _tidyGroups();
     selectMany(newIds);
     markDirty();
   }
@@ -7019,6 +7642,11 @@ class AppState extends ChangeNotifier
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
     if (rec is List) _recents.addAll(rec.cast<String>());
+    penSeenHere = _repo.getSetting('penSeenHere') == true;
+    final pb = _repo.getSetting('penButton') as String?;
+    if (pb != null) {
+      penButton = PenButtonAction.values.asNameMap()[pb] ?? penButton;
+    }
     final td = _repo.getSetting('touchDrawing') as String?;
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
@@ -7041,6 +7669,12 @@ class AppState extends ChangeNotifier
         if (v is List && v.length == 3) {
           _viewMemory[k as String] = [for (final x in v) (x as num).toDouble()];
         }
+      });
+    }
+    final lp = _repo.getSetting('lastPageByNotebook');
+    if (lp is Map) {
+      lp.forEach((k, v) {
+        if (k is String && v is String) _lastPageOf[k] = v;
       });
     }
     final lastNb = _repo.getSetting('lastNotebook') as String?;
@@ -7146,11 +7780,8 @@ class AppState extends ChangeNotifier
     unawaited(warmRecorder(notebookId!));
     // Watch for other devices once the notebook is open.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startWatching());
-    final lastPage = _repo.getSetting('lastPage') as String?;
-    final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
-        ? lastPage
-        : nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id;
-    await selectPage(target);
+    await selectPage(_pageToOpenIn(notebookId!,
+        orElse: _repo.getSetting('lastPage') as String?));
   }
 
   // ── Per-page view memory (§7a.5) ───────────────────────────────────────
@@ -7179,6 +7810,40 @@ class AppState extends ChangeNotifier
     _repo.setSetting('viewMemory', _viewMemory);
     _repo.setSetting('lastNotebook', notebookId);
     _repo.setSetting('lastPage', pageId);
+    final nb = notebookId, pid = pageId;
+    if (nb != null && pid != null) _lastPageOf[nb] = pid;
+    // A notebook that has been removed has nowhere to be returned to.
+    _lastPageOf.removeWhere((id, _) => !notebooks.any((n) => n.id == id));
+    _repo.setSetting('lastPageByNotebook', Map.of(_lastPageOf));
+  }
+
+  /// **The page each notebook was left on**, by notebook id.
+  ///
+  /// v1.0.2 #14: *"The last open page is not remembered when switching
+  /// notebooks, though it survives closing the app."* Because there was ONE
+  /// place for it. `lastPage` is a single workspace setting: startup read it,
+  /// but a switch never did — [_loadNotebook] opened the first page — and
+  /// that first page was then saved over it. So leaving a notebook forgot
+  /// where you were in it, and only the notebook open at shutdown was
+  /// remembered, because it was the only one that ever got to write last.
+  ///
+  /// Collapsed pages and section groups never had this problem: they are
+  /// sets of node ids, ids are unique across notebooks, and nothing clears
+  /// them on a switch.
+  final Map<String, String> _lastPageOf = {};
+
+  /// Where to open [nb]: the page it was left on while that is still a live
+  /// page in it, then [orElse] on the same terms, then its first page.
+  ///
+  /// Asked of [nodes], so a page deleted or moved to another notebook since
+  /// is simply not found, and the notebook opens at its top.
+  String? _pageToOpenIn(String nb, {String? orElse}) {
+    bool live(String? id) =>
+        id != null && nodes.any((n) => n.id == id && n.kind == NodeKind.page);
+    final remembered = _lastPageOf[nb];
+    if (live(remembered)) return remembered;
+    if (live(orElse)) return orElse;
+    return nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id;
   }
 
   Future<void> _loadNotebook() async {
@@ -7219,8 +7884,8 @@ class AppState extends ChangeNotifier
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
-    final firstPage = nodes.where((n) => n.kind == NodeKind.page).firstOrNull;
-    await selectPage(firstPage?.id);
+    // Back where you left it — see [_lastPageOf].
+    await selectPage(_pageToOpenIn(notebookId!));
   }
 
   Future<void> selectNotebook(String id) async {
@@ -7715,6 +8380,12 @@ class AppState extends ChangeNotifier
   Future<void> selectPage(String? id) async {
     _rememberView(); // keep your place when flicking between pages (§7a.5)
     await flushSave();
+    // A window onto a locked page asks again on every visit (bug 33), and so
+    // does a page whose passcode is set to "Every time it is opened".
+    if (id != pageId) {
+      _windowUnlocks.clear();
+      _visitUnlocks.clear();
+    }
     pageId = id;
     select(null);
     _undo.clear();
@@ -8169,137 +8840,31 @@ class AppState extends ChangeNotifier
     return depth;
   }
 
-  // ── Page templates (ORG-9) ─────────────────────────────────────────────
+  // ── Moving blocks about ────────────────────────────────────────────────
 
-  /// Built-ins first, then the user's own. A user template that shares a
-  /// built-in's name shadows it (their content wins in [applyTemplate]), so
-  /// customising a built-in is just "save under the same name".
-  List<String> templateNames() {
-    final t = _repo.getSetting('templates');
-    final user = t is Map ? t.keys.cast<String>().toList() : <String>[];
-    return [
-      ...builtinTemplates.keys,
-      ...user.where((n) => !builtinTemplates.containsKey(n)),
-    ];
-  }
-
-  void saveCurrentAsTemplate(String name) {
-    final t =
-        (_repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
-    t[name] = jsonEncode({
-      'page': pageProps.toJson(),
-      'blocks': [for (final b in blocks) b.toJson()],
-    });
-    _repo.setSetting('templates', t);
-    notifyListeners();
-  }
-
-  /// Drop a template onto the page, BELOW whatever is already there.
+  /// Shift an ink block's strokes with its box, by (dx, dy). Stroke
+  /// coordinates are page-absolute (Ink Spec §3), so moving the block alone
+  /// leaves the drawing where it was. Nothing for any other block, or for no
+  /// move. Strokes are parallel `x` and `y` lists, not point pairs.
   ///
-  /// It used to land on top: page properties replaced outright, and every
-  /// block placed at the coordinates it was saved with — which for a template
-  /// authored on an empty page means over the title band and over the first
-  /// paragraph of whatever you had written. "They dont respect the current
-  /// layout of the page (with the title and stuff), they just go over it all."
+  /// The one place this arithmetic lives — a drag ([moveSelectedBy]), a
+  /// clamp ([clampBlockToPage]) and the title-band repair all move ink, and
+  /// each once had its own copy, or none.
   ///
-  /// So the template's own shape is preserved — every block keeps its position
-  /// RELATIVE to the others — and the whole arrangement is translated to sit
-  /// under the existing content, or at the top of the writing area when the
-  /// page is empty. Page properties are only taken on an empty page: applying
-  /// a template to a page you have been working on must not silently change
-  /// its background or grid.
-  void applyTemplate(String name) {
-    final t = _repo.getSetting('templates');
-    // User template first so a same-named save shadows the built-in.
-    final raw =
-        (t is Map ? t[name] as String? : null) ?? builtinTemplates[name];
-    if (raw == null) return;
-    pushUndo();
-    final j = jsonDecode(raw) as Map<String, dynamic>;
-    final onEmptyPage = blocks.isEmpty;
-    if (onEmptyPage) {
-      pageProps =
-          PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
-    }
-
-    // Where the template's top edge should end up, and how far that is from
-    // where it was authored.
-    final incoming = <Block>[];
-    for (final bj in (j['blocks'] as List)) {
-      // `Block.fromJson` reads `j['id'] as String` — a NON-NULLABLE cast — and
-      // the built-in templates carry no ids, because their blocks were written
-      // by hand as literal JSON. So every built-in threw `type 'Null' is not a
-      // subtype of type 'String'` on its very first block, from the day they
-      // were added, and the throw landed in a discarded Future: no dialog, no
-      // red screen, nothing. That is the whole of "clicking any of these does
-      // nothing". A template is a PROTOTYPE, and an id is the one field a
-      // prototype has no business carrying — so one is supplied here rather
-      // than written into the data. A real id in the JSON still wins.
-      final src =
-          Block.fromJson({'id': newId(), ...(bj as Map).cast<String, dynamic>()});
-      final fresh = Block(
-        id: newId(),
-        type: src.type,
-        // `rawType` and `unknownFields` are the two carriers the frozen-format
-        // promise rests on: without them a block written by a NEWER build is
-        // reduced to `"type":"unknown"` and its meaning is gone for good. A
-        // user template saved from a page containing one would have destroyed
-        // it on every apply. `rotation` has the same hazard.
-        rawType: src.rawType,
-        unknownFields: src.unknownFields,
-        rotation: src.rotation,
-        x: src.x,
-        y: src.y,
-        w: src.w,
-        h: src.h,
-        placement: src.placement,
-        content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
-      );
-      if (fresh.type == BlockType.ink) {
-        for (final sj in (fresh.content['strokes'] as List)) {
-          (sj as Map)['id'] = newId();
-        }
-      }
-      incoming.add(fresh);
-    }
-    if (incoming.isEmpty) return;
-
-    // Translate as one piece, so the template still looks like itself.
-    final templateTop = incoming.map((b) => b.y).reduce(math.min);
-    final landAt = onEmptyPage ? contentTop : contentExtent().bottom + 24;
-    final dy = landAt - templateTop;
-    // Ink is page-absolute (Ink Spec §3): its stroke points do not move with
-    // the block, so a translated ink block would leave its drawing behind.
-    final movesInk = dy != 0;
-    for (final b in incoming) {
-      b.y += dy;
-      if (movesInk && b.type == BlockType.ink) _translateInk(b, dy);
-    }
-
-    // Through addBlock so each lands on top of the stack rather than at z 0,
-    // which is what put a freshly applied template UNDERNEATH existing blocks.
-    for (final b in incoming) {
-      blocks.add(b
-        ..z = (blocks.isEmpty
-            ? 0
-            : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1));
-    }
-    docRevision++;
-    markDirty();
-    notifyListeners();
-  }
-
-  /// Shift an ink block's strokes with its box. Stroke coordinates are
-  /// page-absolute (Ink Spec §3), so moving the block alone leaves the drawing
-  /// where it was. The same arithmetic `moveSelectedBy` does, and it has to
-  /// stay the same: strokes are parallel `x` and `y` lists, not point pairs.
-  void _translateInk(Block b, double dy) {
-    for (final sj in (b.content['strokes'] as List? ?? const [])) {
+  /// Through [InkStorage.strokesOf], because a block whose blob has not
+  /// arrived carries no working list, and an unchecked cast threw out of the
+  /// middle of a drag — leaving the blocks it had already reached moved, the
+  /// rest not, and `notifyListeners` never called.
+  void _translateInk(Block b, double dx, double dy) {
+    if (b.type != BlockType.ink || (dx == 0 && dy == 0)) return;
+    for (final sj in InkStorage.strokesOf(b.content)) {
       final m = sj as Map;
-      final ys = m['y'];
-      if (ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
+      final xs = m['x'], ys = m['y'];
+      if (dx != 0 && xs is List) m['x'] = [for (final v in xs) (v as num) + dx];
+      if (dy != 0 && ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
     }
-    // The canvas caches decoded strokes by `id#updatedAt`.
+    // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
+    // painted ink follows the block instead of lagging until a reload.
     b.updatedAt = nowMs();
   }
 
@@ -8333,24 +8898,12 @@ class AppState extends ChangeNotifier
   /// content clips, and anything that appends "below the last box" lands on
   /// top of the user's writing.
   ///
-  /// Estimating from the text is coarse — it ignores wrapping, so it can still
-  /// undershoot a long unwrapped paragraph — but it is far closer than a
-  /// constant, and it errs low only where a constant erred catastrophically.
-  double estimatedHeight(Block b) {
-    if (b.type != BlockType.text) return 60;
-    final text = b.content['text'] as String? ?? '';
-    if (text.isEmpty) return 60;
-    final size = (b.content['fontSize'] as num?)?.toDouble() ?? 15;
-    final lh = (b.content['lineHeight'] as num?)?.toDouble() ?? 1.5;
-    // Very rough wrap estimate: characters that fit across the box, at ~0.5em
-    // per character for a proportional face.
-    final perLine = ((b.w - 20) / (size * 0.5)).clamp(8, 400);
-    var lines = 0;
-    for (final l in text.split('\n')) {
-      lines += l.isEmpty ? 1 : (l.length / perLine).ceil();
-    }
-    return (lines * size * lh + 16).clamp(36, 20000);
-  }
+  /// The estimate lives in `model/block_metrics.dart`, per type: code from its
+  /// line count, a table from its rows, and a paragraph's inline tables from
+  /// their own size rather than as the one line of text their reference is.
+  /// It errs high where it must guess — a gap is a nit, an overlap hides
+  /// somebody's writing.
+  double estimatedHeight(Block b) => estimateBlockHeight(b);
 
   /// Content-based page size (used off-view, e.g. export). The on-screen page
   /// additionally grows to fill the viewport — computed in the canvas widget.
@@ -8415,8 +8968,7 @@ class AppState extends ChangeNotifier
       }
     }
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// The one big box a paged page writes into, created if it is not there.
@@ -8519,19 +9071,34 @@ class AppState extends ChangeNotifier
   /// band already declared its height ([titleBandHeight]); nothing enforced it.
   /// The title is part of the page's layout, so the layout is where it is
   /// reserved.
+  ///
+  /// **A clamp is a move**, and handwriting has to come with it (v1.0.2 bug
+  /// 20, GitHub #20). A stroke's points are page-absolute (Ink Spec §3), so
+  /// setting an ink box's `x`/`y` here moved the box and left the drawing
+  /// where it was — the dashed outline jumped below the title band, or back
+  /// inside the sheet, and the strokes stayed put. That is the reported
+  /// "the selection box moves but the content does not", and since a box and
+  /// strokes that disagree re-fit the next time anything measures them,
+  /// likely the "things jump after deleting something" too.
   void clampBlockToPage(Block b) {
+    final x0 = b.x, y0 = b.y;
     if (b.x < 0) b.x = 0;
     if (b.y < contentTop) b.y = contentTop;
-    if (!pageProps.isPaged) return;
-    // On a sheet the right edge is real. A box dragged past it is content the
-    // user cannot see and will not print, so it is pulled back inside — and
-    // narrowed first if it is simply too wide to fit at all.
-    final paper = pageProps.paper;
-    final maxW = paper.width - sheetMargin * 2;
-    if (b.w > maxW) b.w = maxW;
-    final maxX = paper.width - sheetMargin - b.w;
-    if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
-    if (b.x < sheetMargin) b.x = sheetMargin;
+    if (pageProps.isPaged) {
+      // On a sheet the right edge is real. A box dragged past it is content
+      // the user cannot see and will not print, so it is pulled back inside —
+      // and narrowed first if it is simply too wide to fit at all. Never
+      // handwriting: its box is the extent of its strokes, so a narrower box
+      // over the same strokes is one that lies about them. Too wide to fit,
+      // it is pinned to the margin and runs off the right as it was drawn.
+      final paper = pageProps.paper;
+      final maxW = paper.width - sheetMargin * 2;
+      if (b.w > maxW && b.type != BlockType.ink) b.w = maxW;
+      final maxX = paper.width - sheetMargin - b.w;
+      if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
+      if (b.x < sheetMargin) b.x = sheetMargin;
+    }
+    _translateInk(b, b.x - x0, b.y - y0);
   }
 
   /// Push imported or legacy blocks out from under the title band.
@@ -8566,7 +9133,7 @@ class AppState extends ChangeNotifier
       if (b.type == BlockType.ink) {
         // If ink IS moved it must be moved properly: the strokes are absolute,
         // so shifting only the box walks the selection away from the drawing.
-        _translateInk(b, shift);
+        _translateInk(b, 0, shift);
       }
       b.y += shift;
       moved++;
@@ -8626,6 +9193,53 @@ class AppState extends ChangeNotifier
   /// So the position is not guessed. The section's pages are put in the order
   /// they should be in and renumbered — the same thing `sortSection` does, and
   /// bounded the same way, by the number of pages in one section.
+  /// **The shape of the page a new page is filed next to.**
+  ///
+  /// A page's shape is its [PageProps] — ruling or grid, grid size, width,
+  /// and whether it is a boundless canvas or a sheet of paper. A new page
+  /// takes it from [filedAfter], the page it is being inserted beneath, or
+  /// from the last page already in the section when it is going at the end.
+  ///
+  /// **Why from the neighbour rather than from the page on screen.** Only the
+  /// paper size and orientation were ever carried over, and they were taken
+  /// from whatever page you happened to be looking at — so setting a section
+  /// to grid paper did nothing for the next page in it, while adding a page
+  /// to Maths straight after reading an essay in English dragged the essay's
+  /// shape across. Pages live in sections, so the neighbour is the honest
+  /// source: set your Maths pages to grid once and new Maths pages are grid,
+  /// with nothing to configure and no setting to find.
+  ///
+  /// This is what replaced page templates for the LAYOUT half of the job
+  /// ([duplicatePage] is the other half): the shape applies itself instead of
+  /// being asked for, which is the only version of it that costs no clicks.
+  ///
+  /// Null when the section has no pages yet — then the defaults are right.
+  Future<PageProps?> _shapeToInherit(
+      String sectionId, TreeNode? filedAfter) async {
+    final nb = notebookId;
+    if (nb == null) return null;
+    final existing = pagesOf(sectionId);
+    final src = filedAfter ?? (existing.isEmpty ? null : existing.last);
+    if (src == null) return null;
+    // The open page's props are the ones on the SCREEN, which can be newer
+    // than the ones on disk — the shape may have been changed a moment ago.
+    final from =
+        src.id == pageId ? pageProps : (await engine.loadPage(nb, src.id)).props;
+    // A copy: `PageProps` is mutable, and the new page must not share the
+    // object the page it was modelled on is still using.
+    return PageProps.fromJson(from.toJson());
+  }
+
+  /// Give the page just created in [sectionId] the shape of its neighbour.
+  ///
+  /// Written BEFORE the page is opened, so [selectPage] loads it the way it
+  /// loads any other page's and nothing has to be marked dirty.
+  Future<void> _inheritShape(String sectionId, TreeNode? filedAfter,
+      String newPageId) async {
+    final shape = await _shapeToInherit(sectionId, filedAfter);
+    if (shape != null) importPage(notebookId!, newPageId, const <Block>[], shape);
+  }
+
   Future<void> addPage({String? sectionId}) async {
     sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -8664,17 +9278,18 @@ class AppState extends ChangeNotifier
       }
     }
 
-    // Inherit the shape of the page you were on BEFORE it is replaced by the
-    // new one's props. A notebook you are writing an essay in should not drop
-    // back to open canvas every time you start the next page.
-    final inherit = pageProps.isPaged
-        ? (paper: pageProps.paperSize, landscape: pageProps.landscape)
-        : null;
+    // The shape of the page it is filed next to — see [_shapeToInherit]. A
+    // notebook you are writing an essay in should not drop back to open
+    // canvas every time you start the next page, and a section you set to
+    // grid paper should stay grid paper.
+    await _inheritShape(sectionId, current, n.id);
     reloadNodes();
     await selectPage(n.id);
-    if (inherit != null) {
+    if (pageProps.isPaged) {
+      // A sheet needs its body box, and its blocks pulled inside the paper.
+      // That is [setPageLayout]'s work, not a property assignment's.
       setPageLayout('paged',
-          paper: inherit.paper, landscape: inherit.landscape);
+          paper: pageProps.paperSize, landscape: pageProps.landscape);
     }
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
     notifyListeners();
@@ -8710,10 +9325,109 @@ class AppState extends ChangeNotifier
       p.position = 'a${(seq++).toString().padLeft(15, '0')}';
       _putNode(notebookId!, p);
     }
+    // From the page it is filed under, for the same reason as [addPage].
+    await _inheritShape(sectionId, current, n.id);
     reloadNodes();
     await selectPage(n.id);
+    if (pageProps.isPaged) {
+      setPageLayout('paged',
+          paper: pageProps.paperSize, landscape: pageProps.landscape);
+    }
     pendingTitleEdit = n.id;
     notifyListeners();
+  }
+
+  /// **Copy a page — everything on it — to a new page just below it.**
+  ///
+  /// The honest version of what page templates were reaching for. A layout
+  /// you want again is a page you keep, and copying one needs no new noun, no
+  /// picker and no preview, because you are looking at the thing you are
+  /// about to copy. The owner on templates: *"at the moment they really arent
+  /// that helpful at all, i havent personally used them beyond basic testing,
+  /// and i think in their current format they arent actually useful to really
+  /// anyone."*
+  ///
+  /// Sub-pages are NOT copied: this is one page, filed after the source's
+  /// whole subtree so it can never land between a page and its children.
+  /// Returns the copy's id, or null when there was nothing to copy.
+  Future<String?> duplicatePage(String pageId) async {
+    final nb = notebookId;
+    final src = node(pageId);
+    final sectionId = src?.parentId;
+    if (nb == null ||
+        src == null ||
+        src.kind != NodeKind.page ||
+        sectionId == null) {
+      return null;
+    }
+    // The source is usually the page being looked at, and its last keystroke
+    // may still be sat on the save debounce. Copy what is on the SCREEN, not
+    // what was last written to disk.
+    await flushSave();
+    final data = await engine.loadPage(nb, pageId);
+
+    final siblings = pagesOf(sectionId);
+    final at = siblings.indexWhere((p) => p.id == pageId);
+    if (at < 0) return null;
+    final copy = TreeNode(
+      kind: NodeKind.page,
+      // The same words [Repository.duplicateNotebook] uses, so the two things
+      // in this app that duplicate are named the same way.
+      title: '${src.title} copy',
+      parentId: sectionId,
+      level: src.level,
+      position: _nextPosition(),
+    );
+    // Past everything indented beneath the source, the rule [addPage] follows.
+    var after = at;
+    while (after + 1 < siblings.length &&
+        siblings[after + 1].level > src.level) {
+      after++;
+    }
+    final ordered = [...siblings]..insert(after + 1, copy);
+    var seq = nowMs();
+    for (final p in ordered) {
+      p.position = 'a${(seq++).toString().padLeft(15, '0')}';
+      _putNode(nb, p);
+    }
+
+    // **A new id for every block.** A block id is the handle that a reminder,
+    // a flashcard's review history and a link hold a block by, so a copy that
+    // reused them would answer for the original — two pages laying claim to
+    // one review schedule. Blob references are copied AS THEY ARE: the bytes
+    // are content-addressed, so a picture is shared rather than stored twice.
+    final copied = [
+      for (final b in data.blocks)
+        Block.fromJson({...b.toJson(), 'id': newId()})
+    ];
+    importPage(nb, copy.id, copied, data.props);
+
+    // **A locked page must not launder into an unlocked copy.** A passcode on
+    // the section above is inherited for free, because a lock is resolved by
+    // walking UP from the page — but one on the page itself has to come
+    // along. The copy is exactly as unlocked as the source is at this moment,
+    // which is the honest answer: reading the source is what you just did.
+    final own = protectionFor(pageId);
+    if (own != null) {
+      _repo.setSetting(_protectKey(copy.id), own.toJson());
+      _protectedIds.add(copy.id);
+      if (_unlocked.containsKey(pageId)) {
+        _unlocked[copy.id] = _unlocked[pageId];
+      }
+      // **Except under "Every time it is opened", where the copy asks.** That
+      // policy's unlock lives in [_visitUnlocks] and lasts one visit, and the
+      // `selectPage` below is a visit to a different page — so there is
+      // nothing to carry, and carrying it would be carrying it past the one
+      // thing it is scoped to. The sentence above is about the three CACHED
+      // policies; this is the fourth behaving as it says on the dialog.
+      _gateRevision++;
+    }
+
+    reloadNodes();
+    await selectPage(copy.id);
+    pendingTitleEdit = copy.id; // the first thing anybody does is name it
+    notifyListeners();
+    return copy.id;
   }
 
   void renameNode(String id, String title) {
@@ -9140,6 +9854,20 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// [deleteNode] for ANY notebook — the external API's delete (spec 14).
+  ///
+  /// The open notebook goes through [deleteNode] itself, so the navigator,
+  /// the page switch and Ctrl+Z all behave exactly as for a click. Any other
+  /// notebook gets the same soft delete and the same op, minus the UI: it is
+  /// in that notebook's recycle bin, recoverable for the usual thirty days.
+  Future<void> deleteNodeIn(String nb, String id) async {
+    if (nb == notebookId) return deleteNode(id);
+    if (notebookIsReadOnly(nb)) return;
+    final at = nowMs();
+    _repo.softDeleteNode(nb, id, at: at);
+    _recorderFor(nb)?.nodeDeleted(id, at: at);
+  }
+
   /// Where to go once [id] is deleted: its neighbour in the SAME section.
   ///
   /// Deleting a page used to drop you on the first page of the notebook,
@@ -9195,16 +9923,61 @@ class AppState extends ChangeNotifier
     final j = jsonDecode(snap) as Map<String, dynamic>;
     pageProps =
         PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
-    blocks = [
+    final restored = [
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
     ];
+    final wasEditing = editingBlockId;
+    _carryCardSchedules(blocks, restored);
+    blocks = restored;
     selectedIds.clear();
     selectedBlockId = null;
-    editingBlockId = null;
+    // **Undo while you are writing keeps the caret in the box.** Ctrl+Z
+    // inside a box is this stack's step now (see the keyboard map: the
+    // field's own history cannot be trusted against a controller that
+    // rewrites its own value), and a step that threw you out of the box you
+    // were typing in would make it unusable for the thing Ctrl+Z is most
+    // used for. The box reopens seeded from the restored block —
+    // `TextBlockView.build` re-seeds `session.text` from the block on every
+    // build for exactly this, and `docRevision` below replaces the element
+    // so it does.
+    editingBlockId = restored.any(
+            (b) => b.id == wasEditing && b.type == BlockType.text)
+        ? wasEditing
+        : null;
+    if (editingBlockId != null) {
+      // The same three fields [select] sets together, because the rest of the
+      // app reads them as a set: `BlockView.selected` is
+      // `selectedIds.contains(id)`, so naming the block without putting it in
+      // there leaves a box that is being typed into and is not selected —
+      // no move bar, no handles, and the command bar speaking for nothing.
+      selectedIds.addAll(groupMembers(editingBlockId!));
+      selectedBlockId = editingBlockId;
+    }
     docRevision++;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
+  }
+
+  /// **Flashcard schedules follow their lines through undo and redo.**
+  ///
+  /// A schedule is filed under `blockId:line`, and the edit being undone
+  /// moved it with its line (`StudyState.remapCardStates`). Undo puts the
+  /// text and its tags back, which live in the block, and left the schedules
+  /// where the edit had put them — so Enter above two reviewed cards and then
+  /// Ctrl+Z swapped their histories. The same matching in reverse, box by box,
+  /// puts them back.
+  void _carryCardSchedules(List<Block> from, List<Block> to) {
+    final was = {
+      for (final b in from)
+        if (b.type == BlockType.text) b.id: b.content['text'] as String? ?? ''
+    };
+    for (final b in to) {
+      if (b.type != BlockType.text) continue;
+      final before = was[b.id];
+      if (before == null) continue;
+      final after = b.content['text'] as String? ?? '';
+      study.remapCardStates(b.id, NoteTag.lineMoves(before, after));
+    }
   }
 
   void pushUndo() {
@@ -9731,15 +10504,68 @@ class AppState extends ChangeNotifier
           : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1);
     clampBlockToPage(b);
     blocks.add(b);
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
     return b;
   }
 
   void updateBlock(Block b) {
     b.updatedAt = nowMs();
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
+  }
+
+  /// Lock or unlock every slide that came out of the same PDF, wherever in
+  /// the notebook it landed. Returns how many changed.
+  ///
+  /// An import gives each slide a page of its own, so "unlock this one" is
+  /// forty right-clicks on a forty-page deck: *"if they want to make changes
+  /// to every page that would quickly become annoying if they have to right
+  /// click and unlock each page individually."* (Issue #20.)
+  ///
+  /// Every slide of one import already carries the same `content['pdf']`
+  /// hash, so that is the link — no new field, and it works on decks imported
+  /// before this existed.
+  ///
+  /// **Undo covers the page being looked at and no other**, because a
+  /// snapshot is per page. The way back is the same menu item, whose label
+  /// has flipped to say so.
+  int setPdfLocked(String pdfRef, {required bool locked}) {
+    final nb = notebookId;
+    if (nb == null || pdfRef.isEmpty) return 0;
+    var changed = 0;
+    // The page in front of the student is held in memory and may have edits
+    // that are not on disk yet, so it is changed there and left to the
+    // ordinary save.
+    for (final b in blocks) {
+      if (_relock(b, pdfRef, locked)) changed++;
+    }
+    for (final id in _repo.pageIdsContaining(nb, pdfRef)) {
+      if (id == pageId) continue; // done above, from memory
+      final data = _repo.readPage(nb, id);
+      var touched = false;
+      for (final b in data.blocks) {
+        if (_relock(b, pdfRef, locked)) {
+          touched = true;
+          changed++;
+        }
+      }
+      if (touched) importPage(nb, id, data.blocks, data.props);
+    }
+    if (changed > 0) {
+      markDirty();
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  static bool _relock(Block b, String pdfRef, bool locked) {
+    if (b.content['pdf'] != pdfRef || b.locked == locked) return false;
+    if (locked) {
+      b.content['locked'] = true;
+    } else {
+      b.content.remove('locked');
+    }
+    b.updatedAt = nowMs();
+    return true;
   }
 
   void removeBlock(String id, {bool recordUndo = true}) {
@@ -9748,8 +10574,8 @@ class AppState extends ChangeNotifier
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
     if (editingBlockId == id) editingBlockId = null;
-    markDirty();
-    notifyListeners();
+    _tidyGroups();
+    markDirty(); // which notifies
   }
 
   void removeSelected() {
@@ -9759,8 +10585,8 @@ class AppState extends ChangeNotifier
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
-    markDirty();
-    notifyListeners();
+    _tidyGroups();
+    markDirty(); // which notifies
   }
 
   /// Duplicate with FRESH ids (Data Model Spec §2 rule 3).
@@ -9776,6 +10602,9 @@ class AppState extends ChangeNotifier
       w: src.w,
       h: src.h,
       placement: src.placement,
+      // No `groupId`, and deliberately: the copy is a new thing, not another
+      // member of what it was copied from. Joining the original's group would
+      // make the next drag of that group carry the duplicate off with it.
       content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
     );
     if (fresh.type == BlockType.ink) {
@@ -9798,6 +10627,113 @@ class AppState extends ChangeNotifier
     select(fresh.id);
   }
 
+  // ── Groups (CANVAS-7) ───────────────────────────────────────────────────
+  //
+  // A group is a membership relation and nothing else: no bounds, no label,
+  // no place in the paint order (see [Block.groupId]). Everything that acts
+  // on a selection — the drag, Delete, copy, cut — already works off
+  // [selectedIds], so the whole feature is one rule applied in one place:
+  // **a selection is closed over groups.** Nothing downstream needs to know
+  // groups exist.
+
+  /// Every block sharing [id]'s group, [id] included — just `{id}` when it is
+  /// in no group, which is the common case and costs a single lookup.
+  Set<String> groupMembers(String id) {
+    final g = blocks.where((b) => b.id == id).firstOrNull?.groupId;
+    if (g == null) return {id};
+    return {
+      for (final b in blocks)
+        if (b.groupId == g) b.id
+    };
+  }
+
+  /// [ids] grown to whole groups. Partial selection of a group is the one
+  /// state that must not exist: it would let a drag carry half of something
+  /// that was joined precisely so it would move as one.
+  Set<String> _groupClosure(Iterable<String> ids) {
+    final want = ids.toSet();
+    final groups = {
+      for (final b in blocks)
+        if (b.groupId != null && want.contains(b.id)) b.groupId!
+    };
+    if (groups.isEmpty) return want; // nothing grouped — the usual answer
+    for (final b in blocks) {
+      if (groups.contains(b.groupId)) want.add(b.id);
+    }
+    return want;
+  }
+
+  /// The selected blocks a group could be made from. A locked block is left
+  /// out: it is the page behind the notes rather than a thing on it, and a
+  /// member that refuses to move is a group that cannot be dragged.
+  List<Block> _groupableSelection() => [
+        for (final b in blocks)
+          if (selectedIds.contains(b.id) && !b.locked) b
+      ];
+
+  /// Is there a group to be made out of what is selected?
+  ///
+  /// False once the selection is exactly one whole group, because the answer
+  /// then is Ungroup — and because selection is group-closed, "every member
+  /// shares one id" is the same statement as "this is that group entire".
+  bool get canGroup {
+    final members = _groupableSelection();
+    if (members.length < 2) return false;
+    final g = members.first.groupId;
+    return g == null || members.any((b) => b.groupId != g);
+  }
+
+  bool get canUngroup =>
+      blocks.any((b) => selectedIds.contains(b.id) && b.groupId != null);
+
+  /// Join the selection into one group.
+  ///
+  /// A selection spanning two existing groups **merges** them rather than
+  /// nesting one inside the other: one id per block is what keeps "select the
+  /// group" a lookup instead of a tree walk, and a merge is what somebody who
+  /// drew a box round both of them was asking for.
+  void groupSelected() {
+    if (!canGroup) return;
+    pushUndo();
+    final g = newId();
+    for (final b in _groupableSelection()) {
+      b.groupId = g;
+      b.updatedAt = nowMs();
+    }
+    markDirty(); // which notifies
+  }
+
+  void ungroupSelected() {
+    if (!canUngroup) return;
+    pushUndo();
+    for (final b in blocks) {
+      if (!selectedIds.contains(b.id) || b.groupId == null) continue;
+      b.groupId = null;
+      b.updatedAt = nowMs();
+    }
+    markDirty(); // which notifies
+  }
+
+  /// Drop a `groupId` only one block still carries.
+  ///
+  /// A group is a relation between blocks, so a lone survivor is not in one.
+  /// Left alone it would be a block that answers "select the group" with
+  /// itself and offers Ungroup for a thing nothing is grouped with. Called
+  /// wherever blocks leave the page.
+  void _tidyGroups() {
+    final count = <String, int>{};
+    for (final b in blocks) {
+      final g = b.groupId;
+      if (g != null) count[g] = (count[g] ?? 0) + 1;
+    }
+    for (final b in blocks) {
+      if (b.groupId != null && count[b.groupId] == 1) {
+        b.groupId = null;
+        b.updatedAt = nowMs();
+      }
+    }
+  }
+
   void select(String? id, {bool edit = false, bool additive = false}) {
     // The caret token is for the selection being made RIGHT NOW. Expiring it
     // here rather than trusting one widget type to consume it means a click
@@ -9809,13 +10745,24 @@ class AppState extends ChangeNotifier
       selectedBlockId = null;
       editingBlockId = null;
     } else if (additive) {
-      if (!selectedIds.add(id)) selectedIds.remove(id);
+      // Shift-click toggles the whole group. Taking a group out of a
+      // selection one member at a time would leave exactly the partial
+      // selection [_groupClosure] exists to prevent.
+      final g = groupMembers(id);
+      if (selectedIds.containsAll(g)) {
+        selectedIds.removeAll(g);
+      } else {
+        selectedIds.addAll(g);
+      }
       selectedBlockId = selectedIds.contains(id) ? id : selectedIds.firstOrNull;
       editingBlockId = null;
     } else {
       selectedIds
         ..clear()
-        ..add(id);
+        ..addAll(groupMembers(id));
+      // The block that was clicked stays the primary one, not whichever
+      // member happens to come first: the object row and the inspector speak
+      // for the thing under the pointer.
       selectedBlockId = id;
       editingBlockId = edit ? id : null;
       // Remembered here rather than where the caret lands, because this is
@@ -9828,7 +10775,9 @@ class AppState extends ChangeNotifier
   void selectMany(Iterable<String> ids) {
     selectedIds
       ..clear()
-      ..addAll(ids);
+      // A marquee that catches half a group takes all of it: the box was
+      // drawn round things, and a group is one of them.
+      ..addAll(_groupClosure(ids));
     selectedBlockId = selectedIds.firstOrNull;
     editingBlockId = null;
     notifyListeners();
@@ -9836,23 +10785,18 @@ class AppState extends ChangeNotifier
 
   /// Move every selected block by a page-space delta (ink blocks translate
   /// their stroke coordinates — Ink Spec §3, coordinates are page-absolute).
+  ///
+  /// A locked block stays where it is and does not stop the rest: a slide
+  /// that joined the selection used to be carried off the page with the notes
+  /// written on it.
   void moveSelectedBy(double dx, double dy) {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue;
       b.x += dx;
       b.y += dy;
-      if (b.type == BlockType.ink) {
-        for (final sj in (b.content['strokes'] as List)) {
-          final m = (sj as Map);
-          m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
-          m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
-        }
-        // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
-        // painted ink follows the block instead of lagging until a reload.
-        b.updatedAt = nowMs();
-      }
+      _translateInk(b, dx, dy);
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// Snap + clamp all selected at drag end. Ongoing left-margin alignment:
@@ -9860,6 +10804,7 @@ class AppState extends ChangeNotifier
   /// margin so everything stays neat (matches the smart initial placement).
   void settleSelected() {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue; // never moved, so nothing to settle
       if (b.type != BlockType.ink) {
         if ((b.x - pageLeftMargin).abs() < 26) {
           b.x = pageLeftMargin;
@@ -9873,8 +10818,7 @@ class AppState extends ChangeNotifier
       }
       clampBlockToPage(b);
     }
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   /// **Whether the tool in hand was picked up by the app or by the person.**
@@ -9892,10 +10836,72 @@ class AppState extends ChangeNotifier
   /// possible for anyone without a pen.
   bool toolWasAutomatic = false;
 
+  /// **Choosing a tool drops the selection; being handed one does not.**
+  ///
+  /// Picking up the pen from the toolbar means you are done with whatever was
+  /// selected, so it clears — that much has always been right. But the pen
+  /// hands the tool round by itself, in three places (a pen coming into
+  /// range, and a side button borrowing a tool and giving it back), and those
+  /// are the same gesture from the user's side rather than a new decision.
+  ///
+  /// It was the GIVING BACK that showed it: lasso with the side button, let
+  /// go, and the pen came back through here and threw away the selection the
+  /// lasso had just made. The owner: *"it doesnt seem to hold the selection
+  /// after releasing the button. I suspect this is because it puts it right
+  /// into draw mode again, this isnt what it should do."*
+  ///
+  /// So an automatic hand-off leaves the selection alone, and what to do with
+  /// it is decided where the next press lands — inside it moves it, outside
+  /// clears it and draws. See `PageCanvas._selectionTakes`.
+  /// **Picking up a drawing tool puts the keyboard down.**
+  ///
+  /// A tool the user CHOSE clears the selection outright, which ends editing
+  /// with it. An AUTOMATIC switch — the pen announcing itself by hovering,
+  /// `PageCanvas._stylusProximity` — deliberately does not, because a
+  /// selection somebody made must survive a pen coming and going.
+  ///
+  /// But it took the open editor with it, and that is a different thing. The
+  /// owner: *"if i taped on the screen previously so there is the cursor but
+  /// no text in the box, if i start drawing the cursor stays flashing and the
+  /// outline of the box goes dashed."* Both from this: `editingBlockId`
+  /// survived, so the field kept focus and the caret went on blinking in a
+  /// box nobody could type into; and the box stayed selected, so
+  /// `PageCanvas` drew its dashed box round it — which it does round
+  /// everything selected while a drawing tool is in hand, because a block's
+  /// own chrome is suppressed then and the dashes are the only thing left
+  /// saying what a drag would pick up.
+  ///
+  /// [inkToolInHand] already states the rule this broke, in its own doc: *"a
+  /// block goes inert and loses its bar while one of these is held, so that
+  /// the pen can write over it."* A box with a live caret is not inert. So
+  /// the editor closes, and an empty box — the one in the report — then
+  /// clears itself away on the exit transition exactly as it does for every
+  /// other way of leaving one.
+  ///
+  /// **And the selection that came with it closes too, which is not the same
+  /// as dropping a selection.** `select(id, edit: true)` puts the box being
+  /// typed into in `selectedIds` as a consequence of opening the editor, not
+  /// because anybody picked it up. That distinction decides what the pen's
+  /// first stroke does: `PageCanvas._selectionTakes` implements the owner's
+  /// rule that *"whenever something on the page is selected (such that it is
+  /// moveable, NOT when in editing mode) then pen should act as regular touch
+  /// input, moving the selected items when dragged"* — so leaving the box
+  /// "selected" after closing its editor would make the first stroke drawn
+  /// inside the paragraph you had just been writing in pick the paragraph up
+  /// and drag it. Which is right for a box somebody clicked once, and wrong
+  /// for one they had a caret in. A real selection — made with no editor open
+  /// — is untouched, which is what the `automatic` branch exists for.
   void setTool(Tool t, {bool automatic = false}) {
     tool = t;
     toolWasAutomatic = automatic && t != Tool.select;
-    if (t != Tool.select) select(null);
+    if (t != Tool.select && !automatic) {
+      select(null);
+    } else if (inkToolInHand && editingBlockId != null) {
+      // [inkToolInHand] reads [tool], which is already `t` — so it is false
+      // for Select, and the pen LEAVING (also automatic) is not a second way
+      // to close a box: by then the keyboard is what is back in hand.
+      select(null);
+    }
     notifyListeners();
   }
 
@@ -9907,8 +10913,7 @@ class AppState extends ChangeNotifier
   void setBackground(String bg) {
     pushUndo();
     pageProps.background = bg;
-    markDirty();
-    notifyListeners();
+    markDirty(); // which notifies
   }
 
   void refresh() => notifyListeners();
@@ -10137,6 +11142,9 @@ class AppState extends ChangeNotifier
 
   // ── Persistence ────────────────────────────────────────────────────────
 
+  /// **And this notifies**, so a caller must not. Thirteen of them did, which
+  /// is one spare rebuild of everything on the page per edit — and per POINTER
+  /// SAMPLE on the one path that calls this in a loop, [moveSelectedBy].
   void markDirty() {
     _dirty = true;
     // Cheap counter, not a rebuild: it lets the open page's flashcards be

@@ -1,19 +1,15 @@
 # Openote — the application
 
 The Openote desktop app: a Flutter/Dart UI over a native **Rust core**
-(`rust/onote_core`) linked with hand-written `dart:ffi`. It reads and writes
-real `.onote` files per the [File Format Spec](../docs/specs/10-file-format-spec.md),
-in the spec's documented **mirror-write mode** (§4).
+(`rust/onote_core`) linked with hand-written `dart:ffi`. It reads and writes real
+notebooks per the [file format spec](../docs/specs/10-file-format-spec.md).
 
-The Rust core is **optional at runtime**: without its library the app falls back
+The Rust core is **optional at runtime** — without its library the app falls back
 to the pure-Dart engine and behaves identically, minus OneNote import. It is not
-optional at build time on Windows and Linux — see below.
+optional at build time on Windows and Linux; see below.
 
-> **This file describes the app as it is now.** It is not a changelog: the
-> release history is in [CHANGELOG.md](../CHANGELOG.md), and the blow-by-blow
-> iteration log lives in [docs/reviews](../docs/reviews/) — the
-> [MVP iteration-2 review](../docs/reviews/2026-07-code-review-mvp-iter2.md) is
-> explicitly the project's append-only record of what each pass changed.
+This file describes the app as it is, not how it got here. Release history is in
+[CHANGELOG.md](../CHANGELOG.md).
 
 ## Building and running
 
@@ -27,13 +23,13 @@ flutter test
 flutter run -d windows      # or -d linux / -d macos
 ```
 
-> **Do NOT run `flutter create` in this directory.** An older version of this
-> file told you to, on the claim that the runner projects "are not committed".
-> They are: `windows/`, `linux/` and `macos/` are tracked, and `windows/CMakeLists.txt`
-> and `linux/CMakeLists.txt` carry the hook that builds and bundles the Rust
-> core. `flutter create` would overwrite them and quietly reintroduce the
-> stale-library trap described below. The same advice told you to delete
-> `test/widget_test.dart`, which today holds real tests.
+> **Do not run `flutter create` in this directory**, for any platform. The
+> runner projects are tracked, and `windows/CMakeLists.txt` and
+> `linux/CMakeLists.txt` carry the hook that builds and bundles the Rust core.
+> `flutter create` overwrites them, which reintroduces the stale-library trap
+> below. Adding a platform is worse than it looks: `--platforms=web` also
+> dropped `pdfium_flutter` from all three desktop plugin registrants, trading a
+> working desktop build for a `web/` folder. Write the platform files by hand.
 
 Linux desktop needs the usual toolchain (`clang`, `cmake`, `ninja-build`,
 `libgtk-3-dev`); `flutter doctor` names whatever is missing.
@@ -156,94 +152,61 @@ snapshot merge behind this same seam and is **not wired**.
 
 ## What isn't built yet
 
-Tracked in the [roadmap](../ROADMAP.md) and the
-[v0.4 backlog](../docs/planning/v0.4-and-beyond.md); the ones that shape the
-code you are about to read:
+Three gaps shape the code you are about to read. The rest of the open work is
+in the [backlog](../docs/planning/backlog.md).
 
-- **The structured rich-text model.** [ADR-0004](../docs/adr/ADR-0004-editor-engine.md)
-  is decided (keep the engine we own, behind the `OnoteTextEditor` seam), but a
-  block's text is still an interim Markdown **string** rather than the Data
-  Model §5.1 `{nodes:[…]}` model. The migration is driven by sync
-  ([ADR-0006](../docs/adr/ADR-0006-sync-transport-and-text-model.md)) rather
-  than by the editor: an opaque string makes the smallest representable edit
-  "the whole block is now this", which cannot merge per-character. Per-run
-  styling, paragraph collapse and in-flow-images-editable-as-images all wait on
-  it.
-- **Sync is real but half-migrated.** Two devices sharing a folder works
-  (`sync/`, ADR-0006 steps 1–3). The container has **not** been demoted to
-  `cache.onote`, blobs are stored twice and never garbage-collected, and Loro
-  and any network transport are absent.
-- **`AppState` is a god object** — ~3,200 lines across 27 sections, because
-  there is nowhere else for state to land. Splitting out `SyncCoordinator`,
-  `StudyState` and `TagOps` is item E3 of the v0.4 backlog and is meant to
-  happen before more features land in it.
+- **Text is a Markdown string, not a structured model.** A text block keeps its
+  content in `content['text']`; the `{nodes: […]}` model of
+  [Data Model §5.1](../docs/specs/11-data-model-spec.md) is specified and not
+  built. Everything that wants to address a *run* of text rather than the whole
+  block waits on it: per-run styling, paragraph collapse, and editing an
+  in-flow image as an image. The migration has one landing site by design —
+  `OnoteTextEditor.serialize` / `deserialize` / `textStorageKey`.
+- **Two text edits to one block cannot both win.** Folder and git sync both
+  work, and ops are block-level, so two devices editing different blocks merge
+  cleanly. `block.patch` narrows the cost of a keystroke to a splice but still
+  falls back to last-writer-wins when two splices collide. Real convergence
+  needs a sequence CRDT ([ADR-0002](../docs/adr/ADR-0002-crdt-library.md)),
+  which is chosen and not integrated. There is no network transport either —
+  sync is files in a folder somebody else replicates.
+- **`AppState` holds most of the app's state**, and `notifyListeners` offers a
+  rebuild of everything to every listener. That is why per-keystroke caches and
+  `ui/memo.dart` exist. Splitting it is the standing second item on the backlog;
+  `StudyState` and `PlannerState` came out first.
 
 ## Code map
 
+By directory, because a file-by-file map of 220-odd files goes stale faster
+than it helps. Each directory is one subject; `grep` finds the file.
+
 ```
 lib/
-├── main.dart                     entry, theme wiring, pdfrx init
-├── theme/onote_theme.dart        style-guide tokens + the font-fallback chain
-├── core/
-│   ├── ids.dart                  UUIDv7 (Data Model §2)
-│   ├── engine.dart               DocumentEngine seam + MirrorEngine
-│   ├── onote_ffi.dart            dart:ffi bindings to onote_core
-│   ├── platform_open.dart        open a file/URL with the OS, scheme-allowlisted
-│   └── system_fonts.dart         installed-font enumeration for the picker
-├── model/
-│   ├── models.dart               TreeNode, Block (+envelope), Stroke, JSON
-│   └── tags.dart                 per-line tags (TEXT-5) and their rebasing
-├── store/
-│   ├── database.dart             .onote SQLite DDL (File Format Spec §3)
-│   └── repository.dart           workspace/notebook/page CRUD, mirrors, blobs
-├── state/
-│   ├── app_state.dart            app-wide state + the storage facade — the one
-│   │                             funnel every persistent mutation passes through
-│   └── builtin_templates.dart    the six shipped page templates
-├── sync/                         ADR-0006 operation log (shadow mode)
-│   ├── op.dart                   envelope + deterministic total order
-│   ├── op_log.dart               Foo.onotebook/ops/<device>.oplog, append-only
-│   ├── device_identity.dart      per-install id, forks on conflict
-│   ├── materializer.dart         replay → state (delete-wins)
-│   ├── sync_recorder.dart        diffs a page save into block-level ops
-│   ├── cloud_folders.dart        detects Drive/OneDrive/… (and why no OAuth)
-│   ├── folder_watch.dart         auto-pull when another device writes
-│   └── mirrors.dart              per-notebook mirrors and dated backups
-├── canvas/
-│   ├── canvas_controller.dart    pan/zoom matrix, screen↔page mapping, snap
-│   ├── page_canvas.dart          gestures, grid, ink capture, block layout
-│   ├── ink_ops.dart              pure ink logic (touch-vs-pen routing)
-│   ├── ink_painter.dart          perfect-freehand outline painting
-│   ├── align_guides.dart         snap lines against sibling edges
-│   ├── media_drop.dart           paste and drag-drop into the page or a box
-│   ├── block_view.dart           selection chrome, move bar, resize, dispatch
-│   └── page_title_view.dart      the in-page title band
-├── editor/
-│   ├── onote_text_editor.dart    ADR-0004 engine seam (the swap point)
-│   ├── live_markdown_engine.dart the engine we ship, behind that seam
-│   ├── live_markdown_controller.dart  as-you-type marker collapsing
-│   ├── unicode_input.dart        Alt+X code-point conversion
-│   ├── text_block_view.dart      host for a text container (not an editor)
-│   ├── math_block_view.dart      linear entry ↔ rendered 2-D maths
-│   ├── table_block_view.dart, code_block_view.dart, code_highlight.dart
-│   └── image_block_view.dart, file_block_view.dart
-├── math/
-│   ├── linear_math.dart          linear input → LaTeX (Math Input Spec §3)
-│   └── evaluate.dart             numeric evaluation — a calculator, not a CAS
-├── markdown/                     rendering + GFM pipe tables (two-way)
-├── spell/spell_checker.dart      English spell check + learned words
-├── study/
-│   ├── flashcards.dart           cards from tagged lines, SM-2 scheduling
-│   └── study_stats.dart          streak, activity and exam-countdown maths
-├── export/                       Markdown, PDF (vector + raster), open folder,
-│                                 OneNote/.onepkg import, Markdown import,
-│                                 PDF-as-annotatable-pages import
-└── ui/
-    ├── app_shell.dart            layout: navigator | command bar / canvas / panels
-    ├── sidebar.dart              the stacked navigator (style guide §7b)
-    ├── command_bar.dart          the tabbed command bar
-    ├── study_panel.dart          review, progress and the exam countdown
-    ├── notebook_manager.dart, sync_dialog.dart, onboarding.dart
-    ├── color_picker.dart, font_picker.dart, exam_date.dart
-    └── context_menus.dart
+├── main.dart      entry point, theme wiring, pdfrx init
+├── model/         TreeNode, Block and its envelope, Stroke, JSON round-trip
+├── store/         the SQLite container, the workspace registry, blobs, media
+├── sync/          the op log, folder and git transports, device identity
+├── state/         AppState and the three states split out of it so far
+├── canvas/        the page surface: placement, selection, ink input, portals
+├── editor/        text, code, tables, flashcards, boards — one view per block
+├── markdown/      one grammar, shared by the live editor and the renderer
+├── math/          the editing tree, the linear grammar, evaluation, graphs
+├── ink/           stroke storage and the binary codec
+├── media/         images, video, recordings
+├── export/        PDF, Markdown, the open folder, and every importer
+├── onenote/       Microsoft Graph: sign-in, page fetch, MathML conversion
+├── code/          JS and SQL cells and the engines behind them
+├── planner/       dates, reminders, the ICS timetable, the agenda
+├── study/         flashcard scheduling and Anki export
+├── api/           the MCP server and the one-click client connections
+├── ui/            the shell, the command bar, the navigator, every dialog
+├── core/          cross-cutting: ids, FFI, platform seams, single instance
+├── theme/         tokens and the component themes built from them
+├── spell/         the dictionary and the checker
+├── update/        the in-app update check
+└── l10n/          `.arb` message files; `gen/` is generated, do not edit
 ```
+
+A file named `x_native.dart` / `x_web.dart` beside an `x.dart` is a platform
+seam: `x.dart` is a conditional export and nothing else imports the halves
+directly. `core/capabilities.dart` is where a feature asks whether its
+platform dependency is present.

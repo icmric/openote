@@ -1,0 +1,524 @@
+# Backlog
+
+> Everything open that is not already planned into a release document, plus
+> everything that has been **decided against** — recorded so it is not
+> re-proposed every round.
+>
+> [CHANGELOG.md](../../CHANGELOG.md) is what shipped. [PLANNING.md](../../PLANNING.md)
+> is Eric's raw asks in his own words. When an item here grows a plan it moves
+> to a release document in this folder.
+>
+> Sizes: **S** ≈ hours · **M** ≈ 1–3 days · **L** ≈ ~a week · **XL** ≈ multi-week.
+>
+> The bar every item is judged against: *does this help a student the week
+> before an exam?* Secondary, always: does it keep working for someone who
+> switched from OneNote and judges us on whether their daily habits survived.
+
+---
+
+## Next
+
+Ranked by value ÷ effort, which is not the order things were thought of.
+
+| # | Item | Size | Why here |
+|---|---|---|---|
+| 1 | **Use the macOS and Linux builds** | S | Three platforms ship; two have never been run by a human. CI proves they compile. §1.1 |
+| 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
+| 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
+| 4 | **The spell checker knows mitochondria and not Monday** | M | Four reports in one: the bundled list is a Scrabble lexicon, so every name and most of this decade is underlined. §1.16 |
+| 5 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
+| 6 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
+| 7 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
+| 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
+| 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
+| 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
+| 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
+| 12 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
+
+---
+
+## Raised on GitHub, not yet placed
+
+Read 14 October. Each is waiting for a decision on which release, if any; the
+sizes are first guesses. When one is placed it moves to that release's document.
+
+| Issue | Item | Size | Notes |
+|---|---|---|---|
+| [#20](https://github.com/icmric/openote/issues/20) | **Configurable pan and zoom chords** | M–L | The rest of #20 is diagnosed and planned in [v1.0.2](v1.0.2.md#14-selecting-and-moving-over-pictures-and-pdfs). What stays here is the asked-for Alt-drag pan and Shift+Alt-drag zoom for tablet users, and Alt-drag already moves a text box. Space-drag pan is the cheap, conflict-free part and could go first |
+| [#20](https://github.com/icmric/openote/issues/20) | **Split ink that has already merged** | M | Strokes written within two seconds of each other became one object wherever they were (v1.0.2 fixes the cause). Existing merged ink can be split with the lasso; a "separate the pieces" command that splits by the gaps between strokes is the discoverable version |
+| [#12](https://github.com/icmric/openote/issues/12) | **A theme catalogue** | M | True Black for OLED, high-contrast light and dark, a few calm alternatives. The issue's own recommendation is ten; True Black and the two high-contrast themes are most of the value. Needs a registry in place of today's one light and one dark `ThemeData` |
+| [#15](https://github.com/icmric/openote/issues/15) | **An interface scale** | M | One multiplier for the app's chrome, leaving note text alone. Do it beside v1.0.2's text-scaling bug, which is the same widths measured without a scale |
+| [#14](https://github.com/icmric/openote/issues/14) | **An all-notebooks navigator** | L | Every notebook as a top-level row, expandable. Navigation only — the issue rules out several editors. The smaller cousin of v1.0.3's [several notebooks open at once](v1.0.3.md#several-notebooks-open-at-once) |
+| [#18](https://github.com/icmric/openote/issues/18) | **Navigator suggestions** | S each | Put "add section", "add group" and "add page" below the last item, where people look; show the recycle bin as a summary ("3 pages · 1 goes in 5 days") rather than a button that looks like delete; the section name repeated above its pages, where right-click does nothing; "Move to group" offering a new group; "exam date" as a general countdown; shorter menu labels; choosing a section's or page's icon |
+| [#7](https://github.com/icmric/openote/issues/7) | **Custom colours** | S–M | Saved palettes and an eyedropper for ink and text |
+| [#7](https://github.com/icmric/openote/issues/7) | **Self-hosted sync, explained** | S | Plain instructions for keeping a notebook on your own server (Nextcloud, WebDAV) with the folder sync that exists |
+| [#7](https://github.com/icmric/openote/issues/7) | **German handwriting recognition and spelling** | XL | Recognition is the surface ink-to-math is waiting for (decided against, below); spelling may be smaller on its own |
+
+---
+
+## 1. Engineering debt
+
+### 1.1 Run the builds we ship · **S**
+
+Launch each, import a PDF, draw, and sync a notebook between two machines.
+pdfium is a per-platform native binary and the likeliest thing to fail
+differently. This is the difference between "we support Linux" being a claim
+and a fact, and it is the cheapest credibility risk on the list.
+
+The macOS Rust build hook has never been run either — `app/README.md` carries
+the seven-step check for the first Mac to try it.
+
+### 1.2 Split `AppState` · **M**
+
+`notifyListeners` offers a rebuild of everything to every listener, which is
+why there are per-keystroke caches and `ui/memo.dart` instead of narrower
+notifications. `StudyState` and `PlannerState` came out; `SyncCoordinator` and
+`TagOps` have not.
+
+The split has been done once and did not change the gradient, only the
+intercept — everything built since landed back in the same class. So the useful
+version of this is a rule about where new state goes, not another extraction.
+
+### 1.3 Blob garbage collection · **M**
+
+Designed in [ADR-0007](../adr/ADR-0007-blob-lifecycle.md), never built. Two
+things to settle before writing any:
+
+- **The op log names every blob ever written and is never compacted.** A sweep
+  that treats a `blob.put` as a reference can therefore collect nothing. This
+  is the same problem as the dead video in [v1.0.2 §19](v1.0.2.md), and
+  `blob.forget` is the sketched answer.
+- **The clipboard and the undo stack are reachability roots** and ADR-0007's
+  list of four does not mention them. A blob whose only reference was just cut
+  is reachable from the cut.
+
+`store/media_gc.dart` is the shape to copy: a wrong keep costs disk, a wrong
+delete costs somebody's lecture, so every decision in it is deliberately
+asymmetric, and no evidence is never treated as evidence of absence.
+
+### 1.4 The imported-image mime label · **S**
+
+`onenote/` writes `image/png` for every image it extracts, whatever the bytes
+actually are — the parser does not transcode, so a JPEG stays a JPEG and gets
+the wrong label. `export/open_export.dart` derives the asset filename from the
+mime, so the open folder contains JPEGs named `.png`. Sniff the magic bytes.
+
+### 1.5 Large file drops read the whole file into memory
+
+`canvas/media_drop.dart`, in the two drop handlers. Insert ▸ Video already
+streams. The half of this that *lied* — a drop that landed nothing and said
+nothing — is fixed; the progress half is not.
+
+### 1.6 Keep source files searchable
+
+`test/source_hygiene_test.dart` now refuses any control character in `lib/` or
+`test/`, because ripgrep treats a file containing one as binary and skips it
+entirely. That is how nine hundred lines of `text_block_view.dart` became
+invisible to every code search in the repo.
+
+The rule is live and the trap is one keystroke away: a LaTeX escape typed into a
+comment through a shell that interprets it becomes a control character silently.
+Ten files were carrying one when the check was widened, and two of them were tests
+whose assertions had been vacuous as a result.
+
+### 1.7 `lib/` must not touch a `debug*` member outside an assert
+
+`RenderObject.debugNeedsLayout` is assigned inside an `assert`, so it throws
+with asserts stripped — release and profile only. Every open inline equation
+broke its paragraph's layout in the build a student downloads, and the whole
+suite passed. A sweep is the only way to check for more.
+
+### 1.8 Specify the ink blob format · **Done**
+
+[Ink spec §2.3](../specs/13-ink-data-spec.md) is the byte layout, with a
+worked example and the varint and zigzag rules written out, so an independent
+implementation can draw a notebook's handwriting. This was the one place the
+openness guarantee was unmet.
+
+### 1.9 MathML export · **S–M**
+
+[Maths spec §6](../specs/12-math-input-spec.md) specifies it and nothing builds
+it, so an equation leaves Openote as LaTeX only. Two consumers want it: a tool
+importing an exported notebook, and a screen reader — which is the same audience
+as the accessibility work in [v1.0.2](v1.0.2.md), and the reason this is worth
+more than its size suggests.
+
+Derive it from the stored LaTeX at export time rather than storing it. There is
+already a MathML parser in the tree, `onenote/mathml_latex.dart`, going the other
+way for OneNote import; it is a reference for the vocabulary, not something to
+reverse.
+
+### 1.10 Two acceptance criteria this project set itself and did not meet
+
+Both are [ADR-0004](../adr/ADR-0004-editor-engine.md)'s, and both are small.
+
+**The opening `$` of an inline equation is still a character the caret steps
+onto**, so one press of an arrow key moves nothing you can see. Criterion 3 asked
+for the equation to behave as a single atom, and arrowing into one now hands over
+to the equation editor properly — this last step is what is left of it. Measured on
+`a $x^2$ b`: eight presses of the right arrow from the start give offsets 1, 2, 3,
+3, 3, 3, 3, 3. Update the ADR's own table when it is fixed, rather than this line
+alone.
+
+**A CJK and IME pass on Windows and Linux**, criterion 5, has never been done.
+Composition is inherited from a stock `TextField` rather than reimplemented, so it
+is probably fine. "Probably" is the problem, and it needs somebody who types in one
+of those languages rather than a test.
+
+### 1.11 Nothing ever deletes an orphaned op log
+
+`ops/` keeps every log any device ever wrote. The device **count** no longer
+counts the abandoned ones, but the files stay — on a real notebook that is 1.6 MB
+of history from a laptop that last wrote in September.
+
+The identity fork that was minting them is fixed, so this stops growing. What is
+left is the backlog of ones already there, and removing one is **deleting
+content**: an old device's ops are as valid as any other, and the materialiser
+reads them to build the notebook. Dropping a log drops whatever only it recorded.
+
+So this is the same question as §1.3, and wants the same answer: retire a log
+deliberately, with evidence that everything in it has been superseded, rather
+than sweeping by age. Worth doing together.
+
+### 1.12 The blob repair leaves Drive's old duplicates behind · **S**
+
+Measured on the owner's notebook: **17 files, about 5 MB**, named
+`<hash> (1).pdf` through `<hash> (8).pdf`.
+
+These are from before the `.blob` suffix landed, so the cause is fixed and the
+pile is not growing — every one is dated the day before the fix ran. What the
+repair did was recover the *bytes* (the canonical file is there) without removing
+the copies, because it looks for `<hash>` and `<hash>.blob` and these have a
+space and a provider-chosen extension.
+
+**The safety property is unusually good here, which is why it is worth doing:**
+the hash is the filename, so a file called `<hash> (N).anything` whose contents
+hash to `<hash>` is *provably* a redundant copy of a file we already have. Verify
+the bytes, then delete. It cannot be wrong about what it is removing, which is not
+something that can be said of §1.3.
+
+### 1.13 `cloud_sync_test`'s purge assertion still flakes
+
+*"Purging a joined notebook leaves the other device alone"* passes alone and fails
+under a full suite, roughly once in several runs:
+
+```
+Expected: null
+  Actual: 'GREW   ops\<device>.oplog  1489 -> 1936 B'
+```
+
+**Do not weaken the assertion.** Byte equality is the right bar — a purge that
+appended one op to a log in a shared folder would replicate the deletion to every
+other device, which is the data-loss class commit 320e0be was.
+
+The test has been de-flaked three times and its comments record each cause: the
+watcher's stop was not awaited, then a pull that watch had already fired, then the
+fact that settling drains the jobs in flight at the moment it looks and not the one
+that starts a millisecond later. The current baseline waits for two consecutive
+reads to agree, and this is a fourth occurrence of the same shape — **something
+still appends to the shared folder after both devices' auto-sync is off.** That is
+worth finding on its own terms, because a write nobody expects into a replicated
+folder is interesting whether or not a test is watching.
+
+### 1.14 Finish the translation coverage
+
+Several dialogs are still Dart string literals rather than `.arb` messages —
+sync, AI access, the planner and study panels, and the passcode dialog, whose
+warning about what protection does *not* cover is the one most worth
+translating.
+
+---
+
+### 1.15 There is no way to pan with a pen · **S**
+
+Middle-drag pans, two fingers pan, the wheel scrolls, and a graphics tablet
+has none of those. A pen drag on empty page is a selection box, so somebody
+working with a stylus can only move around the page by the scroll bar.
+
+From [#20](https://github.com/icmric/openote/issues/20): *"customizable
+shortcuts would be really helpful for graphics tablet users. For example,
+holding Alt + left-drag to pan and Shift + Alt + left-drag to zoom."*
+
+Two sizes of answer, and the small one is worth shipping on its own: **one
+modifier that means pan**, chosen rather than configured. Space-drag is the
+convention everywhere else and is free here; Alt is not, because Alt-drag
+already means "move this box instead of selecting its text", which is the
+escape hatch a text block needs.
+
+The large one is bindings somebody can change, which wants a settings surface,
+a store, and a decision about what is bindable — a release of its own, and the
+owner has said as much on the issue.
+
+### 1.16 The spell checker knows mitochondria and not Monday · **M**
+
+The owner: *"we do currently have spellcheck but its not particularly good (it
+doesnt pick up on many words, lots of the time it can tell you something is
+wrong but doesnt give options for what it thinks it might be, doesnt auto
+correct if it has high confidence, doesnt as far as im aware support different
+styles of language like Australia vs Brittish vs US English)."*
+
+All four are true, and three of them are one cause: the bundled list is
+**ENABLE**, a Scrabble lexicon. 172,823 words, public domain, and chosen for
+coverage — of playable words. Measured against the asset we ship:
+
+| in it | not in it |
+|---|---|
+| mitochondria, photosynthesis, calculus, semester | Monday, January, Australia, any name |
+| colour, realise, organisation | favourite |
+| laptop, okay | email, internet, website, online, app, blog, wifi, dataset |
+| | don't, isn't — no contraction is in it |
+| | etc, vs, PhD, OK |
+
+So every date, every place, every person and most of this decade is underlined,
+which is what "doesn't pick up on many words" means. Note the dialect row: some
+British spellings are in and others are out, because playability is not a
+dialect. There is no dialect to choose because there is no dialect in there.
+
+**The work, in the order it pays:**
+
+1. **Replace the word list.** SCOWL (permissive, same licence shape as ENABLE)
+   publishes exactly the pieces this needs as separate files: a base list in
+   size tiers, plus `british-`, `canadian-` and `australian-words`,
+   `english-proper-names` and `english-abbreviations`. Assemble at build time,
+   union with ENABLE — strictly better coverage than either — and let Settings
+   pick the dialect, which is then a real choice rather than a label.
+2. **Tokenise contractions and possessives as one word.** `don't` is one token
+   or it is two misspellings.
+3. **Better suggestions.** Generation is edit distance 1, unranked, which is
+   why there is often nothing to offer: a transposition plus an omission is
+   distance 2, and so is every typo in a long word. Add distance 2 for short
+   words, split and join candidates (`alot`), a capitalisation-only candidate
+   once proper names are in, and order by frequency rather than by the order
+   the alphabet loop happened to generate.
+4. **Autocorrect, narrowly.** Only on a word boundary, only when there is
+   exactly one distance-1 candidate, and reversible — which is the same
+   escape-hatch question as [v1.0.2 #23](v1.0.2.md#23-auto-capitalisation),
+   and should be decided once for both.
+
+**Can we piggyback on the operating system?** Partly, and not the part that
+would help most.
+
+  * **Windows 8+** has one: `ISpellCheckerFactory` / `ISpellChecker` (COM),
+    per-BCP-47-locale, with suggestions, a user dictionary and autocorrect
+    pairs. Which dialects a machine actually has is a per-machine question
+    answered by `get_SupportedLanguages`, and is tied to installed language
+    features — so en-AU may simply not be there. That needs measuring on a
+    real machine before it is designed around.
+  * **macOS** has the best of them: `NSSpellChecker`, multi-locale, with
+    `guesses`, `correction` and language auto-detection.
+  * **Linux** has nothing system-wide. The convention is enchant brokering
+    hunspell against the distribution's dictionaries, which is LGPL code and
+    mixed-licence dictionary data — a question [ADR-0005](../adr/) has an
+    opinion about.
+  * **iOS and Android** have `UITextChecker` and `SpellCheckerSession`, which
+    is what Flutter's own `DefaultSpellCheckService` wraps, and why
+    `spell/spell_checker.dart` exists at all.
+
+So a platform provider is two native plugins for two of five platforms, and it
+buys a result that differs per machine: a word underlined on the laptop and
+clean on the desktop, with no way to reproduce either in CI. The call: keep our
+own checker as the default and the only one tested, fix the list — which is
+where the complaint actually comes from — and leave a platform provider as an
+opt-in behind a `SpellService` seam if anyone still wants it afterwards.
+
+### 1.17 Two settings the rail was built to hold
+
+Named by the owner while redesigning Settings — *"In time we will include more
+options such as being able to adjust the text/icon size of the UI, custom
+keybinding, and some other jazz like that"* — so they are written down here
+rather than left as the reason a layout changed.
+
+  * **The size of the interface's text and icons.** Blocked on, and not merely
+    related to, [v1.0.2 #12](v1.0.2.md): nothing in the app reads
+    `textScaler`, so every width it measures for itself is measured at 100%
+    while the widgets draw larger. A control that scaled the interface before
+    that is fixed would ship the bug on purpose. #12 first, then the control,
+    in Settings → Appearance.
+  * **Custom keybindings · M.** `ui/keyboard_map.dart` is display data — the
+    keys as a string and a sentence saying what they do — while the bindings
+    themselves are 37 `SingleActivator`s wired straight to their call sites.
+    Rebinding needs the actions to become addressable things with the map as
+    their labels, which is the same registry a command palette would need
+    ([v1.0.2 §25](v1.0.2.md#25-the-command-bar) option C). Its home is a
+    Keyboard group split out of Help, where the shortcut reference already is.
+
+### 1.18 Say when a note holds something this build cannot read · **M**
+
+The owner, on shipping `{{=RRGGBB text}}` for coloured highlights knowing an
+older Openote shows the braces as text:
+
+> *"Its fine if older versions just show the raw markdown, thats annoying but
+> not a breaking bug, and no one is at this stage forced to stay on an older
+> version due to lack of support AFAIK. That is the best case scenario for not
+> handling something in an older version ... however ideally it should always
+> just display the raw text like that if its something small or otherwise
+> easily shown as raw text, otherwise just get hidden but kept and not touched
+> so that when they update it all appears. Maybe displaying a message like
+> 'unknown element, check for an available update' would be helpful instead of
+> fully hiding it, although that adds a lot of complexity and i dont think is
+> worth doing for this release as it is something i want to plan out the
+> implementation more before doing."*
+
+**So the rule, in the order it is wanted**, and it is worth writing down
+because it is already most of what the format does:
+
+1. **Small and readable as text → show the raw text.** What an inline run
+   does today: a build with no `{{=…}}` draws the characters. Annoying,
+   never lossy, and it costs nothing.
+2. **Otherwise → keep it, draw nothing, change nothing.** What a block does
+   today: `Block.rawType` and `unknownFields` carry a type this build has
+   never heard of through every read and write (Data Model §3.2), and the
+   canvas draws "Unsupported block: …".
+3. **Better than silence → say an update would show it.** Not built, and the
+   part that needs designing.
+
+**What makes (3) more than a string.** There is no inventory of what a file
+can contain, so nothing can currently tell "a thing from the future" from
+"a thing we chose not to draw" (`frame`, a `file` with no viewer) or from a
+typo. The pieces it would need:
+
+- **A format feature list in the container.** `notebook_meta` already carries
+  `features: []`, written and never read. A writer adding a new construct
+  records its name; a reader that does not know a name there knows, before it
+  opens a page, that something in this notebook is newer than it is.
+- **One notice per notebook, not per block.** A deck annotated on a newer
+  build could be fifty unknown blocks, and fifty cards saying the same
+  sentence is worse than the silence. The status bar is where "this notebook
+  was written by a newer Openote" already goes (`notebookIsReadOnly`), and
+  that wording is the precedent to match.
+- **A decision about inline runs**, which is where it gets hard: an unknown
+  `{{?hex x}}` is indistinguishable from somebody typing braces, so the
+  honest answer there may stay (1) for ever.
+
+Until then the two rules that hold are (1) and (2), and every new construct
+should be able to say which one it relies on. The coloured highlight relies
+on (1); `board`, `graph` and `substitute` each relied on (2) when they
+shipped.
+
+---
+
+## 2. Structural, blocked on a decision
+
+### 2.1 The spreadsheet engine · **L**
+
+Formulas, cell styling and charts cannot be *imported* because there is nothing
+to import into: the table block has no formula model, no per-cell styling and no
+chart. So this is not an importer gap, it is a design pass — decide what a table
+block can hold, then the importer fills it. Live data from an API belongs to the
+same pass.
+
+### 2.2 The structured `nodes` text model · **XL**
+
+Specified in [Data Model §5.1](../specs/11-data-model-spec.md), unbuilt. One
+landing site by design: `OnoteTextEditor.serialize` / `deserialize` /
+`textStorageKey`. `block.patch` bought most of the *size* win a finer model
+promised, so what remains is the correctness half — two edits to one paragraph
+still resolve last-writer-wins.
+
+### 2.3 Op-log segments and compaction
+
+[v0.11 Phase 2](archive/v0.11-size-and-speed-overhaul.md) plans rotation,
+gzipped closed segments and per-device compaction. **Read
+[v0.13](v0.13-op-log-compaction-review.md) first** — it designed the same thing
+twice, found it unsafe, and is recorded as rejected. The disk cost is real; the
+proposed fix was not safe. Do not implement without answering every objection
+in v0.13.
+
+---
+
+## 3. Decided against — for now
+
+Each would be welcome; each has a reason it is not next, and a trigger.
+
+| Item | Why not now | Trigger |
+|---|---|---|
+| **3D graphs** | Needs a second grammar (two variables), a second painter and a projection. Measured cheap to *draw* — 0.60 ms/frame at 60×60 — and expensive to *fit in*. 2D is shaped so 3D lands as an added file. | The owner asking for it directly |
+| **Android / tablet** | Not the same app on a smaller screen: sync is a folder, and scoped storage makes that a new storage backend | Desktop settled, and demand |
+| **Ink-to-math** | High appeal, XL cost, no recognition surface to build on | Usage evidence from the study loop |
+| **Beta updates you opt into** | Ruled out for now — "just going to add too much complication". Costed in full, so it need not be rederived: the switch must ship in a STABLE release before any beta can reach anyone (every installed copy asks for `/releases/latest`, which never returns a prerelease); `compareVersions` treats `1.0.3-beta.1` and `1.0.3` as equal; Inno's `VersionInfoVersion` must be numeric and `.deb`/`.rpm` want `1.0.3~beta.1`. About a day, most of it packaging | Releases slowing enough that finished work waits weeks |
+| **Plugins** | A plugin runs with the app's access to every note, and the owner's answer on [#10](https://github.com/icmric/openote/issues/10) is security: "no plans as of yet … due to the potential security implications" | A design that sandboxes one |
+| **Real-time co-editing** | A transport swap over the op log *later*; per-character merge needs §2.2 first. Shared-folder and git group notebooks already cover group study | §2.2 landing |
+| **A first-party sync service** | Contradicts "point it at a folder you already have", which is what makes self-hosting trivial | Users asking |
+| **PPTX rendering** | Needs a converter on import, or export-to-PDF first. A `.pptx` lands as an attachment | Someone needing it |
+| **Code signing** | A few hundred a year per platform. MSIX, winget, Chocolatey, Homebrew and Flatpak are each gated on it, and MSIX is the only route to OS-scheduled notifications | A funded year, or a distro asking |
+| **Per-machine (admin) install** | Easy to add to the same script. Nobody has asked | A lab or school asking |
+| **Multiple calendar subscriptions** | Two feeds is a manager — add, remove, rename, colour, enable. One feed covers a student's timetable | Someone genuinely having two |
+| **A week/day timetable grid** | The month grid exists and is off by default, because the agenda is what gets read daily. A grid is a nice thing, not the same feature as knowing what is next | Demand |
+| **Attaching notes to an event** | "Open my notes for this lecture" wants a feed-UID→section mapping, which is per-workspace state of exactly the kind that has bitten before | Two-machine sync testing done |
+| **Number bases** (binary, hex, octal) | Explicitly not a priority, and nothing in the current maths design earns it a place without clutter | A design that absorbs it cleanly |
+| **`Ctrl+Space` into the symbol panels** | `Shift+F10` and the object row's F6 region cover the need; this was the last of the keyboard pass and nobody has missed it | A report |
+| **A blank graph on the Insert menu** | A graph is a graph *of* something and has no editor of its own, so a blank one is a box with nothing to change. The route is the Graph button on the equation's row | — |
+| **System interpreters for code cells** | Needs real per-platform OS sandboxing — AppContainer, bubblewrap, sandbox-exec. A confirmation prompt is not a sandbox, and a system interpreter's default authority is the whole machine | Sandbox work being worth a release |
+| **Code cells: page sessions, write-back, chart output** | A session reintroduces "works only if you ran that other cell first", which standalone cells are free of. Write-back crosses the compute/mutate line. Charts share a component with the spreadsheet ask (§2.1), so building one twice would be the waste. [Archived plan](archive/v0.14-local-code.md) §5 | §2.1, for charts |
+| **Equation numbering, units, chemistry, MathML import** | Each is real and each is small next to the maths work already done. Owned by [v0.21](v0.21-outdo-onenote-maths.md), ranked there | — |
+
+One idea worth keeping from a rejected design: **press a symbol with the caret
+in a paragraph and an inline equation starts, seeded with that symbol.** The
+dock it came with was rejected; this part was not.
+
+---
+
+## 4. Not doing
+
+| Item | Why |
+|---|---|
+| **Writing to a calendar** | Openote has no account and no credentials. A re-date control that appeared to work until the next refresh is the wrong answer to "read-only" |
+| **Timezone conversion** | Dart ships no IANA database, so a `TZID` reads as floating local time. Correct for a student's own timetable on their own machine, wrong abroad, and said out loud in the calendar warnings rather than guessed at |
+| **Step-by-step worked solutions** | The deep well the vision's non-goals name. Showing working is the part a student would most want right, and getting it wrong is worse than not offering it |
+| **A CAS** | Same |
+
+---
+
+## 5. Carried verification
+
+Things believed to work that no human has confirmed. Carried so they do not
+silently become "known good".
+
+- [ ] The macOS and Linux builds, used for five minutes each (§1.1).
+- [ ] Touch and stylus drawing on real hardware — pressure, tilt, palm
+      rejection, the barrel button. The logic is unit-tested; the feel is not.
+- [ ] `rebuild-from-log` against the real imported notebook —
+      `syncMissingBlobs` empty, plus a page-sample mirror comparison.
+- [ ] One OneNote PDF export of a page with a floating image, to close the
+      circular image-`y` check in the importer.
+- [ ] The [style guide](../05-style-guide.md) read against `theme/tokens.dart`
+      and `theme/onote_theme.dart`, value by value.
+- [ ] That the ChatGPT desktop app picks up the MCP entry Openote writes into
+      `~/.codex/config.toml`.
+
+---
+
+## Appendix A — the git join that produced an empty notebook
+
+Kept because the *dead ends* are worth more than the fix. Reported as: *"it got to
+the first step, it even created the notebook, but after several minutes it still
+hadnt imported any pages and had made no further progress."*
+
+`git_join_test.dart` passed throughout. It only ever joined a notebook **created
+inside the test**; every defect was on the path of joining a notebook someone
+**already had**. Six causes, each of which alone produces an empty notebook:
+
+1. **No page-content backfill.** Two backfills existed — nodes and blob bytes —
+   and none for blocks. Ops are only written at the moment of a mutation, so
+   every page written before a notebook was shared was invisible to the log.
+2. **A deleted page rolled back the entire pull.** Pages were written for every id
+   the ops mentioned, including deleted ones whose node row is deliberately not
+   written → `page_mirror` foreign key → and the pull is ONE transaction, so one
+   dead page discarded every page.
+3. **A deleted section orphaned its pages** — the same foreign key one level up,
+   because `deleteNode` recorded one op for a whole subtree.
+4. **…but a parent that was merely never recorded had to be rescued, not
+   dropped.** Logs are permanent, so repositories from older builds exist for
+   good. The materializer now tracks *purged* ids to tell the two apart.
+5. **The push raced the backfills**, and the recorder decided whether to back-fill
+   at *open* time — so a warm started before sharing installed with it off.
+   Decided at **install** time now, so no caller has to say it twice.
+6. **Any failure looked like a hang.** `joinNotebookFromGit` documented "never
+   throws" and only guarded the clone; the dialog cleared its busy flag on one
+   branch only. A constraint error hundreds of lines away presented as a spinner
+   with Cancel greyed out — and retrying the same address reported success
+   without pulling, so there was no way to recover from inside the app.
+
+**The durable lesson:** a green end-to-end test proved nothing here, because it
+constructed its own subject. The bugs lived in the difference between a notebook
+the test made and a notebook a person had.

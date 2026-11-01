@@ -36,31 +36,57 @@ String mimeForExtension(String name) {
   };
 }
 
-const _imageExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'};
+/// What counts as a picture when a file arrives by drop or by paste.
+///
+/// **SVG is one of them** (GitHub #10, promised for this release): a drawing
+/// is a picture, and before this a dropped .svg became an attachment chip — a
+/// file you could open in something else, on a page that could have drawn it.
+/// Nothing else about the path changes, because an SVG blob is referenced the
+/// same way a PNG blob is and the renderers ask the bytes which they have.
+const _imageExtensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'};
 
 bool _looksLikeImage(String name) =>
     _imageExtensions.contains(name.split('.').last.toLowerCase());
 
-/// Insert image bytes as a block at [at] (page coordinates), sized to fit.
+/// **A picture with no box to go in makes one**, at [at] (page coordinates).
 ///
-/// The block is created at a sane width and left selected, so the very next
-/// gesture can move or resize it — pasting something you then have to hunt for
-/// is barely better than not pasting at all.
+/// The last of the four routes that still made a standalone `BlockType.image`.
+/// Reported by the owner: *"Dragging and dropping an image onto the canvas
+/// inserts it as the old discontinued image format rather than the more
+/// scalable one which inlines with text. I think the best way to fix this
+/// would be to create a regular content box and just insert the image in
+/// there."* Quite so, and it is also the answer the plan had already reached
+/// (v1.0.2 §3): there is then exactly ONE shape a picture has on a page —
+/// `![](sha256:…)` in a text block's own Markdown — and *"1 single unified way
+/// of managing any type of data on the page"* is true rather than nearly true.
+///
+/// What that buys, which is the whole reason: the box can be typed into, so a
+/// picture dropped on empty canvas is the start of a note rather than an
+/// opaque thing sitting on one. Select, cut, copy, paste and move are the
+/// field's own, because the picture is characters. And an image block had no
+/// text buffer, which is what made *"I can't type into this box with the
+/// image"* literally true.
 ///
 /// Null when the bytes could not be stored (full disk, read-only folder):
 /// the failure is already on the status bar via `AppState.saveError`, and a
 /// block referencing bytes nothing holds would render as a broken picture
 /// that LOOKS like the paste worked.
-Block? insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
+Block? insertImageInNewBox(AppState app, Uint8List bytes, String mime, Offset at,
     {double width = 320}) {
   final hash = app.tryAddBlob(bytes, mime);
   if (hash == null) return null;
   final b = app.addBlock(Block(
-    type: BlockType.image,
+    type: BlockType.text,
     x: at.dx - width / 2,
+    // The same geometry the image block used, so a picture still lands where
+    // it was dropped rather than hanging below the pointer.
     y: at.dy - width * 0.375,
     w: width,
-    content: {'blob': 'sha256:$hash', 'mime': mime},
+    // **No `h`**: the box measures itself round the picture, which is what an
+    // image block's null height did by aspect ratio. And `autoWidth: false`,
+    // because auto-width measures the RAW markdown and eighty characters of
+    // hash would pin the box to its maximum width.
+    content: {'text': '![](sha256:$hash)', 'autoWidth': false},
   ));
   app.select(b.id);
   return b;
@@ -82,7 +108,7 @@ Block? insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
 /// resolves.
 ///
 /// Returns the block it went into, or null when the drop missed every text
-/// box (the caller then falls back to [insertImageBytes]).
+/// box (the caller then falls back to [insertImageInNewBox]).
 /// Put an image into the text box that is being edited RIGHT NOW, at the
 /// caret. Returns the block it went into, or null when nothing editable has
 /// focus — the caller then falls back to making a standalone image block.
@@ -117,7 +143,7 @@ Block? insertImageIntoTextAt(
   final target = _textBlockAt(app, pagePt);
   if (target == null) return null;
   // Same rule as [insertImageAtCaret]: no reference to bytes that were never
-  // stored. The caller's fallback to [insertImageBytes] fails the same way
+  // stored. The caller's fallback to [insertImageInNewBox] fails the same way
   // and the notice is already up.
   final hash = app.tryAddBlob(bytes, mime);
   if (hash == null) return null;
@@ -125,21 +151,39 @@ Block? insertImageIntoTextAt(
 
   // Editing that very block? Then the caret is the truth, and AppState already
   // owns undo + commit + notify for that path.
-  if (app.editingBlockId == target.id) {
+  //
+  // **Asked of the registered editor, not of `editingBlockId`.** The two are
+  // one frame apart: the click sets `editingBlockId`, and `TextBlockView`
+  // registers the controller when it next builds. In between — and while the
+  // caret is moving from one box to another, where the registration is still
+  // the box you left — `editingBlockId` names this block while `activeEditor`
+  // names another one, and `insertTextAtActiveCursor` would splice the
+  // picture into THAT box's text. The branch below is no good either: the
+  // open controller holds the live text and would write over anything put
+  // into `content` behind it. So the honest answer in that window is "not
+  // this box", and the caller puts the picture in a box of its own.
+  final ae = app.activeEditor;
+  if (ae != null && ae.block.id == target.id) {
     app.insertTextAtActiveCursor('\n$ref\n');
     target.content['autoWidth'] = false;
     return target;
   }
+  if (app.editingBlockId == target.id) return null;
 
   final text = target.content['text'] as String? ?? '';
   final at = _offsetInBlock(target, text, pagePt, dark: dark);
   app.pushUndo();
-  final (spliced, addedAt) = spliceImageOnOwnLine(text, at, ref);
+  final (spliced, _) = spliceImageOnOwnLine(text, at, ref);
   target.content['text'] = spliced;
   // A `![](sha256:…)` reference must sit alone on its line to render (it is
-  // matched line-anchored), so the splice inserts lines — and every tag at or
-  // below that point now decorates the wrong line unless it is re-based.
-  _rebaseTags(target, fromLine: addedAt.line, by: addedAt.linesAdded);
+  // matched line-anchored), so the splice inserts lines — and every tag and
+  // every flashcard at or below that point is now filed under the wrong line
+  // unless it is moved. The editor's own matching, so a dropped picture and a
+  // typed Enter can never disagree: it had a copy of its own that moved the
+  // tags and not the cards' schedules, and rebuilt each tag without its
+  // deadline, so a picture dropped above a dated task cleared the date.
+  NoteTag.rebase(target.content, text, spliced);
+  app.study.remapCardStates(target.id, NoteTag.lineMoves(text, spliced));
   // Auto-width measures the RAW markdown, and a 64-hex-character line would
   // pin the box to its maximum width the moment the image landed.
   target.content['autoWidth'] = false;
@@ -211,29 +255,9 @@ int _offsetInBlock(Block b, String text, Offset pagePt, {required bool dark}) {
   );
 }
 
-/// Shift tag line indices at or below [fromLine] down by [by].
-///
-/// Tags record a 0-based line index, and nothing re-bases them when lines are
-/// inserted. This is the first code that inserts whole lines programmatically,
-/// so it is the first place the omission would be visible — every tag below
-/// the picture would suddenly decorate the wrong sentence.
-void _rebaseTags(Block b, {required int fromLine, required int by}) {
-  if (by <= 0) return;
-  final tags = NoteTag.listFrom(b.content);
-  if (tags.isEmpty) return;
-  NoteTag.writeInto(b.content, [
-    for (final t in tags)
-      if (t.line >= fromLine)
-        NoteTag(
-            kind: t.kind, line: t.line + by, checked: t.checked, label: t.label)
-      else
-        t
-  ]);
-}
-
 /// Insert a non-image file as an attachment block.
 ///
-/// Null on a failed write, like [insertImageBytes] — an attachment chip whose
+/// Null on a failed write, like [insertImageInNewBox] — an attachment chip whose
 /// bytes were never stored is a file the user believes is kept and is not.
 Block? insertFileBytes(
     AppState app, Uint8List bytes, String name, Offset at) {
@@ -279,7 +303,7 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
     // Into the text box under the cursor when there is one — a screenshot
     // pasted onto a note belongs IN the note, not floating over it.
     if (insertImageIntoTextAt(app, bytes, _mimeOf(fmt), at, dark: dark) == null) {
-      insertImageBytes(app, bytes, _mimeOf(fmt), at);
+      insertImageInNewBox(app, bytes, _mimeOf(fmt), at);
     }
     return PasteResult.image;
   }
@@ -297,7 +321,7 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
         } else if (insertImageIntoTextAt(app, bytes, mimeForExtension(name), at,
                 dark: dark) ==
             null) {
-          insertImageBytes(app, bytes, mimeForExtension(name), at);
+          insertImageInNewBox(app, bytes, mimeForExtension(name), at);
         }
         return PasteResult.files;
       }
@@ -361,23 +385,39 @@ Block insertPastedText(AppState app, String text, Offset at) {
 /// already pasted. Kinds mirror [pasteOntoCanvas]'s priority order exactly:
 /// a clipboard holding both an image and text reports the image, because
 /// that is what would paste.
-Future<({PasteResult kind, String? text})> probeClipboard() async {
-  final clipboard = SystemClipboard.instance;
-  if (clipboard == null) return (kind: PasteResult.nothing, text: null);
-  final reader = await clipboard.read();
-  for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
-    if (reader.canProvide(fmt)) return (kind: PasteResult.image, text: null);
-  }
-  if (reader.canProvide(Formats.fileUri)) {
-    return (kind: PasteResult.files, text: null);
-  }
+///
+/// [plainText] is a different question, and it has to be answered separately:
+/// **whatever plain text the clipboard holds, whether or not an image beat it
+/// to the kind.** It is what `AppState.blockClipboardIsNewer` compares
+/// against, and that comparison's other side — the snapshot taken when the
+/// boxes were copied — reads the plain text unconditionally. Reporting null
+/// here for a clipboard holding BOTH (a picture copied from a web page, a
+/// spreadsheet cell, a document — the common case, not a corner) made the two
+/// sides disagree: `null` never equals the text that is really there, so the
+/// boxes were ruled stale and Ctrl+V in a box pasted the clipboard's picture
+/// instead of the box that had just been cut.
+Future<({PasteResult kind, String? text, String? plainText})>
+    probeClipboard() async {
+  final reader = await _readClipboard();
+  const nothing = (kind: PasteResult.nothing, text: null, plainText: null);
+  if (reader == null) return nothing;
+  String? plain;
   if (reader.canProvide(Formats.plainText)) {
-    final text = await reader.readValue(Formats.plainText);
-    if (text != null && text.trim().isNotEmpty) {
-      return (kind: PasteResult.text, text: text);
+    final t = await reader.readValue(Formats.plainText);
+    if (t != null && t.trim().isNotEmpty) plain = t;
+  }
+  for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
+    if (reader.canProvide(fmt)) {
+      return (kind: PasteResult.image, text: null, plainText: plain);
     }
   }
-  return (kind: PasteResult.nothing, text: null);
+  if (reader.canProvide(Formats.fileUri)) {
+    return (kind: PasteResult.files, text: null, plainText: plain);
+  }
+  if (plain != null) {
+    return (kind: PasteResult.text, text: plain, plainText: plain);
+  }
+  return nothing;
 }
 
 /// The clipboard's image, if it holds one.
@@ -386,9 +426,8 @@ Future<({PasteResult kind, String? text})> probeClipboard() async {
 /// rather than a block: pasting a screenshot into the text box you are typing
 /// in must land IN the text, not as a picture floating over it.
 Future<({Uint8List bytes, String mime})?> readClipboardImage() async {
-  final clipboard = SystemClipboard.instance;
-  if (clipboard == null) return null;
-  final reader = await clipboard.read();
+  final reader = await _readClipboard();
+  if (reader == null) return null;
   for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
     if (!reader.canProvide(fmt)) continue;
     final bytes = await _readFile(reader, fmt);
@@ -396,6 +435,23 @@ Future<({Uint8List bytes, String mime})?> readClipboardImage() async {
     return (bytes: bytes, mime: _mimeOf(fmt));
   }
   return null;
+}
+
+/// **The clipboard, or null when it cannot be read right now.**
+///
+/// Defensive for the same reasons `AppState.readSystemClipboardText` is, and
+/// it was not: an unsupported platform, a channel not yet up, a headless
+/// test, or — the one that happens — another application holding the
+/// clipboard open on Windows. Every caller here already treats "nothing on
+/// the clipboard" as an ordinary answer, so a read that throws became an
+/// unhandled exception out of a Ctrl+V that should simply have done nothing.
+Future<ClipboardReader?> _readClipboard() async {
+  try {
+    return await SystemClipboard.instance?.read();
+  } catch (e) {
+    debugPrint('[openote] could not read the clipboard: $e');
+    return null;
+  }
 }
 
 String _mimeOf(FileFormat fmt) {
@@ -451,7 +507,7 @@ Future<int> dropFilesOntoCanvas(
       landed = insertImageIntoTextAt(app, bytes, mimeForExtension(name), where,
               dark: dark) !=
               null ||
-          insertImageBytes(app, bytes, mimeForExtension(name), where) != null;
+          insertImageInNewBox(app, bytes, mimeForExtension(name), where) != null;
     }
     if (landed) {
       offset += 24;

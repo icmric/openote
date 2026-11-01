@@ -211,51 +211,24 @@ class NoteTag {
   /// them) and a no-op for an edit that changes no line count. A tag on a line
   /// that was deleted outright goes with it.
   ///
-  /// Returns the old-line → new-line moves, so the caller can carry anything
-  /// keyed on the line number across with them. That is not optional: a
-  /// flashcard's identity is `blockId:line`, so a tag that moves without its
-  /// schedule moving too *is* a lost schedule.
+  /// Returns the TAGS' old-line → new-line moves. Anything else keyed on a
+  /// line number wants [lineMoves] instead, which reports every line: a
+  /// card written in the prose (`?[…](…)`) has no tag, and asking this for
+  /// its move was how its review schedule went to the card below it.
   static Map<int, int> rebase(
       Map<String, dynamic> content, String before, String after) {
-    if (before == after) return const {};
-    final oldLines = before.split('\n');
-    final newLines = after.split('\n');
-    final delta = newLines.length - oldLines.length;
-    if (delta == 0) return const {}; // same shape: indices still point at themselves
-
+    final shift = _shiftOf(before, after);
+    if (shift == null) return const {};
     final tags = listFrom(content);
     if (tags.isEmpty) return const {};
-
-    // Unchanged lines at the top, then at the bottom. Everything between them
-    // is the edit.
-    var head = 0;
-    while (head < oldLines.length &&
-        head < newLines.length &&
-        oldLines[head] == newLines[head]) {
-      head++;
-    }
-    var tail = 0;
-    while (tail < oldLines.length - head &&
-        tail < newLines.length - head &&
-        oldLines[oldLines.length - 1 - tail] ==
-            newLines[newLines.length - 1 - tail]) {
-      tail++;
-    }
-    final changedEnd = oldLines.length - tail; // exclusive, in OLD coordinates
-
-    // A PURE insertion leaves every old line intact — nothing was removed, so
-    // a tag inside the region still marks real text and simply moves down.
-    // Any other edit rewrote those lines, and a tag inside it no longer marks
-    // anything the user wrote: shifting it by `delta` would silently relocate
-    // the marker onto a line it never marked, which is worse than losing it.
-    final pureInsertion = changedEnd == head;
+    final (:head, :changedEnd, :delta) = shift;
 
     final moved = <int, int>{};
     final out = <NoteTag>[];
     for (final t in tags) {
       if (t.line < head) {
         out.add(t); // above the edit: untouched
-      } else if (t.line >= changedEnd || pureInsertion) {
+      } else if (t.line >= changedEnd) {
         final to = t.line + delta;
         moved[t.line] = to;
         // Every field is carried, not just the ones rebasing cares about. This
@@ -273,6 +246,59 @@ class NoteTag {
     }
     writeInto(content, out);
     return moved;
+  }
+
+  /// **Where every line went**, for an edit that changed how many lines
+  /// there are: old line → new line, for each line that came through the
+  /// edit intact and moved.
+  ///
+  /// The same matching [rebase] uses for tags, for whatever else is filed
+  /// under a line number — above all a flashcard's review schedule, which is
+  /// stored under `blockId:line`. Lines above the edit stay where they are
+  /// and are not listed; lines the edit rewrote did not come through intact
+  /// and are not listed either.
+  static Map<int, int> lineMoves(String before, String after) {
+    final shift = _shiftOf(before, after);
+    if (shift == null) return const {};
+    final (:head, :changedEnd, :delta) = shift;
+    final count = before.split('\n').length;
+    return {for (var i = changedEnd; i < count; i++) i: i + delta};
+  }
+
+  /// The shape of an edit that changed the line count, or null for one that
+  /// did not (every line index still points at itself).
+  ///
+  /// Unchanged lines at the top, then at the bottom; everything between
+  /// them is the edit. [changedEnd] is exclusive, in the OLD numbering, and
+  /// every line from it on moved by [delta].
+  ///
+  /// A PURE insertion leaves every old line intact, so the region it
+  /// rewrote is empty — `changedEnd == head` — and everything from the
+  /// insertion point moves down. Any other edit rewrote the lines in
+  /// `[head, changedEnd)`, and something marking one of those no longer
+  /// marks anything the user wrote: shifting it by [delta] would silently
+  /// relocate it onto a line it never marked, which is worse than losing it.
+  static ({int head, int changedEnd, int delta})? _shiftOf(
+      String before, String after) {
+    if (before == after) return null;
+    final oldLines = before.split('\n');
+    final newLines = after.split('\n');
+    final delta = newLines.length - oldLines.length;
+    if (delta == 0) return null;
+    var head = 0;
+    while (head < oldLines.length &&
+        head < newLines.length &&
+        oldLines[head] == newLines[head]) {
+      head++;
+    }
+    var tail = 0;
+    while (tail < oldLines.length - head &&
+        tail < newLines.length - head &&
+        oldLines[oldLines.length - 1 - tail] ==
+            newLines[newLines.length - 1 - tail]) {
+      tail++;
+    }
+    return (head: head, changedEnd: oldLines.length - tail, delta: delta);
   }
 
   /// Write a tag list back, removing the key entirely when empty so untagged

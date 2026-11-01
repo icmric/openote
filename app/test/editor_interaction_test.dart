@@ -126,8 +126,11 @@ void main() {
           reason: 'an 80-character reference must not pin the box wide');
     });
 
-    test('a drop that misses every box falls back to a picture block',
+    test('A DROP THAT MISSES EVERY BOX MAKES A BOX, NOT A PICTURE BLOCK',
         () async {
+      // The owner: *"Dragging and dropping an image onto the canvas inserts
+      // it as the old discontinued image format rather than the more scalable
+      // one which inlines with text."* This was the last route that did.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp, app, _) = await fixture();
       addTearDown(() {
@@ -140,7 +143,19 @@ void main() {
       expect(
           insertImageIntoTextAt(app, png, 'image/png', const Offset(900, 900),
               dark: false),
-          isNull);
+          isNull,
+          reason: 'nothing to drop it into, which is the case under test');
+
+      final made = insertImageInNewBox(
+          app, png, 'image/png', const Offset(900, 900));
+
+      expect(made, isNotNull);
+      expect(made!.type, BlockType.text,
+          reason: 'a regular content box, which can be typed into');
+      expect(made.content['text'] as String, contains('](sha256:'));
+      expect(made.content['autoWidth'], false);
+      expect(app.blocks.where((x) => x.type == BlockType.image), isEmpty,
+          reason: 'and no page gains a new image block by any route');
     });
 
     test('tags below the image keep decorating their own lines', () async {
@@ -356,8 +371,14 @@ void main() {
     /// Three increments, because a drag recognizer swallows the one that wins
     /// it the gesture arena — asserting an exact total would be asserting
     /// Flutter's slop handling, not ours.
-    Future<void> dragBy(WidgetTester t, Offset from, Offset step) async {
-      final g = await t.startGesture(from);
+    /// **The mouse by default, said out loud.** `startGesture` sends a
+    /// FINGER unless told otherwise, and every drag here was written about a
+    /// mouse — a drag that moves a box by its bar, or picks out words. A
+    /// finger now scrolls the page instead (v1.0.2 bug 8,
+    /// `touch_navigation_test`), so these say which pointer they mean.
+    Future<void> dragBy(WidgetTester t, Offset from, Offset step,
+        {PointerDeviceKind kind = PointerDeviceKind.mouse}) async {
+      final g = await t.startGesture(from, kind: kind);
       for (var i = 0; i < 3; i++) {
         await g.moveBy(step);
         await t.pump();
@@ -462,7 +483,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // The guard above must not cost the thing it sits next to: a drag that
       // starts on the CONTENT is still a text selection, and still opens the
-      // editor to make one.
+      // editor to make one. With a MOUSE — a finger there scrolls the page
+      // (v1.0.2 bug 8), which is what `dragBy`'s default now says.
       await pump(t);
       await t.pump();
 
@@ -580,11 +602,15 @@ void main() {
       // A non-editing block renders read-only Markdown — there is no field to
       // drag-select in until the session exists. The first drag has to open
       // one mid-gesture and extend the selection from the press point.
+      //
+      // With a MOUSE: `startGesture` would otherwise send a finger, which
+      // scrolls the page instead (v1.0.2 bug 8, `touch_navigation_test`).
       block.content['text'] = 'aaaa bbbb cccc dddd eeee ffff';
       block.h = null;
       await pump(t);
 
-      final g = await t.startGesture(Offset(block.x + 10, block.y + 12));
+      final g = await t.startGesture(Offset(block.x + 10, block.y + 12),
+          kind: PointerDeviceKind.mouse);
       for (var i = 0; i < 6; i++) {
         await g.moveBy(const Offset(18, 0));
         await t.pump();

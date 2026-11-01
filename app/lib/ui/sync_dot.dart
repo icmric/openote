@@ -60,7 +60,7 @@ String syncStateTooltip(AppState app, String notebookId) {
         : 'Syncing to $where — pushed a minute after you stop typing, and '
             'again when you close Openote';
     return s.hasOtherDevices
-        ? '$how · ${s.devices} devices have opened it'
+        ? '$how · ${s.devices} devices using it'
         : how;
   }
   if (s.mirrors > 0) {
@@ -86,7 +86,8 @@ String syncChipTooltip(SyncStatus s) {
         : 'Pushed to ${s.where} a minute after you stop typing, and again '
             'when you close Openote.\n');
     b.write(s.hasOtherDevices
-        ? 'Edited on ${s.devices} devices — changes arrive automatically.'
+        ? '${s.devices} devices have edited it in the last month — changes '
+            'arrive automatically.'
         : 'Open this notebook on another device to sync it.');
   } else {
     b.write('Only on this computer.\n'

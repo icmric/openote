@@ -1,356 +1,337 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-09-30 · **v1.0.1 is tagged but its
-> release is still an unpublished draft** — the caret bug below is why, and it
-> is now fixed. This pass decides whether the draft can be published.
+> Working document · last updated 2026-10-21 · **v1.0.2 is not tagged yet.**
+> This pass decides whether it can ship.
 >
-> **§1.2 has two new rows** for the fix, and **§9 has two new entries** for
-> what is knowingly still wrong. Everything in §7 — the twelve you reported
-> part-way through this pass — is still unconfirmed by a human.
->
-> Everything below is **built, covered by automated tests, and never touched
-> by a human**. Tests prove a mechanism; they cannot tell you a gesture feels
-> wrong, that a colour is hard to read, or that something is technically
-> correct and still not what you meant. That is what this list is for.
+> Everything below is **built and covered by automated tests**, and as far as
+> I know has not been tried by a human on a real machine. Tests prove a
+> mechanism; they cannot tell you a gesture feels wrong, that a colour is hard
+> to read, or that something is technically correct and still not what you
+> meant. That is what this list is for. If you already tried something while
+> it was being built, delete the row.
 >
 > Only things you can do yourself, on your own machine, are in here. Anything
-> the test suite already settles has been left out on purpose.
+> the test suite already settles has been left out on purpose. The most
+> likely to break come first.
 >
 > Tick as you go and tell me what breaks — what you did, what happened, what
 > you expected. Confirmed rows get deleted, so this file stays the honest
 > queue rather than a museum.
 >
 > Not to be confused with [the pre-release checklist](docs/pre-release-checklist.md),
-> which is the *fixed* pass — the same forty-odd rows run on the packaged
-> build before every release. This file is the frontier.
+> which is the *fixed* pass — the same rows run on the packaged build before
+> every release. This file is the frontier.
 >
-> **The v0.7-era queue that used to live here has been cleared out.** Three
-> releases have shipped over it and I have no record of what you confirmed.
-> If something from it is still outstanding — the pen's proximity switching,
-> the tail eraser, the barrel button, finger-drag panning, board cards on
-> touch — say so and I will put it back.
+> **The v1.0.1 queue that used to live here has been cleared out**, as the
+> v0.7 one was before it: v1.0.1 shipped over it, three weeks of using it
+> found what it found, and I have no record of which rows you confirmed. It
+> is in git (`git show c66a0d9:TESTING.md`) — tables, links, pen shapes,
+> pictures, your own SSH key, code-block colours, the navigator, the
+> right-click menu. If something from it is still outstanding, say so and I
+> will put it back.
 
 ---
 
-## 1. Tables in your writing
+## 1. Your pen, and the lasso
 
-The largest change in this release, and the one with the longest history of
-me fixing something and you finding it still broken. Please be unkind to it.
+Hardware no test here can hold. Windows and Linux; macOS has no pen-button
+support yet.
 
-### 1.1 Making one, and filling it in
-
-- [ ] **Type a word and press Tab.** The word becomes the first cell of a
-      table and the caret lands in the second.
-- [ ] **Tab again** (still on the top row). This adds a **column**, not a row
-      — the top row is where you name things — and the caret goes into it.
-- [ ] **Press Enter.** This starts a body row, and the caret lands in the
-      **same column** you pressed Enter in. Type: it must go into that cell.
-- [ ] **Keep going: type, Tab, type, Tab** down a body row. Tab at the end of
-      a body row makes the next row.
-- [ ] **On an empty line, Tab indents twice** and never makes a table.
-
-> The caret leaving the table is the bug you have hit four times. If it
-> happens again, tell me **which key**, **which cell you were in**, and
-> whether the row or column was still created.
-
-### 1.2 Getting in and out
-
-- [ ] **Click a cell** — the caret goes in it, and stays there.
-- [ ] **Click the sentence** beside or below the table — the caret comes out.
-- [ ] **Arrow keys walk in.** With the caret just after the table, press ←:
-      it should step into the last cell. Just before it, → steps into the
-      first.
-- [ ] **Escape** puts the caret back in the paragraph, and the table stays.
-- [ ] **Arrow down from the last row** leaves the table downwards.
-- [ ] **Type a word and press Tab to make a table, then keep typing.** The
-      letters must land in the cell. This was broken in the v1.0.1 build:
-      the caret reached the cell and was then thrown out to nowhere, so the
-      next keystroke went into the sentence or was swallowed.
-- [ ] **The same for a row or a column you have just made** — Enter at the
-      end of a row, Tab at the end of the last one. Go back into that new
-      cell by clicking it and by arrowing into it, and type in both cases.
-      Getting kicked out of *new* cells specifically is what it used to do.
-
-### 1.3 The thing that must never happen
-
-- [ ] **Put the caret right at the table's edge and type.** Space, letters,
-      anything. The table must stay a table. If it ever turns into
-      `![… ](onote://atom/…)`, stop and tell me — that is a note losing its
-      table, and it is the one failure here I care about more than any other.
-- [ ] **Select from inside the table out into the sentence and type over it.**
-      The table should go completely, or not at all — never half.
-- [ ] **Backspace just after a table** deletes the whole table.
-- [ ] **Undo brings it back.**
-
-### 1.4 Editing in a cell
-
-- [ ] **Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+A** inside a cell.
-- [ ] **Ctrl+Backspace and Ctrl+Delete** delete a whole word.
-- [ ] **Ctrl+Shift+←/→** selects by word, inside the cell only.
-- [ ] **Bold, italic and an equation inside a cell** stay themselves as you
-      type them.
-- [ ] **Ctrl+K in a cell** opens the link dialog, and the caret comes back to
-      the cell when you close it.
-
-### 1.5 Shape and size
-
-- [ ] **The column widens as you type**, from the first character — not after
-      a pause, and no stacking letters. It stops widening at a sensible width
-      and wraps after that.
-- [ ] **The box grows to fit the table**, and a sentence next to a table gets
-      room for both rather than being pushed onto the next line.
-- [ ] **Drag a column border** to resize it; the width sticks.
-- [ ] **Right-click a cell**: insert row above/below, column left/right,
-      delete row, delete column — all relative to the cell you clicked. The
-      caret should stay in the table after each.
-- [ ] **The last row and the last column cannot be deleted.**
-
-### 1.6 Your existing tables
-
-- [ ] **Open a notebook with old tables in it.** They convert to the new kind
-      as you open the page, and the rest of the notebook follows quietly. You
-      should not be able to tell, except that they now sit in the writing.
-- [ ] **Nothing is lost.** Check a table you care about, cell by cell, against
-      what you remember — and check the page still opens after a restart.
-- [ ] **On a second device**, if you have one syncing: a table made here
-      should arrive there intact.
+- [ ] **Press the pen's side button and draw a loop.** It lassoes — by default,
+      as OneNote does. **Settings ▸ Writing and drawing ▸ Pen and touch**
+      can make it Select, Eraser or nothing instead.
+- [ ] **If your pen driver maps a button to the eraser**, that button erases,
+      whatever the setting says. **The tail end of the pen erases** too.
+- [ ] **Press and release the side button many times, quickly.** It should do
+      the same thing every time. It used to be a coin toss, "most times but not
+      every time".
+- [ ] **What you lasso stays selected when you let go of the button**, and the
+      pen then drags it — press inside the selection and move.
+- [ ] **Press anywhere outside the selection with the pen**: the selection is
+      put down and the pen draws, straight away, with nothing to switch back.
+- [ ] **Hover the pen near the page with the eraser in hand.** A faint ring
+      shows how far it reaches before it touches anything.
+- [ ] **Lasso a box, a picture or a graph.** Each is caught once at least half
+      of it is inside the loop. A slide from an imported PDF is never caught.
+- [ ] **Lasso one stroke on its own** — a Delete appears for it.
+- [ ] **Lasso a word, move it, then click away.** The strokes go back to being
+      separate strokes. They used to stay welded together for good.
 
 ---
 
-## 2. Links
+## 2. Writing on a PDF or a picture
 
-- [ ] **Click into a link.** It stays its words — it must not unfold into
-      `[words](https://…)` and re-wrap the line.
-- [ ] **Select some words and press Ctrl+K.** The link goes on them.
-- [ ] **Put the caret against a word and press Ctrl+K** with nothing selected.
-      The link goes on that word — and **not** across the space before it.
-- [ ] **A full stop at the end of a sentence stays out of the link.**
-- [ ] **Ctrl+K inside an existing link** edits it, and so does **right-click →
-      Edit link…**
-- [ ] **Insert ▸ Link** opens the same dialog, with the page picker in it.
-- [ ] **The link still works** when you click it in the finished note.
+GitHub #20 — *"some bugs that make it almost impossible to work with imported
+PDFs or images."* Use a real lecture deck if you have one.
 
----
-
-## 3. Shapes for the pen
-
-- [ ] **Draw tab → pick Line, Arrow, Rectangle, Ellipse or Triangle**, then
-      drag on the page. The stroke comes out straight.
-- [ ] **Pick it again to turn it off** and go back to freehand.
-- [ ] **A shape takes the colour, size and opacity** you have chosen,
-      including the highlighter.
-- [ ] **Both erasers rub it out**, the lasso picks it up, and undo undoes it.
-- [ ] **It survives a save and reopen**, and appears in a PDF export.
-- [ ] **Drawing with a trackpad** — the case this was built for. Is it
-      actually usable?
+- [ ] **Middle-drag over a slide, a picture and a text box.** All three pan the
+      page. Before, only empty page did.
+- [ ] **Write on a slide, then click your writing.** The writing is selected,
+      not the slide.
+- [ ] **Annotate two corners of a slide quickly.** They stay two separate
+      pieces of handwriting, not one the size of the slide.
+- [ ] **Drag a selection box over your notes on a slide.** It selects the notes
+      and leaves the slide alone; moving them leaves the slide where it is.
+- [ ] **Brush the corner of a picture with a selection box.** It is not
+      picked up; it wants about half of something.
+- [ ] **Drag handwriting up into the title area, and past the right edge of a
+      paper page, and let go.** It is pulled back onto the page — and the
+      writing comes with its box. The box used to jump while the writing
+      stayed behind.
+- [ ] **Move, erase and recolour old handwriting, then reload the page.** It is
+      where you left it.
+- [ ] **Right-click a slide ▸ unlock every page of this PDF.** The whole deck
+      unlocks at once.
 
 ---
 
-## 4. Pictures
+## 3. Grouping
 
-- [ ] **A picture that is still arriving** (syncing from your server) should
-      appear on its own when the bytes land — without a restart and without
-      waiting for the next sync cycle.
-- [ ] **Right-click a picture → Save a copy.** Both kinds: one dropped onto
-      empty page, and one pasted into a paragraph. The saved file should open
-      in an image viewer and have a proper extension.
-- [ ] **A slide from an imported PDF** saves out too.
-- [ ] **A picture your cloud client renamed** is found and put back.
-
----
-
-## 5. Your own SSH key
-
-- [ ] **In the sync dialog** for a notebook, "Use another key…" lets you
-      choose a private key file. Sync to a server that needs it while the rest
-      of the machine keeps its default key.
-- [ ] **A path with spaces in it** works (this is the part most likely to be
-      wrong).
+- [ ] **Select a few things of different kinds** — a box, some handwriting, a
+      picture — **and group them**: Ctrl+G, right-click ▸ Group, or the button
+      above the selection.
+- [ ] **Click any one of them**: all of them are selected, and they move,
+      copy, cut and delete together.
+- [ ] **Click a grouped text box twice.** The first click takes the group; the
+      second puts the caret in the box.
+- [ ] **Copy a group and paste it.** The copy is a group of its own — dragging
+      the original leaves the copy where it is.
+- [ ] **Ctrl+Shift+G takes it apart**, and Ctrl+Z puts it back.
 
 ---
 
-## 6. Code blocks — new colours
+## 4. Styles on top of styles, and highlighting
 
-- [ ] **Comments are green and italic**, strings are a warm red, in a code
-      block in **both** light and dark themes.
-- [ ] **Is it actually more readable?** This one is a judgement call and
-      yours is the one that counts. I moved strings off green so that
-      comments in green would stand out; if you would rather have the old
-      green strings back and a different comment colour, say so.
+GitHub #17. The rule is that any style works inside any other, in either
+order.
 
----
-
-## 7. The twelve from your testing pass
-
-Everything in this section is new since you started testing and none of it
-has been near a human. The first two are the ones I would break first.
-
-### 7.1 Styled text (the one that matters)
-
-- [ ] **Bold a word, press space, keep typing.** The asterisks must never
-      appear, and the bold must carry on to the next word, and the word after
-      that. Same for italic.
-- [ ] **Select a bold word and delete it.** All of it goes — no `**` left
-      behind at either end. Try it three ways: dragging left-to-right,
-      dragging right-to-left, and selecting just the letters you can see.
-- [ ] **Type over a selected bold word.** What you type should still be bold.
-- [ ] **Ctrl+Z inside a table cell** takes back what you typed in the cell.
-      It must not take the table away.
-
-### 7.2 The navigator
-
-- [ ] **Fold the sections away** with the chevron in the notebook header. The
-      navigator should get narrower — that is the point — and the page list
-      stays.
-- [ ] **Close some groups and some pages, quit, reopen.** They should still
-      be closed.
-- [ ] **Drag a page into the empty space below the list.** It goes to the
-      bottom. Same for a section.
-- [ ] **Drag a subpage down there** — it should become a top-level page, not
-      an indented one under nothing.
-- [ ] **Dropping onto the middle of a page row still makes a subpage.**
-
-### 7.3 Page windows
-
-- [ ] **Drag a page from the navigator onto the open page.** You get a window
-      onto it.
-- [ ] **Right-click that window → Change to a page link.** It becomes a link
-      in a text box, in the same spot, and the link works.
-
-### 7.4 Writing and inserting
-
-- [ ] **Click out of a box onto the page.** A new box opens straight away —
-      it should not take two clicks.
-- [ ] **Click about the page a few times without typing.** You should not be
-      collecting invisible empty boxes; check by dragging a marquee over the
-      area afterwards.
-- [ ] **Enter from the page title** makes the same bare box a click makes —
-      no border, no `heading (#), list (-)` hint.
-- [ ] **Insert something while writing.** It should land under the box you
-      were in, not in the middle of the screen. **This now applies to every
-      Insert item, not just the code box** — tell me if you want it narrowed
-      back to code only.
-- [ ] **Insert ▸ Code twice**, setting the language on the first. The second
-      should open in that language.
-- [ ] **Insert no longer offers "Text box".**
-
-### 7.5 The Draw toolbar
-
-- [ ] **Four thickness dots instead of the slider.** Is picking one actually
-      easier than aiming the slider was?
-- [ ] **The ⚙ beside them** opens the old slider for anything in between.
-- [ ] **Two mixed colours on the row now, not four**, and the palette button
-      opens the full picker.
-- [ ] **"Mix your own colour" in the picker** — is it clear now what that row
-      does?
+- [ ] **Bold a word, then colour it** — and the other way round. Then add
+      italic, a highlight, strike-through. Every one shows, and no `*`, `~`
+      or `{{` is left on the page.
+- [ ] **Open an old note** where you tried this before and it showed symbols.
+      It should now show what you meant, with nothing to redo.
+- [ ] **Italicise the last word of a bold phrase.** No stray asterisk.
+- [ ] **Take the colour off a bold red word** with the toolbar. It loses the
+      colour; it does not gain a second one.
+- [ ] **Backspace at the end of a bold red word** deletes the last letter and
+      nothing else.
+- [ ] **Highlight a word, then open the arrow beside the highlighter and pick
+      a colour.** The word is highlighted in it, and the button's bar shows
+      which colour it will use next time.
+- [ ] **Press the highlighter again on that word.** The highlight comes off.
+- [ ] **Colour a word AND highlight it.** Both show, and taking one off leaves
+      the other.
+- [ ] **In dark mode**, is a highlight colour still readable with text on top?
+      This one is a judgement call and yours is the one that counts.
+- [ ] **Export a page with a coloured highlight to Markdown.** The highlight
+      is there as `==text==`; the colour is not, which is the most Markdown
+      can carry.
 
 ---
 
-## 8b. Finding your notebook
+## 5. Flashcards keep their own history
 
-- [ ] **Sync ▸ Open folder** actually opens a window. It did nothing before, on
-      both buttons that offer it.
-- [ ] **The path it shows is the `.onotebook`** — the one with `ops/` and
-      `blobs/` in it — and not the local working file. The card above it says
-      which cloud folder that is, and the two should agree now.
-- [ ] **Move a notebook into a Drive or OneDrive folder.** A dialog should
-      appear telling you to turn on offline access for it, with a button that
-      opens the folder. Moving into an ordinary folder should still just show a
-      message bar.
-- [ ] **The working-file card's folder icon** opens a window too, for both the
-      container row and the logs row.
+v1.0.2 bug 16. Quick to check, and it is your revision record.
 
-## 8a. The right-click menu
-
-Three fixes in one place, all reported together and all worth a look.
-
-- [ ] **Right-click in a paragraph and move the mouse around the menu.** It
-      must not flash — including over the top of the menu and along its edges,
-      which is where it used to, and including in a paragraph that has a
-      picture in it, which is where it was worst.
-- [ ] **The same with the caret inside a table cell**, and in a sentence with
-      an equation in it.
-- [ ] **Every row says what it does** — Cut, Copy, Paste, Select all. They all
-      used to read "More".
-- [ ] **Paste is there even with nothing on the clipboard**, greyed out rather
-      than missing. Copy something and right-click again: it should become
-      pressable, and paste.
-
-## 8. Editor odds and ends
-
-- [ ] **Ctrl+B then type** — the new words come out bold, and stop when you
-      press it again. It should not reach back and bold the word behind you.
-      Same for Ctrl+I and Ctrl+U and the toolbar buttons.
-- [ ] **Press Enter in a completely empty text block.** This used to crash;
-      it should simply make a new line.
-- [ ] **Delete a page** — you should land on the page next door, in the same
-      section.
-- [ ] **Delete a section, then Ctrl+Z.** It comes back.
-- [ ] **Type down a long page** — the view follows the caret smoothly, and
-      scrolling or zooming yourself stops it dead rather than fighting you.
+- [ ] **Review two cards written in a box** (the `?[question](answer)` kind)
+      until they are scheduled for different days.
+- [ ] **Press Enter above them, or type a new line above them.** Each keeps its
+      own next-review date. Before, the first took the second's.
+- [ ] **Now press Ctrl+Z.** The dates follow the cards back up.
+- [ ] **Drop a picture into that box, above the cards.** The dates still hold,
+      and a dated to-do below the picture keeps its date.
 
 ---
 
-## 9. Things I already know about
+## 6. Pictures and pasting
+
+- [ ] **Drop an SVG on the page**, and use Insert ▸ Image for another. Both are
+      drawings, sharp at any zoom, and still sharp in a PDF export.
+- [ ] **Drop a picture onto empty page.** It arrives in a box you can type in
+      under it, and you can cut and paste it like text.
+- [ ] **Your existing pictures** open, move and export as they always did.
+- [ ] **Click a picture inside a box.** It is selected — Ctrl+C, Ctrl+X and
+      Delete all act on the whole picture.
+- [ ] **Put the caret just after a picture and press Backspace.** The whole
+      picture goes, not part of its reference. Same for Delete just before one.
+- [ ] **Type right after a picture, and right before one.** What you type ends
+      up on its own line; the picture stays a picture.
+- [ ] **Copy a picture and paste it into the middle of a sentence.** It gets a
+      line of its own rather than breaking.
+- [ ] **Cut a whole box, click into another box, and paste.** Its writing
+      arrives at the caret. Try one with a table in it, and one with a
+      picture.
+- [ ] **Cut some handwriting and try the same.** Nothing is pasted into the
+      box, and it still pastes on the canvas.
+
+---
+
+## 7. Pages
+
+- [ ] **Click a page title.** One click, and you are typing in the title.
+- [ ] **Right-click a page, a section and a section group.** Each has Rename.
+- [ ] **Right-click a page ▸ Duplicate.** The copy sits right under it with its
+      name ready to type over.
+- [ ] **Make a page next to a graph-paper page.** The new one is graph paper
+      too, with the same width and paper.
+- [ ] **Switch notebooks and come back.** You are on the page you left, in
+      each.
+- [ ] **Templates are gone from the menus**, and nothing you saved went with
+      them.
+
+---
+
+## 8. Settings, one group at a time
+
+- [ ] **Open Settings.** Groups down the left, one group's settings on the
+      right.
+- [ ] **Look for three settings you know.** Did you find each where you
+      expected? Is anything now missing a word it needed?
+
+---
+
+## 9. AI helpers
+
+Needs Claude, ChatGPT, Claude Code or Gemini CLI connected from **Settings ▸
+Connections ▸ AI access**.
+
+- [ ] **Ask it to tidy a page**: fix a typo in a box, move things, rename the
+      page. Each change is a normal edit, and Ctrl+Z undoes it.
+- [ ] **Ask it to add a table and some code.** They arrive as a real table and
+      a code box, not symbols.
+- [ ] **Put a passcode on a section, then ask it what is in that section.** It
+      cannot see it, says something is withheld, and cannot open it — even
+      after you unlock the section in Openote.
+- [ ] **The AI page says when a helper last used Openote**, and says "set up"
+      rather than "connected".
+
+---
+
+## 10. Equations
+
+- [ ] **Evaluate `F = m·a`, `v = u + at` or `c = √(a² + b²)`.** It asks for
+      each letter, in order, and answers by name: `v = 14`.
+- [ ] **Evaluate is a button beside Graph** on the equation toolbar.
+- [ ] **Highlight part of an equation and press `(`.** It wraps what you
+      highlighted rather than replacing it.
+- [ ] **On a narrow window**, the equation toolbar folds into More rather than
+      running off the edge.
+
+---
+
+## 11. Sync
+
+- [ ] **"N devices"** counts the devices you actually use.
+- [ ] **With two Google accounts signed in**, the folder picker names each
+      one, with its drive letter.
+
+---
+
+## 12. Touch, on a tablet
+
+What was fixed is deterministic and tested; whether the result *feels* right
+is not something a test can say, and that is most of what is wanted here.
+
+- [ ] **Pinch with both fingers ON a text box.** It zooms. This is the big one:
+      the canvas never saw a finger that had landed on a box, so one finger
+      scrolled while the other zoomed — *"it jumps all over the place"*. A box
+      covers most of a page, so this was almost every pinch.
+- [ ] **Pinch SLOWLY.** It should now be no worse than pinching quickly. The
+      zoom centre used to wander a little per sample, so more samples meant
+      more wander, which is why speed helped.
+- [ ] **Pinch while also sliding both fingers across.** It zooms and scrolls
+      together, about the point you started on.
+- [ ] **Pinch past the furthest zoom in, and the furthest out, then slide.**
+      The page still moves under your fingers rather than freezing.
+- [ ] **Pinch out, then back to where your fingers started.** The page comes
+      back to the zoom it began at.
+- [ ] **Pinch with a drawing tool selected**, and with one finger already
+      part-way through a stroke. It zooms, and no stray mark is left.
+- [ ] **Drag a finger across a text box.** The page still scrolls (that was
+      the last round's fix, and the pinch work must not have taken it back).
+- [ ] **Tap a box.** It still opens for typing.
+- [ ] **With the caret in a box, drag a finger across its words.** They are
+      selected: that is how you select without a keyboard.
+- [ ] **One finger on empty page scrolls**, and a pen still draws.
+- [ ] **Drag boxes around at several zoom levels.** Fixed since you last
+      looked: this was not a touch problem at all. The box moved at the wrong
+      speed because its drag delta was divided by the zoom twice — so at 40%
+      it ran 2.5x ahead of the pointer and at 200% it lagged. It should now
+      sit under the cursor wherever you grabbed it. Check a resize handle too;
+      it had the same fault.
+
+---
+
+## 13. Page windows and passcodes
+
+- [ ] **Put a passcode on a section**, then drag one of its pages onto another
+      page. You are asked for the passcode before any window is made, and
+      Cancel makes nothing.
+- [ ] **Insert ▸ Page window** on that locked page: asked before the page is
+      drawn to pick an area from, and locked pages show a padlock in the list.
+- [ ] **Leave the page the window is on and come back.** The window asks
+      again.
+- [ ] **Unlock the section in the navigator**, then look at the window. It
+      still asks — the two are separate doors, deliberately.
+- [ ] **A window onto a page with no passcode** is not asked about at all.
+
+---
+
+## 14. Pasting, undo and the colour pickers
+
+- [ ] **Cut a box that ends in a picture, click into another box at the end of
+      a line, and paste.** The caret lands AFTER the picture, and typing
+      straight away leaves the picture alone. It used to land inside the
+      picture's reference, one keystroke from the hash appearing.
+- [ ] **Then press Ctrl+Z once.** The whole paste goes, the box stays open,
+      and the caret is still in it.
+- [ ] **Paste a box carrying a table, and undo that.** The table's data goes
+      with it rather than being left in the box.
+- [ ] **Copy a picture from a web page or a Word document** (so the clipboard
+      holds a picture AND text), then cut a box and paste it into another box.
+      You get the box, not the picture.
+- [ ] **Type a sentence in a box and press Ctrl+Z.** The burst comes off and
+      the box stays open. Ctrl+Y and Ctrl+Shift+Z both redo.
+- [ ] **Ctrl+Z in the navigator's search box** still undoes your typing there,
+      not your last page edit.
+- [ ] **Pick a highlight colour, and a text colour.** One click each — no
+      Apply. Then open "Mix your own colour" and click a swatch: it loads into
+      the mixer instead, and clicking the same swatch again applies it.
+- [ ] **Lock a section with "Every time it is opened"**, then open a page
+      inside it and enter the passcode. It opens. Move to another page in the
+      same section: asked again.
+- [ ] **Read the warning on the lock dialog.** Short enough to actually read,
+      and it should not read as though encryption is never coming.
+
+---
+
+## 15. Things I already know about
 
 Not for you to test — recorded here so you are not surprised by them.
 
-- **Four tests can fail when the machine is busy**, and they are all the same
-  shape: each asserts something about *time* rather than about behaviour.
-
-  | Test | What it promises |
-  |---|---|
-  | `graph_plot_test` | ten frames of a curve redraw inside 160ms |
-  | `cloud_sync_test` | a big fold yields the event loop enough times |
-  | `code_runner_test` | a 2-second timeout fires within a 15-second budget |
-  | `import_writer_test` | pages start landing before the import finishes |
-
-  All four are fair things to want and unfair things to promise on a runner
-  doing six other things. **A full suite run on 2026-09-29 went red on the
-  last three — and took 120 minutes instead of its usual 11**, which is the
-  whole story: all forty-four of them passed on their own straight
-  afterwards. If you see these three red, look at how long the run took
-  before you look at the code.
-
-  `tool_follows_device_test` had the same shape and is now fixed properly —
-  its correctness never depended on the clock, so the clock came out. These
-  four are harder, because the clock IS what they are measuring. The choice
-  for each is between not gating on it (the repo already has perf probes that
-  print their numbers instead of asserting them) and widening the budget
-  until it only catches a real regression. Your call; I have not touched
-  them.
+- **The demo notebook's handwriting is missing.** Its Maths page has eight
+  pieces of ink whose strokes were never copied into it, so the page opens
+  and draws nothing there. You are redoing it; the steps are in
+  [app/assets/demo/README.md](app/assets/demo/README.md).
+- **A flashcard's history can still slip if its line is edited on another
+  device.** Schedules are kept on each device under the card's line number,
+  so a line added above a card elsewhere arrives without the schedule
+  moving. So can splitting a card's own line with Enter. The v1.0.3 card
+  rebuild gives every card a permanent identity and ends both.
 - **Opening a notebook from a cloud folder that is not "Available offline"
-  freezes the app.** Minutes, with no explanation, and it may not recover. The
-  cause is this app reading files synchronously on the thread that draws, so a
-  placeholder the cloud client has to download blocks everything. Set the
-  notebook's folder to be available offline on every device and it does not
-  happen. Deferred to v1.0.2 §6, which includes the finding that Windows can
-  be ASKED whether a file is a placeholder, so the warning need not be shown
-  to people who already did it.
-- **The formatting buttons and chords are grey inside a table cell.** Bold,
-  italic, colour and the rest act on the paragraph's field, and a cell is a
-  different field — so rather than bolding the sentence outside the table,
-  they stand down. Typing Markdown into the cell works and is the way to
-  format one today. Not a regression: a table used to be its own block type,
-  where the buttons were grey as well. Deferred to v1.0.2, written up in
-  [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md) §2.
-- **The caret may still blink out of a cell and straight back in.** The fix
-  in v1.0.1 stops the caret being *thrown out and left there*; it does not
-  stop the window itself briefly losing focus, which parks the caret and then
-  restores it. If you see a flicker and can carry on typing, that is this. If
-  you see it leave and **stay** out, that is a new bug — tell me.
-- **The console prints accessibility errors constantly.**
-  `Failed to update ui::AXTree, error: … will not be in the tree` — in normal
-  use, not only around tables. This is real and it is the cause of the two
-  entries above: screen readers cannot read the editor today. It is deferred
-  to v1.0.2 with the evidence written up in
-  [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md) §1,
-  because the check that fails is in the engine, no automated test here can
-  see it, and it may not be ours. Nothing for you to test — just do not be
-  surprised by it.
-- **A caret parked on a table's scope.** If a cell were to take and drop the
-  caret four times inside one frame, the caret would sit on the table itself
-  with nothing typeable until you click. I could not make it happen, and the
-  obvious fix risks a worse problem, so it is written down rather than
-  changed. If you ever get a table that swallows the keyboard and only a
-  click gets you out, this is what you found.
+  freezes the app.** Minutes, with no explanation, and it may not recover. Set
+  the notebook's folder to be available offline on every device and it does
+  not happen. Written up in
+  [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md) §5.
+- **The formatting buttons are grey inside a table cell.** Typing Markdown
+  into the cell works and is the way to format one today. v1.0.2 bug 2.
+- **The console prints accessibility errors constantly** —
+  `Failed to update ui::AXTree` — and screen readers cannot read the editor.
+  The check that fails is in the engine. v1.0.2 bug 1, §1.
+- **The caret may blink out of a table cell and straight back in.** If you can
+  carry on typing, that is this. If it leaves and **stays** out, that is a new
+  bug — tell me.
+- **Four tests can fail when the machine is busy**, all asserting something
+  about *time* rather than behaviour: `graph_plot_test`, `cloud_sync_test`,
+  `code_runner_test`, `import_writer_test`. If they go red, look at how long
+  the run took before you look at the code.

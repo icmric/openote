@@ -1,19 +1,18 @@
 # Architecture Overview
 
-> **Document status:** v0.3 · **Implementation phase** · Last updated 2026-08-05
-> **Reality check (2026-08-05):** the layering described here is what the app
-> has, with two deviations worth naming. (1) **Loro is not integrated** — the
-> CRDT-backed model below is the design intent; what ships is the JSON mirror
-> plus the append-only op log of [ADR-0006](adr/ADR-0006-sync-transport-and-text-model.md).
-> (2) The Dart state layer grew a **god object** (`AppState`); the E3 extraction
-> has since split out `StudyState` and `PlannerState`, with `SyncCoordinator`
-> and `TagOps` still to go. A third layer has since appeared that this document
-> does not yet describe: the **UI design system** — see
-> [Style Guide §3.7/§4.2a](05-style-guide.md) for the token/surface layer and
-> [v0.6](planning/v0.6-ui-revamp.md) for how it is being built.
-> **Purpose:** The overview of how Openote is put together — the layers, the data model, the open file format, and the hard subsystems (canvas, text, math, ink, **embeds**) plus sync. The deep specs it previews now exist: [File Format](specs/10-file-format-spec.md) · [Data Model](specs/11-data-model-spec.md) · [Math Input](specs/12-math-input-spec.md) · [Ink Data](specs/13-ink-data-spec.md) · [ADRs](adr/README.md).
-> **Related:** [PRD](02-product-requirements.md) · [Technology Evaluation](03-technology-evaluation.md)
-> **v0.2 status:** the stack is now provisionally decided — **Flutter/Dart UI + Rust core, Loro CRDT, SQLite container** (ADRs 0001–0003) — and this overview is written against it, while the domain model and file format remain deliberately framework-independent (tenet 4). Live embeds (transclusion) added as §4a.
+> How Openote is put together: the layers, the document model, the storage
+> strategy and the hard subsystems — canvas, text, maths, ink, live embeds —
+> plus sync. This is the map; the specs below it are the detail.
+>
+> **Two things the layering below describes as intent rather than fact.**
+> There is no CRDT in the product: what ships is the JSON page mirror plus the
+> append-only op log of [ADR-0006](adr/ADR-0006-sync-transport-and-text-model.md),
+> and [ADR-0002](adr/ADR-0002-crdt-library.md) records why Loro is still the
+> choice for when one is needed. And the Dart state layer is one class,
+> `AppState`, rather than the clean application tier drawn here; splitting it
+> is on the [backlog](planning/backlog.md).
+>
+> **Related:** [File format](specs/10-file-format-spec.md) · [Data model](specs/11-data-model-spec.md) · [Maths input](specs/12-math-input-spec.md) · [Ink data](specs/13-ink-data-spec.md) · [ADRs](adr/README.md) · [Style guide](05-style-guide.md)
 
 ---
 
@@ -235,7 +234,7 @@ A **local full-text index** across the whole workspace (fast, offline), designed
 ## 11. Cross-cutting concerns
 
 - **Performance:** viewport culling + level-of-detail on the canvas (CANVAS-9); incremental persistence (SQLite/CRDT deltas); lazy-load pages; budget ink to a native low-latency path.
-- **Concurrency — one rule.** *Work whose cost scales with the size of the user's notebook does not run on the UI isolate.* Three things qualify and all three now run elsewhere: the OneNote parse and write (a dedicated writer isolate that owns the brand-new notebook's files outright), the op-log replay a recorder needs (`Isolate.run`, with the result handed over by ownership transfer rather than copied), and blob materialisation. What stays is text measurement, because `TextPainter` is root-isolate-only — so the writer isolate *asks* for layout in small batches rather than keeping the work main-side. The corollary matters as much as the rule: **status reads must never open a writer**, because the cheap question then inherits the expensive one's cost. Both were learned by getting them wrong; the reasoning and the measurements are in the [v0.10 plan](planning/v0.10-responsiveness-and-storage.md).
+- **Concurrency — one rule.** *Work whose cost scales with the size of the user's notebook does not run on the UI isolate.* Three things qualify and all three now run elsewhere: the OneNote parse and write (a dedicated writer isolate that owns the brand-new notebook's files outright), the op-log replay a recorder needs (`Isolate.run`, with the result handed over by ownership transfer rather than copied), and blob materialisation. What stays is text measurement, because `TextPainter` is root-isolate-only — so the writer isolate *asks* for layout in small batches rather than keeping the work main-side. The corollary matters as much as the rule: **status reads must never open a writer**, because the cheap question then inherits the expensive one's cost. Both were learned by getting them wrong; the reasoning and the measurements are in the [v0.10 plan](planning/archive/v0.10-responsiveness-and-storage.md).
 - **Data safety:** ACID container writes; autosave; snapshot history; corruption in one page recoverable without losing the notebook (OPEN-11).
 - **Accessibility & i18n:** treated as requirements (PLAT-5/6), with special attention to the known IME/screen-reader weaknesses of own-canvas frameworks — a factor in the posture decision.
 - **Security:** optional at-rest encryption; optional E2E sync; secure key handling via platform secure storage.

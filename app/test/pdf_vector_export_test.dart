@@ -721,11 +721,26 @@ void main() {
       // `debugFlowKinds`'s doc comment just above: text goes in as hex
       // indices into an embedded subset font. `substituteLine` is the one
       // place the printed line is actually built, so it is checked directly.
-      expect(substituteLine('y=3x+10', '2'), 'y=3x+10   (x = 2 → 16)');
-      expect(substituteLine('y=3x+10', ''), 'y=3x+10',
+      expect(substituteLine({'latex': 'y=3x+10', 'values': {'x': '2'}}),
+          'y=3x+10   (x = 2 → 16)');
+      expect(substituteLine({'latex': 'y=3x+10'}), 'y=3x+10',
           reason: 'nothing typed yet prints the equation alone');
-      expect(substituteLine('x=3', '1'), contains('a vertical line'),
-          reason: 'the same calculator error a graph of x=3 would give');
+      expect(substituteLine({'latex': 'y=3x+10', 'value': '2'}),
+          'y=3x+10   (x = 2 → 16)',
+          reason: 'a block saved before v1.0.2 stored ONE value, under '
+              '`value`, and still has to print');
+      expect(
+          substituteLine({
+            'latex': 'v=u+a*t',
+            'values': {'u': '2', 'a': '3', 't': '4'}
+          }),
+          'v=u+a*t   (u = 2, a = 3, t = 4 → 14)',
+          reason: 'every name it was given, in the order it asks for them');
+      expect(substituteLine({'latex': 'v=u+a*t', 'values': {'u': '2'}}),
+          'v=u+a*t   (u = 2 → needs a, t)',
+          reason: 'half filled in exports what it has, and says what it '
+              'still wants — a reader can do something with that, and '
+              'nothing is a worse answer than something');
 
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (app: app, pageId: pageId) = await newApp();

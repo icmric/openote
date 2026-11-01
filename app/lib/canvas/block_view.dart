@@ -1,7 +1,9 @@
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/pen_buttons.dart';
 import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
@@ -17,6 +19,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/color_picker.dart';
 import '../ui/context_menus.dart';
+import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import 'canvas_controller.dart';
 import 'portal_view.dart';
 
@@ -121,6 +124,21 @@ class _BlockViewState extends State<BlockView> {
   int? _selectBase;
   bool _textDragging = false;
 
+  /// This gesture is scrolling the page, so the tap it ends with is not a tap
+  /// (v1.0.2 bug 8). Flutter's tap slop is 18px and a pan is recognised at 4,
+  /// so without this a short finger-scroll over a box also opened the box.
+  bool _touchPanning = false;
+
+  /// Whether the press that started this gesture landed on a member of a group
+  /// that was not yet held.
+  ///
+  /// **Latched at pointer-down, because picking the group up is the first
+  /// thing the gesture does.** Read live instead, it would be true for the
+  /// press and false for every move after it — handing the rest of the drag
+  /// to the member's own text selection, which is exactly the gesture the
+  /// group was supposed to take.
+  bool _pressTookGroup = false;
+
   /// Whether the press that started this gesture landed on CHROME — the move
   /// bar, a resize handle, or the hit-padding — rather than on the block's own
   /// content.
@@ -139,6 +157,20 @@ class _BlockViewState extends State<BlockView> {
   bool get primary => app.selectedBlockId == b.id;
   bool get editing => app.editingBlockId == b.id;
 
+  /// Is this block's group already the thing being held?
+  ///
+  /// A selection is closed over groups ([AppState.select]), so one member
+  /// being selected means every member is — which is what lets a question
+  /// about the group be answered by looking at this block alone.
+  bool get _groupHeld => b.groupId != null && selected;
+
+  /// Does the group own the next gesture on this block, rather than the block
+  /// itself? True for a member of a group nobody has picked up yet: the first
+  /// click selects the group and the first drag moves it, and only once it is
+  /// held do this block's own body gestures — selecting its text, panning its
+  /// graph — come back. See [_tap].
+  bool get _groupTakesGesture => b.groupId != null && !_groupHeld;
+
   /// A click just opened this box with nothing in it and nothing typed
   /// since — OneNote-style: the caret is live but the box itself stays
   /// invisible (no border, no move bar, no resize handles) until the first
@@ -152,7 +184,36 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.table;
 
   void _tap() {
+    // The gesture scrolled the page; it was not a tap on this box.
+    if (_touchPanning) {
+      _touchPanning = false;
+      return;
+    }
+    // **A background layer is not one of the things on the page.** A locked
+    // slide stays out of the selection however it is reached — the marquee
+    // skips it, and a click on it is a click on the page behind the notes,
+    // which the canvas answers by clearing the selection. Issue #20: *"it
+    // should more or less act as a background piece, i think the only time it
+    // should not act as one is if i right click it … and unlock it."*
+    //
+    // Only for the types that cannot be edited, which is every kind of slide.
+    // Locking a text box is locking where it sits; typing in it is not moving
+    // it, and taking that away is not what the menu item offers.
+    if (_locked && !_editableType) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    // **A grouped block answers for its group first.** Clicking one member
+    // picks the whole group up, which is the point of having joined it; a
+    // second click, now that the group is already held, goes to the member
+    // under the pointer and opens it. That is how every drawing tool lets you
+    // reach inside a group, and it is the only way a grouped text box stays
+    // typeable without making the first click ambiguous.
+    //
+    // Shift is excluded because it means "add to what I have", and
+    // [AppState.select] already toggles the whole group for it.
+    if (!shift && _groupTakesGesture) {
+      app.select(b.id);
+      return;
+    }
     if (shift) {
       app.select(b.id, additive: true);
     } else if (_editableType) {
@@ -211,20 +272,81 @@ class _BlockViewState extends State<BlockView> {
         local.dy > s.height - _kChromePad;
   }
 
+  /// **The middle button is the canvas's, wherever it is pressed.**
+  ///
+  /// Nothing on the page has a use for it and panning is not a block's
+  /// business, so a block neither claims it nor reads it. Reported by the
+  /// owner after the canvas half of this was fixed: *"The middle button drag
+  /// kinda works however it does still highlight text but still allows me to
+  /// move around"* — the canvas was panning and the box underneath was
+  /// drag-selecting its own text at the same time, because only one of the
+  /// two was looking at which button it was.
+  static bool _isMiddle(PointerEvent e) =>
+      e.kind == PointerDeviceKind.mouse &&
+      (e.buttons & kMiddleMouseButton) != 0;
+
   void _pointerDown(PointerDownEvent e) {
-    app.claimedPointers.add(e.pointer);
+    if (_isMiddle(e)) return;
+    // **A background layer does not claim.** Claiming is how a block tells the
+    // canvas to keep its hands off a gesture, and a locked block — an
+    // imported slide — has no gesture of its own: it cannot be moved, resized
+    // or typed into. Leaving the press to the canvas is what lets a marquee
+    // start on top of a slide; see `_selectDown`, which still leaves the
+    // CLICK to the tap handler below so the slide can be selected.
+    if (!_locked) app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressOnChrome = _isChromeAt(e.position);
+    _pressTookGroup = _groupTakesGesture;
     _selectBase = null;
     _textDragging = false;
+    _touchPanning = false;
   }
 
   void _pointerMove(PointerMoveEvent e) {
+    if (_isMiddle(e)) return; // see [_isMiddle]
     final from = _pressGlobal;
+    // **A finger dragged over a box scrolls the page** (v1.0.2 bug 8, the
+    // owner's own note before release: *"dragging over a box still selects
+    // its text"*). A box is most of the page, so a finger that lands on one
+    // and moves is almost always somebody scrolling — selecting its words
+    // instead left a tablet with nowhere to scroll from.
+    //
+    // The same shape as the two decisions already written down: a finger
+    // keeps its settled meaning (`AppState.touchShouldDraw`) and the middle
+    // button is nobody's gesture. Here the exceptions are the two gestures a
+    // drag on a box really is: the box is being typed in, where a drag
+    // selects its words, and a held group, which moves. A SELECTED box is
+    // dragged by its bar, which is a different pointer and not this path.
+    //
+    // Panned here rather than by standing down for the canvas: a block claims
+    // its pointer on press, so the canvas never sees this gesture, and not
+    // claiming would make a tap on a box land a new text box on top of it
+    // (`PageCanvas._selectUp`). The block already has the moves.
+    if (from != null &&
+        e.kind == PointerDeviceKind.touch &&
+        !editing &&
+        !_pressTookGroup &&
+        !_locked) {
+      // **Not while a pinch is on.** Two fingers mean navigation, and the
+      // canvas is already doing it from both of them — panning from this one
+      // as well is two navigations at once, which is what made zooming jump
+      // around. See [AppState.pinching].
+      if (app.pinching) {
+        _touchPanning = false;
+        return;
+      }
+      if (!_touchPanning && (e.position - from).distance < 4) return;
+      _touchPanning = true;
+      widget.controller.panBy(e.delta);
+      return;
+    }
     if (from == null || !_editableType || _locked) return;
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
     if (_pressOnChrome) return;
+    // A group nobody is holding moves as one thing. Its members' text stays
+    // selectable, but only after the group has been picked up.
+    if (_pressTookGroup) return;
     if (!_textDragging && (e.position - from).distance < 4) return;
     if (HardwareKeyboard.instance.isAltPressed) return; // Alt-drag moves
     if (!_textDragging) {
@@ -251,6 +373,9 @@ class _BlockViewState extends State<BlockView> {
   void _pointerUp(PointerEvent e) {
     _selectBase = null;
     _textDragging = false;
+    // A scroll is not a tap. Cleared on the NEXT press, not here: `_tap`
+    // fires after this.
+    if (_touchPanning) _pressGlobal = null;
     // _pressGlobal is left for _tap, which fires after the pointer is up.
   }
 
@@ -273,7 +398,37 @@ class _BlockViewState extends State<BlockView> {
       HardwareKeyboard.instance.isControlPressed ||
       HardwareKeyboard.instance.isMetaPressed;
 
+  /// **[d.delta] is in PAGE units, and every caller owes it that.**
+  ///
+  /// This used to divide by the zoom, and the box then moved at the wrong
+  /// speed at every zoom but 1: the owner, *"if i am zoomed out the boxes
+  /// will move considerably faster than my mouse when dragging them, and move
+  /// slower than my mouse when zoomed in on them."* Measured: 750 page units
+  /// travelled at 0.4x where 300 keeps up with the cursor.
+  ///
+  /// A `BlockView` is built inside the canvas's
+  /// `Transform(transform: controller.matrix)`, and a gesture recognizer
+  /// reports `DragUpdateDetails.delta` from `PointerEvent.localDelta` — local
+  /// to the detector, so the framework's own hit-test transform has ALREADY
+  /// divided it by the zoom. Dividing again double-counts.
+  ///
+  /// The division is right elsewhere, which is what made it look right here:
+  /// `PageCanvas`'s own `Listener` sits outside the transform and measures in
+  /// screen pixels. So the coordinate system cannot be inferred from "we are
+  /// in the canvas" — it is a property of the widget the gesture is attached
+  /// to, and this one is inside. Anything handing a SCREEN delta to this
+  /// (the long-press path, which reports a cumulative global offset) converts
+  /// first; `_longPressMove` does it by reading the local offset instead.
+  ///
+  /// Nothing has to remember where the box was grabbed: moving it BY the
+  /// pointer's travel keeps every point of it under whatever was over it,
+  /// which is the owner's *"tie the original click point of the box to the
+  /// cursor position"* for all grab points at once.
   void _drag(DragUpdateDetails d) {
+    // A pinch has taken over: two fingers are navigating, and one of them
+    // happens to be on this bar. Moving the box as well would move it under
+    // the zoom. See [AppState.pinching].
+    if (app.pinching) return;
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
@@ -282,11 +437,11 @@ class _BlockViewState extends State<BlockView> {
     // Read per MOVE, not at drag start: the whole point is that pressing or
     // releasing the key part way through a drag changes what happens next.
     app.snapOverride = _modeOverrideHeld;
-    final scale = widget.controller.scale;
-    app.moveSelectedBy(d.delta.dx / scale, d.delta.dy / scale);
+    app.moveSelectedBy(d.delta.dx, d.delta.dy);
     // Alignment guides (CANVAS-7). Computed after the move so the guide
     // reflects where the block actually is, and the snap nudges it flush.
-    app.updateAlignGuides(scale);
+    // The scale is the guide's own tolerance, not a conversion.
+    app.updateAlignGuides(widget.controller.scale);
   }
 
   void _dragEnd(DragEndDetails d) {
@@ -322,7 +477,11 @@ class _BlockViewState extends State<BlockView> {
                 b.type != BlockType.board &&
                 b.type != BlockType.graph &&
                 b.type != BlockType.substitute) ||
-            HardwareKeyboard.instance.isAltPressed;
+            HardwareKeyboard.instance.isAltPressed ||
+            // A member of a group nobody has picked up yet drags the whole
+            // group, whatever the block would otherwise have done with the
+            // gesture — the same rule [_tap] applies to the first click.
+            _pressTookGroup;
     if (_bodyDragMoves) _dragStart(d);
   }
 
@@ -335,7 +494,9 @@ class _BlockViewState extends State<BlockView> {
     _bodyDragMoves = false;
   }
 
-  /// Long-press reports a cumulative offset, not a delta.
+  /// Long-press reports a cumulative offset, not a delta — and the LOCAL one
+  /// is read, so the delta handed to [_drag] is in page units like every
+  /// other caller's.
   Offset _lastLongPress = Offset.zero;
 
   void _longPressStart(LongPressStartDetails d) {
@@ -344,8 +505,8 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _longPressMove(LongPressMoveUpdateDetails d) {
-    final delta = d.offsetFromOrigin - _lastLongPress;
-    _lastLongPress = d.offsetFromOrigin;
+    final delta = d.localOffsetFromOrigin - _lastLongPress;
+    _lastLongPress = d.localOffsetFromOrigin;
     _drag(DragUpdateDetails(globalPosition: d.globalPosition, delta: delta));
   }
 
@@ -455,9 +616,7 @@ class _BlockViewState extends State<BlockView> {
     return t.trim().isEmpty ? '${b.type.name} block' : t;
   }
 
-  /// True for a background layer that must not be moved or resized —
-  /// currently an imported PDF slide (see `export/pdf_import.dart`).
-  bool get _locked => b.content['locked'] == true;
+  bool get _locked => b.locked;
 
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
@@ -485,17 +644,18 @@ class _BlockViewState extends State<BlockView> {
       app.pushUndo();
       _resizeUndoPushed = true;
     }
-    final scale = widget.controller.scale;
+    // Page units, for the reason [_drag] gives: the grips are inside the
+    // canvas's transform, so their deltas already are.
     final oldW = b.w;
     final oldH = b.h ?? app.renderSizes[b.id]?.height;
 
     if (width) {
       // Manual resize locks the width (text boxes stop auto-growing).
       if (b.type == BlockType.text) b.content['autoWidth'] = false;
-      b.w = (b.w + d.delta.dx / scale).clamp(80.0, 4000.0);
+      b.w = (b.w + d.delta.dx).clamp(80.0, 4000.0);
     }
     if (height && oldH != null) {
-      b.h = (oldH + d.delta.dy / scale).clamp(40.0, 4000.0);
+      b.h = (oldH + d.delta.dy).clamp(40.0, 4000.0);
     }
 
     if (b.type == BlockType.ink) {
@@ -596,7 +756,8 @@ class _BlockViewState extends State<BlockView> {
       BlockType.embed => PortalBlockView(
           block: b,
           app: app,
-          onMenu: (at) => showBlockMenu(context, app, b, at)),
+          onMenu: (at) => showBlockMenu(context, app, b, at),
+          onUnlock: (pageId) => confirmWindowOnto(context, app, pageId)),
       BlockType.board => BoardBlockView(block: b, app: app),
       BlockType.graph => GraphBlockView(block: b, app: app),
       BlockType.substitute => SubstituteBlockView(block: b, app: app),
@@ -616,9 +777,10 @@ class _BlockViewState extends State<BlockView> {
 
     // While an ink tool is active, blocks are inert — the pen draws OVER
     // them instead of dragging/editing them (fixes ink-over-block dragging).
-    final inkToolActive = app.tool == Tool.pen ||
-        app.tool == Tool.highlighter ||
-        app.tool == Tool.eraser;
+    // [AppState.inkToolInHand] holds the rule, because what counts as a
+    // drawing tool is also what decides whether anything has a bar to put a
+    // delete cross on.
+    final inkToolActive = app.inkToolInHand;
 
     // Chrome is only live for its OWN block, so two abutting blocks can never
     // both offer a bar at once even though the reserved strips overlap.
@@ -644,14 +806,20 @@ class _BlockViewState extends State<BlockView> {
     final body = MouseRegion(
       onEnter: (_) => _setHover(body: true),
       onExit: (_) => _setHover(body: false),
-      cursor: _editableType && !editing
+      // An I-beam over a group nobody is holding would promise a caret that
+      // the first click does not give — it selects the group instead.
+      cursor: _editableType && !editing && !_groupTakesGesture
           ? SystemMouseCursors.text
           : MouseCursor.defer,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         supportedDevices: devices,
         onTap: editing ? null : _tap,
-        onSecondaryTapUp: editing
+        onSecondaryTapUp: editing ||
+                // A pen's barrel button can arrive as a right-click; where it
+                // has been given a job, that is the job it does rather than
+                // opening a menu. See [PenButtons.suppressesMenu].
+                PenButtons.suppressesMenu(app.penButton)
             ? null
             : (d) => showBlockMenu(context, app, b, d.globalPosition),
         // A locked block (an imported PDF slide) is an annotation surface: it

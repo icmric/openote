@@ -39,14 +39,39 @@ final _wikiLink = RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]');
 final _colorWrap =
     RegExp(r'\{\{#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? (.*?)\}\}', dotAll: true);
 
+/// A highlight colour run with nothing of the kind inside it — the INNERMOST
+/// one, so each pass of the loop below peels a whole run rather than matching
+/// from one run's opener to another's closer.
+final _highColourWrap = RegExp(
+    r'\{\{=[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? '
+    r'((?:(?!\{\{[#=])(?!\}\})[\s\S])*)\}\}');
+
 /// Project stored text into strict CommonMark for `.md` export:
 ///  * `{{#RRGGBB text}}` colour spans → their inner text (the colour extension
 ///    isn't standard Markdown, so we degrade to plain text rather than leak the
 ///    braces);
+///  * `{{=RRGGBB text}}` highlights → `==text==`, which is what a highlight
+///    with no colour on it is already written as here and what every other
+///    Markdown tool with highlighting understands. The colour is lost and the
+///    highlight is not, which is the most of it that survives;
 ///  * `[[Title|id]]` wiki-links → `[Title](onote://page/id)`; `[[Title]]` →
 ///    `[Title]` (Data Model Spec §5.2 strict-Markdown mapping).
 String markdownInline(String text) {
-  var out = text.replaceAllMapped(_colorWrap, (m) => m.group(1) ?? '');
+  // Until nothing changes, not once: a colour can hold a colour —
+  // recolouring part of a coloured phrase writes `{{#a big {{#b word}}}}` —
+  // and one lazy pass takes the outer pair as far as the FIRST `}}`, leaving
+  // `big {{#b word}}` in the export. Each pass removes a level.
+  var out = text;
+  for (var i = 0; i < 8; i++) {
+    // Highlights first, innermost out: a nested one has to become its own
+    // `==…==` before the run around it is matched, or the outer pattern would
+    // read from its opener to the inner run's closer.
+    var next = out.replaceAllMapped(
+        _highColourWrap, (m) => '==${m.group(1) ?? ''}==');
+    next = next.replaceAllMapped(_colorWrap, (m) => m.group(1) ?? '');
+    if (next == out) break;
+    out = next;
+  }
   out = out.replaceAllMapped(_wikiLink, (m) {
     final label = m.group(1)!.trim();
     final id = m.group(2)?.trim();
@@ -183,3 +208,26 @@ String expandAtoms(String text, Map<String, dynamic> content) {
   buf.write(text.substring(last));
   return buf.toString();
 }
+
+/// The file extension an exported asset of [mime] should carry, without a dot.
+///
+/// The exporters derived this by splitting the mime at the slash, which works
+/// for `image/png` and for nothing else: `image/svg+xml` came out as
+/// `svg+xml`, and `application/octet-stream` — what a sniff returns when it
+/// does not recognise the bytes — as `octet-stream`.
+///
+/// The inverse of `mimeForExtension` in `canvas/media_drop.dart`, and the two
+/// disagree on purpose: that one answers for a file somebody chose, where an
+/// unknown extension most likely means a picture, and this one answers for
+/// bytes, where an unknown type must not be given a picture's name.
+String extensionForMime(String mime) => switch (mime.toLowerCase()) {
+      'image/png' => 'png',
+      'image/jpeg' || 'image/jpg' => 'jpg',
+      'image/gif' => 'gif',
+      'image/webp' => 'webp',
+      'image/bmp' => 'bmp',
+      'image/tiff' => 'tiff',
+      'image/svg+xml' => 'svg',
+      'application/pdf' => 'pdf',
+      _ => 'bin',
+    };

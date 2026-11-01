@@ -189,6 +189,22 @@ jobs:
           CI: 'true'
         run: flutter test --reporter github --file-reporter json:test-results.json
 
+      # The browser compiles Dart differently enough to break working code,
+      # and until now nothing here ever compiled for one: the demo shipped
+      # ink that was silently blank in a browser and correct on all three
+      # desktops, because `dart:io` has no zlib on the web and `dart2js`
+      # pushes an integer bitwise result into the unsigned 32-bit range.
+      # Both faults pass every VM test there is. See the test file.
+      #
+      # Linux only, and only the files that are about this: dart2js emits the
+      # same JavaScript whatever host runs it, so a second and third runner
+      # would buy nothing, and most of the suite wants a filesystem.
+      - name: Test (browser)
+        if: runner.os == 'Linux'
+        env:
+          CI: 'true'
+        run: flutter test --platform chrome --reporter github test/ink_decodes_on_the_web_test.dart
+
       # NAME the failing tests in an annotation of our own. The github
       # reporter's only annotation is a count — "1069 passed, 1 failed" —
       # and job LOGS require authentication even on a public repository, so

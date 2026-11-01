@@ -1,22 +1,34 @@
-/// The on-disk operation log — `.onotebook/ops/<device>.oplog`.
+/// Reading and writing a notebook's `.onotebook` directory.
 ///
-/// Layout (ADR-0006 §3):
 /// ```
-/// MyNotebook.onotebook/
-///   manifest.json        notebook id, format version, sync scope
-///   ops/<device>.oplog   append-only, ONE writer, ever
-///   blobs/<sha256>       content-addressed (not yet written here)
+/// MyNotebook.onotebook/        what a sync client replicates
+///   manifest.json              notebook id, format version, sync scope, devices
+///   ops/<device>.oplog         append-only, JSON Lines, ONE writer ever
+///   blobs/<sha256>.blob        content-addressed, immutable
+///   media/<uuid>.<ext>         video and audio
 /// ```
 ///
-/// Today this sits **beside** the `.onote` container and shadows it: the
-/// container is still authoritative and the log is written alongside, so that
-/// "rebuild from the log and compare" is a live check rather than a leap of
-/// faith. When the flip happens the container becomes `cache.onote` inside this
-/// directory and stops being synced.
+/// **One writer per file is the load-bearing property**, and the reason every
+/// write path here appends to this device's own log and no other. Two devices can
+/// then never produce competing versions of one file, so a sync client has
+/// nothing to disambiguate.
+///
+/// **The working copy is never inside this directory.** For a shared notebook
+/// this *is* the cloud folder, and a live WAL SQLite database inside a folder
+/// that something else replicates file by file is the torn-database hazard the
+/// whole design exists to avoid. A demoted container lives at
+/// `<workspace>/.cache/<notebook-id>/cache.onote`; an un-demoted one is a sibling
+/// of this directory. Neither is in here, and nothing should put one here.
+///
+/// Full format in `docs/specs/10-file-format-spec.md` §3.
 library;
 
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' hide Directory, File, FileMode, FileStat,
+    FileSystemEntity, FileSystemEntityType, FileSystemException,
+    OSError, RandomAccessFile;
+
+import '../store/fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -399,6 +411,85 @@ class OpLogStore {
         if (f is File && f.path.endsWith('.oplog'))
           p.basenameWithoutExtension(f.path)
     ]..sort();
+  }
+
+  /// When [device] last wrote, from the op itself — or null when that cannot be
+  /// read.
+  ///
+  /// **The device's own clock, not the file's mtime.** A sync client copying a
+  /// log sets the mtime to the moment of the copy, and a git pull rewrites the
+  /// file outright, so an mtime says when this machine *received* the log
+  /// rather than when that device wrote it. The last op's `ts` travels with the
+  /// op and means the same thing everywhere.
+  ///
+  /// Reads the **tail**, because this is on the path that paints the sync chip
+  /// and the biggest real log measured is 1.6 MB. A torn last line is the normal
+  /// shape of an append-only file, so it walks backwards to the first line that
+  /// parses. Null when none does — one op larger than the window, an unreadable
+  /// file, a log with nothing in it — and a null must be read as "unknown",
+  /// never as "idle".
+  int? lastWriteAt(String device, {int tailBytes = 64 * 1024}) {
+    final f = logFor(device);
+    RandomAccessFile? raf;
+    try {
+      if (!f.existsSync()) return null;
+      raf = f.openSync();
+      final len = raf.lengthSync();
+      if (len == 0) return null;
+      final from = len > tailBytes ? len - tailBytes : 0;
+      raf.setPositionSync(from);
+      final bytes = raf.readSync(len - from);
+      final text = utf8.decode(bytes, allowMalformed: true);
+      final lines = text.split('\n');
+      for (var i = lines.length - 1; i >= 0; i--) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        final op = Op.decode(line);
+        if (op != null && op.timestamp > 0) return op.timestamp;
+      }
+      return null;
+    } catch (_) {
+      // A locked or vanished file is not an error here; the caller treats an
+      // unknown as present, which is the conservative direction.
+      return null;
+    } finally {
+      try {
+        raf?.closeSync();
+      } catch (_) {}
+    }
+  }
+
+  /// The devices that have written within [within], plus any whose last write
+  /// cannot be read.
+  ///
+  /// **Why this is not [deviceIds].** That is a directory listing, and `ops/`
+  /// keeps every log any device ever wrote — nothing deletes one. An identity
+  /// that stops being used therefore counts for ever: a reinstall, a restored
+  /// backup, or the identity fork in `device_identity.dart` each leave a log
+  /// behind, and "how many devices have this notebook" climbs and never comes
+  /// back down. Measured on a real notebook: three logs, two machines.
+  ///
+  /// Replay still needs [deviceIds] and must keep using it — an old device's
+  /// ops are as valid as any other, and dropping them would lose content. This
+  /// is only for telling somebody how many devices are *in use*.
+  ///
+  /// An unreadable last write counts as active, deliberately: being told about
+  /// a device that has gone quiet is a much smaller problem than being told a
+  /// device you are holding does not exist.
+  /// [alsoCount] is this installation's own id, which counts whether or not it
+  /// has written lately — somebody looking at the notebook is holding a device
+  /// that has it, and a count that said zero while they were reading would be
+  /// absurd. Measured on a real notebook: every log was five weeks old, so the
+  /// age test alone answered "0 devices" for a notebook that was open.
+  List<String> activeDeviceIds(
+      {Duration within = const Duration(days: 30), String? alsoCount}) {
+    final cutoff = DateTime.now().millisecondsSinceEpoch - within.inMilliseconds;
+    final out = <String>{
+      for (final d in deviceIds())
+        if ((lastWriteAt(d) ?? cutoff) >= cutoff) d
+    };
+    if (alsoCount != null && alsoCount.isNotEmpty) out.add(alsoCount);
+    return out.toList()..sort();
   }
 
   /// Every op in one device's log, in write order.

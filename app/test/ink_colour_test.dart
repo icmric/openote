@@ -24,6 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/ink_ops.dart';
 import 'package:openote/state/app_state.dart';
+import 'package:openote/ui/pen_size_button.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/color_picker.dart';
@@ -194,18 +195,30 @@ void main() {
 
       expect(find.byType(Slider), findsNothing,
           reason: 'not on the toolbar any more');
+
+      // **Behind one button now**, which the owner asked for in turn: *"Pen
+      // size doesnt change regularly so that can be hiden behind a single
+      // menu. The whole drawing menu has sprawled out a lot."* The dots are
+      // still the way you choose — the thing that was wrong with the slider
+      // — they are just one click further in, and the button draws the size
+      // it would put down so the row still says what the pen is set to.
+      await tester.tap(find.byType(PenSizeButton));
+      await tester.pumpAndSettle();
       for (final v in kPenSizes) {
-        expect(find.byTooltip('Pen size ${v == v.roundToDouble() ? v.toInt() : v}'),
+        expect(
+            find.text('${v == v.roundToDouble() ? v.toInt() : v}'),
             findsOneWidget,
-            reason: 'a dot for $v');
+            reason: 'a dot and its size for $v');
       }
 
-      await tester.tap(find.byTooltip('Pen size 5'));
-      await tester.pump();
+      await tester.tap(find.text('5'));
+      await tester.pumpAndSettle();
       expect(app.penSize, 5);
 
       // And anything the four do not cover is still reachable.
-      await tester.tap(find.byTooltip('Exact size…'));
+      await tester.tap(find.byType(PenSizeButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exact size…'));
       await tester.pumpAndSettle();
       expect(find.byType(Slider), findsOneWidget,
           reason: 'the slider is behind a button, not gone');
@@ -226,7 +239,9 @@ void main() {
       app.setInkColor('#7A3E9D');
       await drawTab(tester, app);
 
-      await tester.tap(find.byTooltip('Exact size…'));
+      await tester.tap(find.byType(PenSizeButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exact size…'));
       await tester.pumpAndSettle();
 
       // The dialog's SURFACE, not `AlertDialog`'s own render box — that one

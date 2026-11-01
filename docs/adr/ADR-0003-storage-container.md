@@ -1,7 +1,24 @@
 # ADR-0003: Storage container — SQLite `.onote` package with an open-folder export
 
-> **Status:** Accepted (provisional) · 2026-07-22
-> **Related:** [File Format Spec](../specs/10-file-format-spec.md) · [Architecture §5](../04-architecture-overview.md)
+> **Status:** Accepted. The container decision held; four things named in it did not.
+> **Related:** [File format](../specs/10-file-format-spec.md) · [ADR-0006](ADR-0006-sync-transport-and-text-model.md) · [Architecture §5](../04-architecture-overview.md)
+>
+> One SQLite database per notebook, with a mandated lossless open-folder export,
+> is exactly what ships. What the Decision below also says, and should not be
+> believed:
+>
+> * **There is no CRDT in the container.** `page_mirror` is not a mirror of
+>   anything — it holds page content and is the only copy.
+>   [ADR-0006](ADR-0006-sync-transport-and-text-model.md) moved the merge unit
+>   out to an op log in files, and the openness guarantee moved with it.
+> * **`drift` is not used.** The app talks to `package:sqlite3` directly.
+> * **FTS is not created.** It was created on every open and never written to,
+>   which advertised a search index holding nothing, so it is now optional in the
+>   format and absent in practice.
+> * **The container is no longer the only durable thing.** Blob bytes live in
+>   `.onotebook/blobs/`, and for a notebook that has taken the opt-in demotion
+>   the container is a rebuildable cache. §5.2's alternative (A), a folder of
+>   plain files, won more of this argument than it lost.
 
 ## Context
 

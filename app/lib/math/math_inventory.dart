@@ -41,6 +41,7 @@ class MathItem {
     this.aliases = const [],
     this.typeIt,
     this.alsoTypeIt = const [],
+    this.variantOf,
   });
 
   /// Stable identifier — used by "recently used" and by tests.
@@ -77,6 +78,20 @@ class MathItem {
   /// is how an editor ends up with two carets in the same box.
   final List<MNode> Function() build;
 
+  /// **The id of the blank shape this is a filled-in copy of.**
+  ///
+  /// `sumin` is `sum` with `i=1` and `n` already in its slots — not a
+  /// different shape, the same one with less typing left to do.
+  ///
+  /// It carries a rule rather than only a fact. `math_tex_safety_test.dart`
+  /// requires every structure to have a [typeIt], so that moving chips off
+  /// the row leaves nothing reachable by mouse alone; a variant is exempt,
+  /// because the shape it is a variant of has the route and the student can
+  /// always type `\sum` and fill the slots themselves. Giving `\sumin` a
+  /// control word of its own would put a string nobody would guess into the
+  /// autocorrect table, which is clutter rather than access.
+  final String? variantOf;
+
   /// Everything this should match on, lowercased.
   Iterable<String> get searchTerms =>
       [name, ...aliases, if (typeIt != null) typeIt!, id].map((s) => s.toLowerCase());
@@ -96,6 +111,7 @@ MathItem _symbol({
   MClass cls = MClass.other,
   List<String> aliases = const [],
   String? typeIt,
+  List<String> alsoTypeIt = const [],
 }) =>
     MathItem(
       id: id,
@@ -104,6 +120,7 @@ MathItem _symbol({
       label: label,
       aliases: aliases,
       typeIt: typeIt,
+      alsoTypeIt: alsoTypeIt,
       build: _sym(tex, cls: cls),
     );
 
@@ -236,6 +253,145 @@ final List<MathItem> _structures = [
     build: () => [
       MScript(
           base: MRow([_s(r'\prod', cls: MClass.op)]), sub: MRow(), sup: MRow())
+    ],
+  ),
+  // ── The same operators, already filled in ───────────────────────────
+  //
+  // *"Id also like there to be some prefilled options for some of the
+  // large/complex operators (i.e. have the default blank ones like we do now,
+  // but then also have some common uses as options to reduce some
+  // headache)."*
+  //
+  // The headache is real and it is not the symbol: it is typing `i`, `=`, `1`
+  // into a subscript, Tab, `n` into a superscript, Tab — six keystrokes and
+  // two slot moves before writing any of the maths you were actually thinking
+  // about. These are the forms a student writes over and over, and the blank
+  // ones above are untouched.
+  //
+  // **Where the caret lands is why these work.** `insertNodes` puts it in the
+  // first empty slot and, when there is none, in the parent row immediately
+  // AFTER the structure — so a sum with both limits filled leaves the caret
+  // exactly where the summand goes, and `\int_a^b □ dx` leaves it between the
+  // sign and the `dx`. Nothing had to be added for that.
+  //
+  // No `typeIt` on any of them, deliberately: the blank ones own `\sum`,
+  // `\int` and `\lim`, and a second control word for a variant nobody would
+  // guess is a shortcut that only exists to collide.
+  MathItem(
+    id: 'sumin',
+    variantOf: 'sum',
+    cat: MathCat.structure,
+    name: 'sum from i = 1 to n',
+    preview: r'\sum_{i=1}^{n}',
+    aliases: ['sigma', 'series', 'add up', 'total', 'sum i'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\sum', cls: MClass.op)]),
+        sub: MRow([
+          _s('i', cls: MClass.letter),
+          _s('=', cls: MClass.rel),
+          _s('1', cls: MClass.digit),
+        ]),
+        sup: MRow([_s('n', cls: MClass.letter)]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'suminf',
+    variantOf: 'sum',
+    cat: MathCat.structure,
+    name: 'sum to infinity',
+    preview: r'\sum_{n=1}^{\infty}',
+    aliases: ['sigma', 'infinite series', 'converge'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\sum', cls: MClass.op)]),
+        sub: MRow([
+          _s('n', cls: MClass.letter),
+          _s('=', cls: MClass.rel),
+          _s('1', cls: MClass.digit),
+        ]),
+        sup: MRow([_s(r'\infty')]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'prodin',
+    variantOf: 'prod',
+    cat: MathCat.structure,
+    name: 'product from i = 1 to n',
+    preview: r'\prod_{i=1}^{n}',
+    aliases: ['multiply all', 'pi product'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\prod', cls: MClass.op)]),
+        sub: MRow([
+          _s('i', cls: MClass.letter),
+          _s('=', cls: MClass.rel),
+          _s('1', cls: MClass.digit),
+        ]),
+        sup: MRow([_s('n', cls: MClass.letter)]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'intdx',
+    variantOf: 'int',
+    cat: MathCat.structure,
+    name: 'definite integral, with dx',
+    // **No `\square` on the face.** A blank shape's preview shows boxes
+    // because it HAS empty slots; this one has none — the caret simply lands
+    // between the sign and the `dx`, which is what `insertNodes` does when
+    // every slot is full. A box drawn here would promise an affordance that
+    // is not in the equation you get.
+    preview: r'\int_{a}^{b}dx',
+    aliases: ['area under', 'integrate', 'between', 'limits'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\int', cls: MClass.op)]),
+        sub: MRow([_s('a', cls: MClass.letter)]),
+        sup: MRow([_s('b', cls: MClass.letter)]),
+      ),
+      // The caret arrives between the sign and these two, which is the whole
+      // point of writing the `dx` for them.
+      _s('d', cls: MClass.letter),
+      _s('x', cls: MClass.letter),
+    ],
+  ),
+  MathItem(
+    id: 'limx0',
+    variantOf: 'lim',
+    cat: MathCat.structure,
+    name: 'limit as x goes to 0',
+    preview: r'\lim_{x \to 0}',
+    aliases: ['approaches', 'tends to', 'continuity'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\lim', cls: MClass.func)]),
+        sub: MRow([
+          _s('x', cls: MClass.letter),
+          _s(r'\to', cls: MClass.rel),
+          _s('0', cls: MClass.digit),
+        ]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'limxinf',
+    variantOf: 'lim',
+    cat: MathCat.structure,
+    name: 'limit as x goes to infinity',
+    preview: r'\lim_{x \to \infty}',
+    aliases: ['approaches', 'tends to', 'end behaviour', 'asymptote'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\lim', cls: MClass.func)]),
+        sub: MRow([
+          _s('x', cls: MClass.letter),
+          _s(r'\to', cls: MClass.rel),
+          _s(r'\infty'),
+        ]),
+      )
     ],
   ),
   MathItem(
@@ -420,17 +576,17 @@ final List<MathItem> _structures = [
 // ─────────────────────────────────────────────────────────────────────────
 
 final List<MathItem> _common = [
-  _symbol(id: 'pm', cat: MathCat.common, name: 'plus or minus', label: '±', tex: r'\pm', cls: MClass.op, typeIt: '+-'),
-  _symbol(id: 'times', cat: MathCat.common, name: 'times', label: '×', tex: r'\times', cls: MClass.op, aliases: ['multiply', 'multiplied by'], typeIt: r'\times'),
+  _symbol(id: 'pm', cat: MathCat.common, name: 'plus or minus', label: '±', tex: r'\pm', cls: MClass.op, typeIt: '+-', alsoTypeIt: [r'\pm', r'\plusminus']),
+  _symbol(id: 'times', cat: MathCat.common, name: 'times', label: '×', tex: r'\times', cls: MClass.op, aliases: ['multiply', 'multiplied by'], typeIt: r'\times', alsoTypeIt: [r'\x', r'\mult']),
   _symbol(id: 'div', cat: MathCat.common, name: 'divide', label: '÷', tex: r'\div', cls: MClass.op, aliases: ['divided by'], typeIt: r'\div'),
   // A year-10 student inserting a multiplication dot was told they had
   // inserted a vector operation they will not meet for years. The old
   // name stays as a search word.
   _symbol(id: 'cdot', cat: MathCat.common, name: 'times', label: '⋅', tex: r'\cdot', cls: MClass.op, aliases: ['multiply', 'dot product', 'times by'], typeIt: r'\cdot'),
-  _symbol(id: 'neq', cat: MathCat.common, name: 'not equal', label: '≠', tex: r'\neq', cls: MClass.rel, aliases: ['does not equal'], typeIt: '!='),
+  _symbol(id: 'neq', cat: MathCat.common, name: 'not equal', label: '≠', tex: r'\neq', cls: MClass.rel, aliases: ['does not equal'], typeIt: '!=', alsoTypeIt: [r'\neq', r'\ne', r'\noteq']),
   _symbol(id: 'approx', cat: MathCat.common, name: 'roughly equal', label: '≈', tex: r'\approx', cls: MClass.rel, aliases: ['about', 'approximately'], typeIt: '~='),
-  _symbol(id: 'leq', cat: MathCat.common, name: 'less than or equal', label: '≤', tex: r'\leq', cls: MClass.rel, aliases: ['at most', 'no more than'], typeIt: '<='),
-  _symbol(id: 'geq', cat: MathCat.common, name: 'greater than or equal', label: '≥', tex: r'\geq', cls: MClass.rel, aliases: ['at least', 'no less than'], typeIt: '>='),
+  _symbol(id: 'leq', cat: MathCat.common, name: 'less than or equal', label: '≤', tex: r'\leq', cls: MClass.rel, aliases: ['at most', 'no more than'], typeIt: '<=', alsoTypeIt: [r'\leq', r'\le']),
+  _symbol(id: 'geq', cat: MathCat.common, name: 'greater than or equal', label: '≥', tex: r'\geq', cls: MClass.rel, aliases: ['at least', 'no less than'], typeIt: '>=', alsoTypeIt: [r'\geq', r'\ge']),
   _symbol(id: 'lt', cat: MathCat.common, name: 'less than', label: '<', tex: '<', cls: MClass.rel),
   _symbol(id: 'gt', cat: MathCat.common, name: 'greater than', label: '>', tex: '>', cls: MClass.rel),
   _symbol(id: 'percent', cat: MathCat.common, name: 'percent', label: '%', tex: r'\%', aliases: ['per cent', 'out of 100']),
@@ -438,8 +594,8 @@ final List<MathItem> _common = [
   // — `30^\circC` ran the C into the command name and drew nothing — and a
   // script start, so `x^{2}` followed by it was a double superscript. The
   // empty group in front fixes both at the source.
-  _symbol(id: 'degree', cat: MathCat.common, name: 'degrees', label: '°', tex: r'{}^{\circ}', aliases: ['angle', 'temperature']),
-  _symbol(id: 'infty', cat: MathCat.common, name: 'infinity', label: '∞', tex: r'\infty', aliases: ['endless', 'forever'], typeIt: r'\oo'),
+  _symbol(id: 'degree', cat: MathCat.common, name: 'degrees', label: '°', tex: r'{}^{\circ}', aliases: ['angle', 'temperature'], alsoTypeIt: [r'\degree']),
+  _symbol(id: 'infty', cat: MathCat.common, name: 'infinity', label: '∞', tex: r'\infty', aliases: ['endless', 'forever'], typeIt: r'\oo', alsoTypeIt: [r'\inf', r'\infin']),
   _symbol(id: 'factorial', cat: MathCat.common, name: 'factorial', label: '!', tex: '!', aliases: ['bang']),
   _symbol(id: 'propto', cat: MathCat.common, name: 'proportional to', label: '∝', tex: r'\propto', cls: MClass.rel, aliases: ['varies with']),
   _symbol(id: 'ldots', cat: MathCat.common, name: 'and so on', label: '…', tex: r'\ldots', aliases: ['dots', 'ellipsis', 'continues']),
@@ -513,7 +669,7 @@ final List<MathItem> _compare = [
   _symbol(id: 'cong', cat: MathCat.compare, name: 'congruent to', label: '≅', tex: r'\cong', cls: MClass.rel, aliases: ['same shape and size']),
   _symbol(id: 'll', cat: MathCat.compare, name: 'much less than', label: '≪', tex: r'\ll', cls: MClass.rel),
   _symbol(id: 'gg', cat: MathCat.compare, name: 'much greater than', label: '≫', tex: r'\gg', cls: MClass.rel),
-  _symbol(id: 'to', cat: MathCat.compare, name: 'goes to', label: '→', tex: r'\to', cls: MClass.rel, aliases: ['approaches', 'tends to', 'arrow', 'maps to'], typeIt: '->'),
+  _symbol(id: 'to', cat: MathCat.compare, name: 'goes to', label: '→', tex: r'\to', cls: MClass.rel, aliases: ['approaches', 'tends to', 'arrow', 'maps to'], typeIt: '->', alsoTypeIt: [r'\to', r'\rightarrow', r'\arrow']),
   // **No `<-` shortcut.** `x <-3` is an inequality against a negative number
   // far more often than it is a left arrow, and the shortcut turned one into
   // the other silently. `->` stays: `x ->` is not otherwise valid maths.
@@ -535,7 +691,7 @@ final List<MathItem> _sets = [
   _symbol(id: 'notsubset', cat: MathCat.sets, name: 'not a subset of', label: '⊄', tex: r'\not\subset', cls: MClass.rel),
   _symbol(id: 'cup', cat: MathCat.sets, name: 'union', label: '∪', tex: r'\cup', cls: MClass.op, aliases: ['or', 'combined'], typeIt: r'\cup'),
   _symbol(id: 'cap', cat: MathCat.sets, name: 'intersection', label: '∩', tex: r'\cap', cls: MClass.op, aliases: ['and', 'both', 'overlap'], typeIt: r'\cap'),
-  _symbol(id: 'emptyset', cat: MathCat.sets, name: 'empty set', label: '∅', tex: r'\emptyset', aliases: ['nothing', 'null set']),
+  _symbol(id: 'emptyset', cat: MathCat.sets, name: 'empty set', label: '∅', tex: r'\emptyset', aliases: ['nothing', 'null set'], alsoTypeIt: [r'\empty', r'\null']),
   _symbol(id: 'setminus', cat: MathCat.sets, name: 'without', label: '∖', tex: r'\setminus', cls: MClass.op, aliases: ['minus', 'difference', 'except']),
   _symbol(id: 'naturals', cat: MathCat.sets, name: 'natural numbers', label: 'ℕ', tex: r'\mathbb{N}', aliases: ['counting numbers']),
   _symbol(id: 'integers', cat: MathCat.sets, name: 'integers', label: 'ℤ', tex: r'\mathbb{Z}', aliases: ['whole numbers']),
@@ -605,7 +761,7 @@ final List<MathItem> _science = [
   _symbol(id: 'rho', cat: MathCat.science, name: 'density', label: 'ρ', tex: r'\rho', aliases: ['rho']),
   _symbol(id: 'lambda-sci', cat: MathCat.science, name: 'wavelength', label: 'λ', tex: r'\lambda', aliases: ['lambda']),
   _symbol(id: 'hbar', cat: MathCat.science, name: 'reduced Planck constant', label: 'ℏ', tex: r'\hbar', aliases: ['h bar', 'planck']),
-  _symbol(id: 'nabla', cat: MathCat.science, name: 'gradient', label: '∇', tex: r'\nabla', aliases: ['del', 'nabla'], typeIt: r'\nabla'),
+  _symbol(id: 'nabla', cat: MathCat.science, name: 'gradient', label: '∇', tex: r'\nabla', aliases: ['del', 'nabla'], typeIt: r'\nabla', alsoTypeIt: [r'\del', r'\grad']),
 ];
 
 /// Upright function names — the rule every textbook follows, applied without
@@ -873,6 +1029,34 @@ final Map<String, MathItem> mathControlWords = () {
       final m = RegExp(r'^\\([A-Za-z0-9]+)$').firstMatch(t);
       if (m != null) out.putIfAbsent(m.group(1)!, () => i);
     }
+  }
+
+  // **A symbol also answers to the word a student would call it.**
+  //
+  // Reported: *"id ideally like to have multiple aliases for some (like for
+  // infinity, currently \infty will auto convert into the symbol, but id like
+  // to also be able to type \inf and \infinity and have any of the 3 turn
+  // into the symbol)."* `\infinity` is this pass; `\inf` is an
+  // [MathItem.alsoTypeIt] on the row, because no rule can derive it.
+  //
+  // The NAME is the one field that is already written to be what a student
+  // would say — it is what the tooltip shows and what the search ranks
+  // highest — so registering it costs nothing and covers the whole table at
+  // once, rather than hand-writing an alias per row and missing most of them.
+  //
+  // Names only, never [MathItem.aliases]. An alias is deliberately loose, for
+  // a SEARCH box that ranks: θ carries the alias "angle", and turning `\angle`
+  // into a theta would quietly steal a word that is another symbol's own
+  // name. Search can afford a near miss because it shows you a list; typing
+  // cannot, because it just happens.
+  //
+  // Last pass, `putIfAbsent`, and single words only — a name with a space in
+  // it ("proportional to") is not a command, and a one-letter name would turn
+  // `\e` into something nobody asked for.
+  for (final i in mathItems) {
+    final name = i.name;
+    if (name.length < 2 || !RegExp(r'^[A-Za-z]+$').hasMatch(name)) continue;
+    out.putIfAbsent(name.toLowerCase(), () => i);
   }
 
   return out;

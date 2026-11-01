@@ -13,8 +13,8 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
+import '../core/off_thread.dart';
+import '../store/fs.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -157,6 +157,8 @@ class SyncRecorder {
     String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    int? Function()? seqOf,
+    void Function(int seq)? rememberSeq,
     bool materialiseBlobs = true,
   }) {
     final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
@@ -166,6 +168,8 @@ class SyncRecorder {
       notebookId: notebookId,
       readSetting: readSetting,
       writeSetting: writeSetting,
+      seqOf: seqOf,
+      rememberSeq: rememberSeq,
     );
     if (device.forked) {
       // Not silent: an install that forked was almost certainly cloned or
@@ -194,7 +198,10 @@ class SyncRecorder {
       state: state,
       lamport: lamport,
       seq: seq,
-      onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      onSeq: (s) {
+        rememberSeq?.call(s);
+        writeSetting(DeviceIdentity.seqKey(notebookId), s);
+      },
       materialiseBlobs: materialiseBlobs,
     );
     // Seed the title so a notebook that has never been renamed still carries
@@ -225,6 +232,8 @@ class SyncRecorder {
     String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    int? Function()? seqOf,
+    void Function(int seq)? rememberSeq,
     bool materialiseBlobs = true,
   }) async {
     final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
@@ -242,6 +251,8 @@ class SyncRecorder {
       readSetting: readSetting,
       writeSetting: writeSetting,
       lastSeqOf: (id) => seqByDevice[id] ?? 0,
+      seqOf: seqOf,
+      rememberSeq: rememberSeq,
     );
     if (device.forked) {
       debugPrint('[openote/sync] device id forked to ${device.id} — another '
@@ -256,7 +267,10 @@ class SyncRecorder {
       state: state,
       lamport: lamport,
       seq: seqByDevice[device.id] ?? 0,
-      onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      onSeq: (s) {
+        rememberSeq?.call(s);
+        writeSetting(DeviceIdentity.seqKey(notebookId), s);
+      },
       materialiseBlobs: materialiseBlobs,
     );
   }
@@ -276,7 +290,7 @@ class SyncRecorder {
   /// found by test, not by the compiler.
   static Future<(Materializer, Map<String, int>, int)> _replayInIsolate(
       String notebookPath, String? logDir) {
-    return Isolate.run(() {
+    return offThread(() {
       final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
       final all = store.readAll();
       var lamport = 0;
@@ -324,12 +338,18 @@ class SyncRecorder {
     // `AppState` rather than the thing the user is told by. Same pattern as
     // `Repository._saveWorkspace`'s `registryReadOnly` return.
     if (logIsAhead) return;
+    // **Remembered BEFORE the append, not after.** `_op` has already advanced
+    // `_seq` past every op in this batch, so this reserves the range rather
+    // than reporting it. The ordering is the whole fix: a crash between the two
+    // lines leaves the record ahead of the log, which reads as "nothing
+    // unexpected" on the next open. The other order left the log ahead of the
+    // record, which reads as a second writer and forked the device id.
+    onSeq(_seq);
     store.append(device.id, ops);
     for (final op in ops) {
       state.apply(op);
     }
     _written += ops.length;
-    onSeq(_seq);
   }
 
   // ── Recording ────────────────────────────────────────────────────────
@@ -444,6 +464,7 @@ class SyncRecorder {
     required Uint8List? Function(String hash) read,
   }) async {
     if (!materialiseBlobs) return 0;
+    debugBackfillYields = 0;
     var copied = 0;
     for (final b in index) {
       if (store.hasBlob(b.hash) && state.blobs.contains(b.hash)) continue;
@@ -459,6 +480,7 @@ class SyncRecorder {
       // backfill. One millisecond per blob lets the loop actually wait, which
       // is when Win32 delivers input.
       await Future<void>.delayed(const Duration(milliseconds: 1));
+      debugBackfillYields++;
     }
     if (copied > 0) {
       debugPrint('[openote/sync] backfilled $copied blob(s) into '
@@ -510,6 +532,10 @@ class SyncRecorder {
   Future<BlobProof> proveBlobs({
     Uint8List? Function(String hash)? read,
   }) async {
+    // Per proof, so a test can count this run's batches without having to
+    // remember to reset first.
+    debugHashIsolate = null;
+    debugHashBatches = 0;
     final missing = <String>{};
     final repaired = <String>{};
     final damaged = <String>{};
@@ -631,13 +657,51 @@ class SyncRecorder {
   /// blobs cannot make the notebook feel stuck at open.
   static const int _proveBatch = 32;
 
+  /// **Which isolate the last background hash actually ran on**, and how many
+  /// batches it took. Written by [_hashFiles], read only by a test.
+  ///
+  /// `proveBlobs` promises the hashing happens off the UI isolate, and that
+  /// promise had only a wall-clock proxy behind it: a 1 ms `Timer.periodic`
+  /// whose tick count stood in for "the window was free". On a loaded machine
+  /// the OS starves that timer with the code entirely correct — observed at
+  /// 6–9 ticks against a threshold of 10 — so the test failed for a reason
+  /// that had nothing to do with the property.
+  ///
+  /// The isolate's own name is the property itself, reported from inside and
+  /// compared against this isolate's. It is deliberately a NAME and not a
+  /// flag, because a flag can only say "it did not run here", which a version
+  /// that stopped hashing in the background altogether would also satisfy —
+  /// silently. See `blob_proof_test.dart`.
+  ///
+  /// Static, so two notebooks proving at the same time would interleave these
+  /// — which is why nothing in the app reads them, and why a test that does
+  /// proves one notebook at a time. They are a record of the last hand-off,
+  /// not a tally.
+  @visibleForTesting
+  static String? debugHashIsolate;
+  @visibleForTesting
+  static int debugHashBatches = 0;
+
+  /// **How many times the last backfill handed the event loop back.**
+  ///
+  /// One per blob copied, which is the fact its test was reaching for through
+  /// a tick count. Same reasoning as [debugHashIsolate]: the pacing is a
+  /// property of this loop and can be counted here, where a 1 ms timer's
+  /// luck does not come into it.
+  @visibleForTesting
+  static int debugBackfillYields = 0;
+
   /// Read and SHA-256 each path, off this isolate, in order.
   ///
   /// Returns null for a path it could not read — a permission error, a file a
   /// cloud client has locked. "I could not check" must never come back looking
   /// like a match, and null matches no hash.
-  static Future<List<String?>> _hashFiles(List<String> paths) =>
-      Isolate.run(() => [
+  static Future<List<String?>> _hashFiles(List<String> paths) async {
+    final done = await offThread(() => (
+          // One string read, sent back once per 32 files. See
+          // [debugHashIsolate] for what it buys.
+          where: offThreadName,
+          hashes: <String?>[
             for (final path in paths)
               () {
                 try {
@@ -646,7 +710,12 @@ class SyncRecorder {
                   return null;
                 }
               }()
-          ]);
+          ],
+        ));
+    debugHashIsolate = done.where;
+    debugHashBatches++;
+    return done.hashes;
+  }
 
   // ── Ingestion: other devices' logs ───────────────────────────────────
 

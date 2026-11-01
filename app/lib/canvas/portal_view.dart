@@ -377,6 +377,11 @@ class PortalContent extends StatelessWidget {
     if (chain.length >= maxDepth) {
       return _chip(context, Icons.layers_outlined, portalTitle(app, ref.pageId));
     }
+    // A window inside a window onto a page with a passcode stays shut: there
+    // is no unlocking from inside something read-only. (Bug 33.)
+    if (!app.windowShows(ref.pageId)) {
+      return _chip(context, Icons.lock_outline, portalTitle(app, ref.pageId));
+    }
     final src = PortalSource.of(app, ref.pageId);
     final rect = ref.wholePage ? portalExtentOf(app, src.blocks) : ref.rect!;
     final h = b.w * (rect.height / rect.width);
@@ -436,10 +441,18 @@ bool portalSourceLive(AppState app, String pageId) => app.node(pageId) != null;
 /// region so resizing the block zooms the window instead of distorting it.
 class PortalBlockView extends StatelessWidget {
   const PortalBlockView(
-      {super.key, required this.block, required this.app, this.onMenu});
+      {super.key,
+      required this.block,
+      required this.app,
+      this.onMenu,
+      this.onUnlock});
 
   final Block block;
   final AppState app;
+
+  /// Ask for the passcode of the page this window shows (bug 33). A callback
+  /// for the same reason as [onMenu]: the dialog is under `ui/`.
+  final Future<bool> Function(String pageId)? onUnlock;
 
   /// **Right-click inside the window, not only on its bar.**
   ///
@@ -467,6 +480,29 @@ class PortalBlockView extends StatelessWidget {
           'This window was made by a newer version of Openote.');
     }
     final live = portalSourceLive(app, ref.pageId);
+    // **Before anything of the source is read** (v1.0.2 bug 33). A window
+    // onto a page with a passcode shows a lock until the passcode is given,
+    // and asks again on every visit to this page.
+    if (!app.windowShows(ref.pageId)) {
+      if (!live) {
+        return _fallback(context, Icons.link_off,
+            'The page this window pointed at was deleted.');
+      }
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Badge(
+            title: portalTitle(app, ref.pageId),
+            live: live,
+            onOpen: () => app.selectPage(ref.pageId),
+          ),
+          _LockedWindow(
+              onUnlock:
+                  onUnlock == null ? null : () => onUnlock!(ref.pageId)),
+        ],
+      );
+    }
     final src = PortalSource.of(app, ref.pageId);
     if (!live && src.blocks.isEmpty) {
       // Hard-gone: no tree node and no mirror. EMBED-6's tombstone, minus the
@@ -548,6 +584,37 @@ class PortalBlockView extends StatelessWidget {
                 style: const TextStyle(
                     fontSize: 12, color: OnoteColors.graphite400)),
           ),
+        ]),
+      );
+}
+
+/// Where a window onto a page with a passcode would show the page (bug 33).
+///
+/// The title stays on the badge above, as the navigator shows it; what is
+/// behind the passcode does not appear until it is given.
+class _LockedWindow extends StatelessWidget {
+  const _LockedWindow({required this.onUnlock});
+
+  final VoidCallback? onUnlock;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 18),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.lock_outline,
+              size: 22, color: OnoteColors.graphite400),
+          const SizedBox(height: 6),
+          const Text('This page has a passcode.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
+          if (onUnlock != null) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: onUnlock,
+              icon: const Icon(Icons.lock_open_outlined, size: 15),
+              label: const Text('Unlock'),
+            ),
+          ],
         ]),
       );
 }

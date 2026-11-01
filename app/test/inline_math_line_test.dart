@@ -223,7 +223,7 @@ void main() {
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
-            child: OnoteMath(r'rac{n}{2}',
+            child: OnoteMath(r'\frac{n}{2}',
                 textStyle: base, compact: compact),
           ),
         ),

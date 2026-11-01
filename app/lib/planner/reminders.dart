@@ -1,16 +1,13 @@
-/// Reminders — Openote's own schedule, and the catch-up list that is the whole
-/// point of it (v0.5 §1, stage 3).
+/// Reminders, and the catch-up list that is the point of them.
 ///
-/// **Why this module is the scheduler rather than a wrapper over the OS.** The
-/// research in v0.5 §1 inverted the obvious architecture: `flutter_local_
-/// notifications` cannot schedule on Linux at all — *"Scheduled/pending
-/// notifications is currently not supported due to the lack of a scheduler
-/// API"* — and on Windows it needs MSIX package identity, which a portable
-/// `.zip` release does not have. Linux is not a nice-to-have here; *"no native
-/// Linux client"* is one of the founding complaints. So an OS toast is a
-/// **display channel** that some platforms offer, never the thing that decides
-/// when a reminder happens. That decision lives here, in ordinary Dart, and
-/// therefore behaves identically on all three desktops.
+/// **This module is the scheduler, not a wrapper over the OS one.**
+/// `flutter_local_notifications` cannot schedule on Linux at all — there is no
+/// scheduler API to call — and on Windows it needs MSIX package identity, which a
+/// portable `.zip` release does not have. Since "no native Linux client" is one of
+/// the founding complaints about OneNote, Linux cannot be the platform that quietly
+/// does less. So an OS toast is a **display channel** that some platforms offer,
+/// never the thing that decides when a reminder happens. That decision is ordinary
+/// Dart, here, and behaves identically on all three desktops.
 ///
 /// **The consequence that must not be treated as an edge case.** A desktop app
 /// that is not running cannot interrupt you, and pretending otherwise is the
