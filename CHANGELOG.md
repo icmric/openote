@@ -4,6 +4,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-11-01
+
 ### Changed — updating on Linux and macOS
 
 - **The update button opens openote.org**, which offers the right file for
