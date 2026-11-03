@@ -106,12 +106,16 @@ class RustEngine implements DocumentEngine {
       PageProps props) async {
     final mirror = pageMirrorJson(pageId, blocks, props);
     final hash = core.pageHash(mirror);
-    _lastSavedHash = hash;
     // Unchanged since the last persisted state → skip the write entirely.
-    if (_hashes[pageId] == hash) return;
-    _hashes[pageId] = hash;
+    if (_hashes[pageId] == hash) {
+      _lastSavedHash = hash;
+      return;
+    }
     // See [MirrorEngine.savePage]: the ten-minute page snapshot is gone with
     // `page_versions` (v0.17 plan, decision 1).
     repo.writePage(notebookId, pageId, blocks, props);
+    // A failed write must remain retryable, including identical content.
+    _hashes[pageId] = hash;
+    _lastSavedHash = hash;
   }
 }

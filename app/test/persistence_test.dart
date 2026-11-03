@@ -9,6 +9,7 @@
 //  * restoring a page from the bin left it orphaned under a still-deleted
 //    section;
 //  * `workspace.json` could be torn by concurrent writes.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -18,6 +19,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'package:openote/core/engine.dart';
+import 'package:openote/core/onote_ffi.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -30,6 +32,9 @@ class _FlakyEngine implements DocumentEngine {
   final Repository repo;
   bool fail = false;
   int saves = 0;
+  final savedTexts = <String>[];
+  Completer<void>? started;
+  Completer<void>? resume;
 
   @override
   String get label => 'Test engine';
@@ -44,9 +49,26 @@ class _FlakyEngine implements DocumentEngine {
   Future<void> savePage(String nb, String pageId, List<Block> blocks,
       PageProps props) async {
     saves++;
+    final gate = resume;
+    resume = null;
+    if (gate != null) {
+      started!.complete();
+      await gate.future;
+    }
     if (fail) throw const FileSystemException('disk full (simulated)');
+    savedTexts.add(blocks.single.content['text'] as String);
     repo.writePage(nb, pageId, blocks, props);
   }
+}
+
+// Exercise RustEngine's real cache/write ordering without requiring a native
+// library. Hash equality is all this test needs; the SQLite writes are real.
+class _HashCore implements OnoteCore {
+  @override
+  String pageHash(String json) => json;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -140,45 +162,138 @@ void main() {
   });
 
   group('save path', () {
-    test('a failed save stays dirty and reports the error', () async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp) = await freshRepo('onote_save_');
-      addTearDown(() {
-        repo.dispose();
-        try {
+    for (final rust in [false, true]) {
+      test('${rust ? 'Rust' : 'Dart'} save failure blocks exit and retries '
+          'identical content', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        final (repo, tmp) = await freshRepo('onote_save_');
+        final nb = await repo.createNotebook('Save');
+        final DocumentEngine engine =
+            rust ? RustEngine(repo, _HashCore()) : MirrorEngine(repo);
+        final app = AppState(repo, engine: engine);
+        final db = sqlite3.open(nb.file);
+        addTearDown(() {
+          db.dispose();
+          app.dispose();
           tmp.deleteSync(recursive: true);
-        } catch (_) {}
+        });
+        app.notebookId = nb.id;
+        app.nodes = repo.loadNodes(nb.id);
+        app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+        app.blocks = [
+          Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'before'})
+        ];
+        app.markDirty();
+        await app.flushSave();
+        final previousHash = engine.lastSavedHash;
+        db.execute("CREATE TRIGGER fail_save BEFORE INSERT ON page_mirror "
+            "BEGIN SELECT RAISE(ABORT, 'disk write rejected'); END");
+        app.blocks.single.content['text'] = 'after';
+        app.markDirty();
+
+        await app.flushSave();
+        expect(app.hasUnsavedChanges, isTrue);
+        expect(app.saveError, isNotNull);
+        expect(app.saveError!.details, contains('disk write rejected'));
+        expect(engine.lastSavedHash, previousHash);
+        await expectLater(app.shutdown(), throwsStateError);
+        expect(app.hasUnsavedChanges, isTrue);
+        expect(repo.readPage(nb.id, app.pageId!).blocks.single.content['text'],
+            'before');
+
+        db.execute('DROP TRIGGER fail_save');
+        await app.shutdown();
+        expect(app.hasUnsavedChanges, isFalse);
+        expect(app.saveError, isNull);
+        expect(repo.readPage(nb.id, app.pageId!).blocks.single.content['text'],
+            'after');
+        // An unchanged successful Rust save really is skipped. A cache that
+        // never records success would fail on the reinstated trigger.
+        if (rust) {
+          db.execute("CREATE TRIGGER fail_save BEFORE INSERT ON page_mirror "
+              "BEGIN SELECT RAISE(ABORT, 'unexpected rewrite'); END");
+          app.markDirty();
+          await app.flushSave();
+          expect(app.hasUnsavedChanges, isFalse);
+          expect(app.saveError, isNull);
+        }
       });
-      final nb = await repo.createNotebook('Save');
+    }
+
+    for (final failSave in [false, true]) {
+      test('exit joins an in-flight save, failure=$failSave', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        final (repo, tmp) = await freshRepo('onote_exit_inflight_');
+        final nb = await repo.createNotebook('Exit');
+        final engine = _FlakyEngine(repo);
+        final app = AppState(repo, engine: engine);
+        addTearDown(() {
+          app.dispose();
+          tmp.deleteSync(recursive: true);
+        });
+        app.notebookId = nb.id;
+        app.nodes = repo.loadNodes(nb.id);
+        app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+        app.blocks = [
+          Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'first'})
+        ];
+        final gate = Completer<void>();
+        engine.started = Completer<void>();
+        engine.resume = gate;
+        engine.fail = failSave;
+        app.markDirty();
+        final saving = app.flushSave();
+        await engine.started!.future;
+        app.blocks.single.content['text'] = 'last edit';
+        app.markDirty();
+        expect(identical(app.flushSave(), saving), isTrue,
+            reason: 'concurrent callers must join, not start another write');
+        var exited = false;
+        final exiting = app.shutdown().then((_) => exited = true);
+        final checkedExit = expectLater(exiting,
+            failSave ? throwsStateError : completes);
+        expect(exited, isFalse);
+        expect(app.hasUnsavedChanges, isTrue);
+        expect(engine.saves, 1);
+        gate.complete();
+        await saving;
+        await checkedExit;
+        expect(exited, !failSave);
+        expect(app.hasUnsavedChanges, failSave);
+        expect(engine.saves, failSave ? 1 : 2);
+        if (!failSave) expect(engine.savedTexts, ['first', 'last edit']);
+        if (failSave) {
+          expect(app.saveError, isNotNull);
+          engine.fail = false;
+          await app.shutdown();
+        }
+        expect(repo.readPage(nb.id, app.pageId!).blocks.single.content['text'],
+            'last edit');
+      });
+    }
+
+    test('a failed workspace flush is visible and exit can be retried', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_exit_registry_');
+      await repo.createNotebook('Exit');
       final app = AppState(repo);
-      final engine = _FlakyEngine(repo);
-      app.notebookId = nb.id;
-      app.nodes = repo.loadNodes(nb.id);
-      app.pageId =
-          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
-      app.blocks = [
-        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'hi'})
-      ];
+      addTearDown(() {
+        app.dispose();
+        tmp.deleteSync(recursive: true);
+      });
+      final target = File(p.join(tmp.path, 'workspace.json'));
+      target.deleteSync();
+      Directory(target.path).createSync();
+      repo.setSetting('exit-test', 'kept');
 
-      // Route saves through the flaky engine by calling it the way flushSave
-      // does, then assert the state machine's contract.
-      engine.fail = true;
-      app.markDirty();
-      expect(app.hasUnsavedChanges, true);
-
-      // Simulate flushSave's failure branch semantics.
-      try {
-        await engine.savePage(nb.id, app.pageId!, app.blocks, app.pageProps);
-        fail('the engine was supposed to throw');
-      } catch (_) {/* expected */}
-      expect(app.hasUnsavedChanges, true,
-          reason: 'a throwing save must leave the page dirty for a retry');
-
-      // And a real flush succeeds and clears both flags.
-      engine.fail = false;
-      await app.flushSave();
-      expect(app.hasUnsavedChanges, false);
+      await expectLater(app.shutdown(), throwsA(isA<FileSystemException>()));
+      expect(app.saveError, isNotNull);
+      expect(app.saveError!.short, contains('notebook list'));
+      Directory(target.path).deleteSync();
+      await app.shutdown();
       expect(app.saveError, isNull);
+      final stored = jsonDecode(target.readAsStringSync()) as Map;
+      expect((stored['settings'] as Map)['exit-test'], 'kept');
     });
 
     test('shutdown flushes pending edits', () async {
