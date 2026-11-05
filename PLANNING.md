@@ -55,7 +55,7 @@ accesability
     → **Accessibility is the one of the three that is NOT done.** Screen
       readers cannot read the editor at all, because the Windows accessibility
       bridge rejects the semantics tree this app produces. It is the worst
-      defect in the project and it is §1 of docs/planning/v1.0.2.md.
+      defect in the project and it is §1 of docs/planning/archive/v1.0.2.md.
 
 Local code
     Write and execute code like JS, SQL, etc — similar to juniper notebook
@@ -101,7 +101,7 @@ Page info/tools
     Version history and user/computer tagging in metadata with creations, edits, and deletions
     → Version history shows per-block authors, edits and deletions, naming
       each device. Whether to keep that surface at all, or build rollback
-      instead, is being decided — see docs/planning/v1.0.2.md.
+      instead, is being decided — see docs/planning/archive/v1.0.2.md.
     Creating flowcharts
         users: students creating IT flowcharts, students creating logic flowcharts, companies creating chain of command, problem resolution, etc
         Basic text in components as early version. In future be able to click to expand each box to see more information (sorta like how the pdf thumbnail thing works), or potentially attach flows and actions to buttons allowing code or things to be executed by clicking on them

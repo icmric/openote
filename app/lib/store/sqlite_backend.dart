@@ -20,7 +20,7 @@
 /// FTS index are all real — the genuine storage layer, exercised rather than
 /// bypassed — and all of it lives in the tab's heap and is gone on refresh.
 /// That is the demo's defining property, not a limitation of it: see
-/// `docs/planning/v1.0.2.md` §16.
+/// `docs/planning/archive/v1.0.2.md` §16.
 library;
 
 export 'package:sqlite3/common.dart';

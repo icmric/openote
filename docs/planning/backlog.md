@@ -22,41 +22,44 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 
 | # | Item | Size | Why here |
 |---|---|---|---|
-| 1 | **Use the macOS and Linux builds** | S | Three platforms ship; two have never been run by a human. CI proves they compile. §1.1 |
+| 1 | **Use the macOS and Linux builds** | S | Windows is the only platform a human has used end to end. Linux has now been opened and updated on a Fedora VM, but import, draw and sync there are unchecked, and macOS has never been run by a person. CI proves both compile. §1.1 |
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
 | 4 | **The spell checker knows mitochondria and not Monday** | M | Four reports in one: the bundled list is a Scrabble lexicon, so every name and most of this decade is underlined. §1.16 |
-| 5 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
-| 6 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
-| 7 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
-| 8 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
-| 9 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
-| 10 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
-| 11 | OCR on images | L | Additive — search already indexes a hidden text layer. |
-| 12 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
+| 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
+| 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
+| 7 | HTML export | M | The only export a phone reads losslessly, and it is linkable. |
+| 8 | The spreadsheet engine | L | Eric's long-standing second ask. Blocked on a design decision, not on effort. §2.1 |
+| 9 | Audio pinned to notes | L–XL | Arguably bigger than flashcards for lecture-goers. Wants #3 done first. |
+| 10 | OCR on images | L | Additive — search already indexes a hidden text layer. |
+| 11 | The structured `nodes` text model | XL | Gates paragraph collapse and real co-editing. Not per-run styling any more — two styles on one word work in the Markdown the blocks already hold. §2.2 |
 
 ---
 
 ## Raised on GitHub, not yet placed
 
-Read 14 October. Each is waiting for a decision on which release, if any; the
+Read 6 November. Each is waiting for a decision on which release, if any; the
 sizes are first guesses. When one is placed it moves to that release's document.
 
 | Issue | Item | Size | Notes |
 |---|---|---|---|
-| [#20](https://github.com/icmric/openote/issues/20) | **Configurable pan and zoom chords** | M–L | The rest of #20 is diagnosed and planned in [v1.0.2](v1.0.2.md#14-selecting-and-moving-over-pictures-and-pdfs). What stays here is the asked-for Alt-drag pan and Shift+Alt-drag zoom for tablet users, and Alt-drag already moves a text box. Space-drag pan is the cheap, conflict-free part and could go first |
+| [#20](https://github.com/icmric/openote/issues/20) | **Configurable pan and zoom chords** | M–L | The rest of #20 is diagnosed and planned in [v1.0.2](archive/v1.0.2.md#14-selecting-and-moving-over-pictures-and-pdfs). What stays here is the asked-for Alt-drag pan and Shift+Alt-drag zoom for tablet users, and Alt-drag already moves a text box. Space-drag pan is the cheap, conflict-free part and could go first |
 | [#20](https://github.com/icmric/openote/issues/20) | **Split ink that has already merged** | M | Strokes written within two seconds of each other became one object wherever they were (v1.0.2 fixes the cause). Existing merged ink can be split with the lasso; a "separate the pieces" command that splits by the gaps between strokes is the discoverable version |
-| [#12](https://github.com/icmric/openote/issues/12) | **A theme catalogue** | M | True Black for OLED, high-contrast light and dark, a few calm alternatives. The issue's own recommendation is ten; True Black and the two high-contrast themes are most of the value. Needs a registry in place of today's one light and one dark `ThemeData` |
-| [#15](https://github.com/icmric/openote/issues/15) | **An interface scale** | M | One multiplier for the app's chrome, leaving note text alone. Do it beside v1.0.2's text-scaling bug, which is the same widths measured without a scale |
+| [#15](https://github.com/icmric/openote/issues/15) | **An interface scale** | M | One multiplier for the app's chrome, leaving note text alone. Do it beside the text-scaling bug ([carried into v1.0.3](v1.0.3.md#carried-over-from-v102)), which is the same widths measured without a scale |
 | [#14](https://github.com/icmric/openote/issues/14) | **An all-notebooks navigator** | L | Every notebook as a top-level row, expandable. Navigation only — the issue rules out several editors. The smaller cousin of v1.0.3's [several notebooks open at once](v1.0.3.md#several-notebooks-open-at-once) |
 | [#18](https://github.com/icmric/openote/issues/18) | **Navigator suggestions** | S each | Put "add section", "add group" and "add page" below the last item, where people look; show the recycle bin as a summary ("3 pages · 1 goes in 5 days") rather than a button that looks like delete; the section name repeated above its pages, where right-click does nothing; "Move to group" offering a new group; "exam date" as a general countdown; shorter menu labels; choosing a section's or page's icon |
 | [#7](https://github.com/icmric/openote/issues/7) | **Custom colours** | S–M | Saved palettes and an eyedropper for ink and text |
 | [#7](https://github.com/icmric/openote/issues/7) | **Self-hosted sync, explained** | S | Plain instructions for keeping a notebook on your own server (Nextcloud, WebDAV) with the folder sync that exists |
 | [#7](https://github.com/icmric/openote/issues/7) | **German handwriting recognition and spelling** | XL | Recognition is the surface ink-to-math is waiting for (decided against, below); spelling may be smaller on its own |
+| [#13](https://github.com/icmric/openote/issues/13) | **A pinned second side panel** | M | Tagged for v1.0.2 and did not ship; the issue has had no reply. The design is settled in [v1.0.2 addition 26](archive/v1.0.2.md): one panel by default, a pin keeps it open beside the next, at most two, and on a narrow window the pinned one becomes a drawer |
+| [#34](https://github.com/icmric/openote/issues/34) | **Hold the stylus still to erase** | S–M | Asked for by a OneNote-on-Android user: hold the pen in place for a moment and it becomes the eraser, lift it and the pen you had comes back. The pen's side button already switches tools (v1.0.2); what is new is a dwell detector that cannot fire on a deliberate dot or the pause between two words |
+| [#36](https://github.com/icmric/openote/issues/36) | **Import a OneNote notebook from a share link** | Spike | A share link grants permission; it is not a credential, so reading the notebook behind one still means signing in as somebody the owning organisation allows — which is exactly what the reporter's institution blocks. **My reading, untested:** two things might help and neither is a new importer. Verifying the app's publisher with Microsoft (question 3 in [QUESTIONS-for-eric.md](../../QUESTIONS-for-eric.md)) changes whether a tenant lets a student consent at all; and desktop OneNote can export one section at a time, which the `.one` route already imports. Find out whether either holds before promising anything |
 
 ---
 
 ## 1. Engineering debt
+
+*Section numbers are references other documents use, so they are not reused or closed up: §1.4 (the imported-image label) and §1.8 (the ink format) shipped and are gone.*
 
 ### 1.1 Run the builds we ship · **S**
 
@@ -86,7 +89,7 @@ things to settle before writing any:
 
 - **The op log names every blob ever written and is never compacted.** A sweep
   that treats a `blob.put` as a reference can therefore collect nothing. This
-  is the same problem as the dead video in [v1.0.2 §19](v1.0.2.md), and
+  is the same problem as the dead video in [v1.0.2's decision on deleted media](archive/v1.0.2.md#decisions-taken), and
   `blob.forget` is the sketched answer.
 - **The clipboard and the undo stack are reachability roots** and ADR-0007's
   list of four does not mention them. A blob whose only reference was just cut
@@ -96,18 +99,13 @@ things to settle before writing any:
 delete costs somebody's lecture, so every decision in it is deliberately
 asymmetric, and no evidence is never treated as evidence of absence.
 
-### 1.4 The imported-image mime label · **S**
-
-`onenote/` writes `image/png` for every image it extracts, whatever the bytes
-actually are — the parser does not transcode, so a JPEG stays a JPEG and gets
-the wrong label. `export/open_export.dart` derives the asset filename from the
-mime, so the open folder contains JPEGs named `.png`. Sniff the magic bytes.
-
 ### 1.5 Large file drops read the whole file into memory
 
 `canvas/media_drop.dart`, in the two drop handlers. Insert ▸ Video already
 streams. The half of this that *lied* — a drop that landed nothing and said
 nothing — is fixed; the progress half is not.
+
+**Check first whether this is [#33](https://github.com/icmric/openote/issues/33)** — PDFs of about 4 MB and up will not open, reproduced on every route that inserts one. No size limit turned up in a search of `lib/` and `onote_core`, so the cause is unknown; a whole-file read is one suspect among several.
 
 ### 1.6 Keep source files searchable
 
@@ -128,19 +126,12 @@ with asserts stripped — release and profile only. Every open inline equation
 broke its paragraph's layout in the build a student downloads, and the whole
 suite passed. A sweep is the only way to check for more.
 
-### 1.8 Specify the ink blob format · **Done**
-
-[Ink spec §2.3](../specs/13-ink-data-spec.md) is the byte layout, with a
-worked example and the varint and zigzag rules written out, so an independent
-implementation can draw a notebook's handwriting. This was the one place the
-openness guarantee was unmet.
-
 ### 1.9 MathML export · **S–M**
 
 [Maths spec §6](../specs/12-math-input-spec.md) specifies it and nothing builds
 it, so an equation leaves Openote as LaTeX only. Two consumers want it: a tool
 importing an exported notebook, and a screen reader — which is the same audience
-as the accessibility work in [v1.0.2](v1.0.2.md), and the reason this is worth
+as the accessibility work [carried into v1.0.3](v1.0.3.md#carried-over-from-v102), and the reason this is worth
 more than its size suggests.
 
 Derive it from the stored LaTeX at export time rather than storing it. There is
@@ -222,7 +213,7 @@ folder is interesting whether or not a test is watching.
 
 ### 1.14 Finish the translation coverage
 
-Several dialogs are still Dart string literals rather than `.arb` messages —
+Several dialogs are still Dart string literals rather than `.arb` messages (the update notice was the last to move, in v1.0.2) —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
 warning about what protection does *not* cover is the one most worth
 translating.
@@ -292,7 +283,7 @@ dialect. There is no dialect to choose because there is no dialect in there.
    the alphabet loop happened to generate.
 4. **Autocorrect, narrowly.** Only on a word boundary, only when there is
    exactly one distance-1 candidate, and reversible — which is the same
-   escape-hatch question as [v1.0.2 #23](v1.0.2.md#23-auto-capitalisation),
+   escape-hatch question as [v1.0.2 #28](archive/v1.0.2.md#28-auto-capitalisation),
    and should be decided once for both.
 
 **Can we piggyback on the operating system?** Partly, and not the part that
@@ -329,17 +320,17 @@ keybinding, and some other jazz like that"* — so they are written down here
 rather than left as the reason a layout changed.
 
   * **The size of the interface's text and icons.** Blocked on, and not merely
-    related to, [v1.0.2 #12](v1.0.2.md): nothing in the app reads
+    related to, [text scaling](v1.0.3.md#carried-over-from-v102): nothing in the app reads
     `textScaler`, so every width it measures for itself is measured at 100%
     while the widgets draw larger. A control that scaled the interface before
-    that is fixed would ship the bug on purpose. #12 first, then the control,
+    that is fixed would ship the bug on purpose. Text scaling first, then the control,
     in Settings → Appearance.
   * **Custom keybindings · M.** `ui/keyboard_map.dart` is display data — the
     keys as a string and a sentence saying what they do — while the bindings
     themselves are 37 `SingleActivator`s wired straight to their call sites.
     Rebinding needs the actions to become addressable things with the map as
     their labels, which is the same registry a command palette would need
-    ([v1.0.2 §25](v1.0.2.md#25-the-command-bar) option C). Its home is a
+    ([v1.0.2 #30](archive/v1.0.2.md#30-the-command-bar) option C). Its home is a
     Keyboard group split out of Help, where the shortcut reference already is.
 
 ### 1.18 Say when a note holds something this build cannot read · **M**
@@ -433,14 +424,14 @@ Each would be welcome; each has a reason it is not next, and a trigger.
 | Item | Why not now | Trigger |
 |---|---|---|
 | **3D graphs** | Needs a second grammar (two variables), a second painter and a projection. Measured cheap to *draw* — 0.60 ms/frame at 60×60 — and expensive to *fit in*. 2D is shaped so 3D lands as an added file. | The owner asking for it directly |
-| **Android / tablet** | Not the same app on a smaller screen: sync is a folder, and scoped storage makes that a new storage backend | Desktop settled, and demand |
+| **Android / tablet** | Not the same app on a smaller screen: sync is a folder, and scoped storage makes that a new storage backend | Desktop settled, and demand. One request so far ([#34](https://github.com/icmric/openote/issues/34)): an Android tablet is that reporter's only OneNote device |
 | **Ink-to-math** | High appeal, XL cost, no recognition surface to build on | Usage evidence from the study loop |
 | **Beta updates you opt into** | Ruled out for now — "just going to add too much complication". Costed in full, so it need not be rederived: the switch must ship in a STABLE release before any beta can reach anyone (every installed copy asks for `/releases/latest`, which never returns a prerelease); `compareVersions` treats `1.0.3-beta.1` and `1.0.3` as equal; Inno's `VersionInfoVersion` must be numeric and `.deb`/`.rpm` want `1.0.3~beta.1`. About a day, most of it packaging | Releases slowing enough that finished work waits weeks |
 | **Plugins** | A plugin runs with the app's access to every note, and the owner's answer on [#10](https://github.com/icmric/openote/issues/10) is security: "no plans as of yet … due to the potential security implications" | A design that sandboxes one |
 | **Real-time co-editing** | A transport swap over the op log *later*; per-character merge needs §2.2 first. Shared-folder and git group notebooks already cover group study | §2.2 landing |
 | **A first-party sync service** | Contradicts "point it at a folder you already have", which is what makes self-hosting trivial | Users asking |
 | **PPTX rendering** | Needs a converter on import, or export-to-PDF first. A `.pptx` lands as an attachment | Someone needing it |
-| **Code signing** | A few hundred a year per platform. MSIX, winget, Chocolatey, Homebrew and Flatpak are each gated on it, and MSIX is the only route to OS-scheduled notifications | A funded year, or a distro asking |
+| **Code signing** | A few hundred a year per platform. MSIX, winget, Chocolatey, Homebrew and Flatpak are each gated on it, and MSIX is the only route to OS-scheduled notifications (but v1.0.3's [signing section](v1.0.3.md#signing-the-builds-and-the-warnings-on-all-three-platforms) argues a Homebrew cask and a Flathub manifest are **not** gated on it — settle which is right when this is decided) | A funded year, or a distro asking |
 | **Per-machine (admin) install** | Easy to add to the same script. Nobody has asked | A lab or school asking |
 | **Multiple calendar subscriptions** | Two feeds is a manager — add, remove, rename, colour, enable. One feed covers a student's timetable | Someone genuinely having two |
 | **A week/day timetable grid** | The month grid exists and is off by default, because the agenda is what gets read daily. A grid is a nice thing, not the same feature as knowing what is next | Demand |
@@ -485,6 +476,10 @@ silently become "known good".
       and `theme/onote_theme.dart`, value by value.
 - [ ] That the ChatGPT desktop app picks up the MCP entry Openote writes into
       `~/.codex/config.toml`.
+- [ ] The v1.0.2 touch fixes — two fingers zooming with one on a box, a finger scrolling over a box — on a real
+      tablet. They were written against simulated pointers.
+- [ ] That the macOS `.app` carries `Contents/Resources/AppIcon.icns`, as opposed to Launch Services showing a stale
+      icon (v1.0.2 bug 11). Check the artefact, not the screenshot.
 
 ---
 

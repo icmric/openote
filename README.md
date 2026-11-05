@@ -79,8 +79,9 @@ commit.
 
 ## Known issues
 
-Being worked on for v1.0.2 — full write-ups, including what's been ruled out,
-in [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md).
+Known, and on the list for v1.0.3 — the plan is in
+[docs/planning/v1.0.3.md](docs/planning/v1.0.3.md), and the write-ups, including what's been
+ruled out, in [the v1.0.2 plan](docs/planning/archive/v1.0.2.md).
 
 | | What you'd notice |
 |---|---|
@@ -88,16 +89,16 @@ in [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md).
 | **Formatting buttons are grey in a table cell** | Type Markdown in the cell instead — that works. |
 | **Opening a cloud notebook freezes the app** | Only when its folder is not set "Available offline". Set that on each device; the app reads synchronously and waits on the download. |
 | **Text scaling is ignored** | Columns and auto-sized boxes are measured at 100%, so Windows' "Make text bigger" misreports widths. |
-| **Images dropped on empty canvas can't be inlined** | Two code paths for one thing. Drop onto a text box and it inlines properly. |
+| **PDFs of about 4 MB and up won't open** | Reported in [#33](https://github.com/icmric/openote/issues/33) and reproduced. The cause is not known yet. |
 
 Longer-standing defects are carried openly in the
 [roadmap](ROADMAP.md#known-defects-carried-openly).
 
 ## What's next
 
-v1.0.2 clears the list above. Beyond that: using the macOS and Linux builds for
-real, splitting the state class everything has landed in, and letting a notebook
-reclaim the space a deleted video left behind. The ranked list is
+The next release, v1.0.3, is planned in [its document](docs/planning/v1.0.3.md). Beyond
+that: using the macOS and Linux builds for real, splitting the state class everything
+has landed in, and letting a notebook reclaim the space a deleted video left behind. The ranked list is
 [the backlog](docs/planning/backlog.md); the phase plan is in the
 [roadmap](ROADMAP.md).
 

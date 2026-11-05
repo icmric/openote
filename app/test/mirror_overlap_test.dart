@@ -10,7 +10,7 @@
 //     assets/demo/…
 //
 // Reported as "the backup copy also has a copy of all its backups". See
-// docs/planning/v1.0.2.md §18b.
+// docs/planning/archive/v1.0.2.md §18b.
 //
 // The property is simple and worth stating plainly: **a copy must never be an
 // input to the next copy.** Returning null rather than throwing, because a

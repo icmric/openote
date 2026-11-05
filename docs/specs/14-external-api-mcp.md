@@ -159,7 +159,7 @@ tables or runnable as code. `atomizePipeTables` is the reusable half, meant
 also for the editor's "convert pipe tables when leaving edit mode".
 
 Converting is the default because an agent that writes Markdown almost always
-meant the thing, not the syntax (the [v1.0.2 plan](../planning/v1.0.2.md)
+meant the thing, not the syntax (the [v1.0.2 plan](../planning/archive/v1.0.2.md)
 §20, fix 3). `append_markdown` takes `literal: true` for the other case: one
 text block, exactly as written, as v1 did.
 

@@ -322,7 +322,7 @@ Not for you to test — recorded here so you are not surprised by them.
   freezes the app.** Minutes, with no explanation, and it may not recover. Set
   the notebook's folder to be available offline on every device and it does
   not happen. Written up in
-  [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md) §5.
+  [docs/planning/archive/v1.0.2.md](docs/planning/archive/v1.0.2.md) §5.
 - **The formatting buttons are grey inside a table cell.** Typing Markdown
   into the cell works and is the way to format one today. v1.0.2 bug 2.
 - **The console prints accessibility errors constantly** —

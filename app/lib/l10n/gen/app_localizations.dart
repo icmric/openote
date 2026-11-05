@@ -2441,7 +2441,7 @@ abstract class L {
   /// **'Create your first page'**
   String get shellCreateFirstPage;
 
-  /// Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16.
+  /// Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/archive/v1.0.2.md §16.
   ///
   /// In en, this message translates to:
   /// **'Demo — nothing is saved'**

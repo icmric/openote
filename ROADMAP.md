@@ -104,7 +104,7 @@ Two have been designed and not built, and both have documents:
 
 Things that are wrong, that nobody is about to fix, and that are better said out
 loud than discovered. The ones being worked on now are in
-[v1.0.2](docs/planning/v1.0.2.md) instead.
+[v1.0.3](docs/planning/v1.0.3.md) instead.
 
 - **Screen readers cannot read the editor.** The Windows accessibility bridge
   rejects the semantics tree this app produces. This is the worst defect in the

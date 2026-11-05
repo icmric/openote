@@ -2,7 +2,7 @@
 
 > **Status:** Accepted, **not built**. Nothing has ever deleted a blob.
 > **Refines** [ADR-0006](ADR-0006-sync-transport-and-text-model.md) §3.
-> **Related:** [backlog §1.3](../planning/backlog.md) · [v1.0.2](../planning/v1.0.2.md)
+> **Related:** [backlog §1.3](../planning/backlog.md) · [v1.0.2](../planning/archive/v1.0.2.md)
 >
 > **Two things below have been overtaken, and the decision is better for both.**
 >
@@ -21,7 +21,7 @@
 >   never compacted, so it permanently names every blob ever written. A sweep
 >   that treats a `blob.put` as a reference can therefore collect *nothing*.
 >   This is the real obstacle, and it is why the forget op in
->   [v1.0.2](../planning/v1.0.2.md) exists as a sketch — a blob has to be
+>   [v1.0.2](../planning/archive/v1.0.2.md) exists as a sketch — a blob has to be
 >   positively retired, not merely unreferenced.
 > * **The clipboard and the undo stack are roots too.** A blob whose only
 >   reference was just cut is reachable from the cut. Both are session-scoped,

@@ -4,7 +4,7 @@
 // Since v0.17 Step 6 a notebook's blobs live in `<name>.onotebook/blobs/`, not
 // in the container, so a container on its own arrives with references to
 // nothing. That is how the demo lost all eight of its drawings
-// (docs/planning/v1.0.2.md §12). The browser reads a blob from the container's
+// (docs/planning/archive/v1.0.2.md §12). The browser reads a blob from the container's
 // own `blobs` table when there is no folder (`Repository.getBlob`), so a
 // container with those rows put back is complete there.
 //

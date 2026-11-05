@@ -39,7 +39,7 @@
 ///
 /// One map, one tab, no persistence of any kind. Refreshing the page is a new
 /// machine. That is the demo's defining property; see
-/// `docs/planning/v1.0.2.md` §16.
+/// `docs/planning/archive/v1.0.2.md` §16.
 library;
 
 import 'dart:async';

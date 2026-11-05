@@ -7,8 +7,8 @@ was reported, what was measured, which options were weighed, and what it cost.
 | | |
 |---|---|
 | [backlog.md](backlog.md) | What to do next, ranked — and what has been decided against. **Start here.** |
-| [v1.0.2.md](v1.0.2.md) | The release being worked on now |
-| [archive/](archive/) | Work that has shipped, kept for the reasoning |
+| [v1.0.3.md](v1.0.3.md) | The next release: the proposed scope, what carried over from v1.0.2, and the bigger pieces raised since |
+| [archive/](archive/) | Work that has shipped, kept for the reasoning — v1.0.2 is the latest, and the detail for what did not ship in it still lives there |
 
 ## Open plans
 

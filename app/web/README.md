@@ -22,7 +22,7 @@ touching to change what the demo says.
 Which features are offered and which are greyed out is not decided here. It
 is derived from `core/capabilities.dart`, which asks each feature's own web
 half the question that feature already had to answer in order to compile. See
-`docs/planning/v1.0.2.md` §16.
+`docs/planning/archive/v1.0.2.md` §16.
 
 ## `sqlite3.wasm`
 

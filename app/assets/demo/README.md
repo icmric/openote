@@ -49,7 +49,7 @@ That is not hypothetical. It is how it went the first time (2026-10-05), and
 it did real damage: one of the two demo notebooks ended up logging into
 `build/web/assets/assets/demo/demo.onotebook/`, which `flutter clean` and the
 next `flutter build web` deleted — taking that notebook's handwriting blobs
-with it. See `docs/planning/v1.0.2.md` §12.
+with it. See `docs/planning/archive/v1.0.2.md` §12.
 
 `.gitignore` now catches the files, but it cannot catch the data loss, so:
 copy, then open.
