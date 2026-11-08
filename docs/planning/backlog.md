@@ -38,8 +38,11 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 
 ## Raised on GitHub, not yet placed
 
-Read 6 November. Each is waiting for a decision on which release, if any; the
-sizes are first guesses. When one is placed it moves to that release's document.
+Read 8 November. Each is waiting for a decision on which release, if any; the
+sizes are first guesses. When one is placed it moves to that release's document. Rows
+marked **→** were placed on 8 November and are kept here, with their reasoning in
+[v1.0.3](v1.0.3.md#raised-since-6-november), until the release is cut, so the issue
+numbers stay findable.
 
 | Issue | Item | Size | Notes |
 |---|---|---|---|
@@ -53,7 +56,16 @@ sizes are first guesses. When one is placed it moves to that release's document.
 | [#7](https://github.com/icmric/openote/issues/7) | **German handwriting recognition and spelling** | XL | Recognition is the surface ink-to-math is waiting for (decided against, below); spelling may be smaller on its own |
 | [#13](https://github.com/icmric/openote/issues/13) | **A pinned second side panel** | M | Tagged for v1.0.2 and did not ship; the issue has had no reply. The design is settled in [v1.0.2 addition 26](archive/v1.0.2.md): one panel by default, a pin keeps it open beside the next, at most two, and on a narrow window the pinned one becomes a drawer |
 | [#34](https://github.com/icmric/openote/issues/34) | **Hold the stylus still to erase** | S–M | Asked for by a OneNote-on-Android user: hold the pen in place for a moment and it becomes the eraser, lift it and the pen you had comes back. The pen's side button already switches tools (v1.0.2); what is new is a dwell detector that cannot fire on a deliberate dot or the pause between two words |
-| [#36](https://github.com/icmric/openote/issues/36) | **Import a OneNote notebook from a share link** | M | **Feasible, with one sign-in.** For an "Anyone with the link" share the link opens an anonymous session and the notebook is a folder of real `.one` files (the owner's own: 35 files, 184 MB, probed 6 November). But that session only serves a browser-like client — a plain request is refused — so **impersonating a browser is ruled out**. The sanctioned route is Graph `/shares/{id}` signed in as *any* Microsoft account, using the importer's existing sign-in (authority `common`, so a personal account works), which sidesteps an institution blocking its own accounts. Open: the extra permission it needs (probably `Files.Read.All`, a broader consent screen than `Notes.Read`); whether the `.one` files a share returns parse; and above all whether the reporter's school allows "Anyone" links at all — tenants can switch them off |
+| [#36](https://github.com/icmric/openote/issues/36) | **Import a OneNote notebook from a share link** | M | **Investigated; a way exists, the route is not chosen. Not in v1.0.3.** For an "Anyone with the link" share the link opens an anonymous session and the notebook is a folder of real `.one` files, so nothing about the *person* needs signing in. What does is the *app*: a plain client is refused and **impersonating a browser is ruled out**. Two routes are left — Microsoft Graph signed in as any Microsoft account (documented, stable, one sign-in, probably a broader permission), and an embedded browser (no sign-in, heavy, leans on endpoints that are not a contract) — and three yes/no questions decide between them. All of it, with the order to answer them in, is in [onenote-share-link.md](onenote-share-link.md). The reply on the issue said "the next update"; that is owed a correction |
+| [#38](https://github.com/icmric/openote/issues/38) | **→ v1.0.3 M6.** The "Deleted … Undo" toast never goes away | S | Cause found: Flutter keeps any toast that has a button, and this is the only one. `persist: false` and a duration. Also hide it when Ctrl+Z has already undone the delete |
+| [#39](https://github.com/icmric/openote/issues/39) | **→ v1.0.3 S4.** Ctrl+V pastes the wrong clipboard | S–M | Not reproduced. Copying a box never touches the system clipboard, so an image or file already there always wins. Write the boxes to the real clipboard on copy; copy-to-another-app and paste-after-restart come with it |
+| [#40](https://github.com/icmric/openote/issues/40) | **→ v1.0.3 M7.** A pasted box lands on top of the last one | S | Every paste goes to the source's position plus 28 px, so repeats stack; and right-click → Paste puts every copied box on one point. Ask the reporter where they expected it to land |
+| [#41](https://github.com/icmric/openote/issues/41) | **→ v1.0.3 S5.** Buttons are too small to hit | S–M | Measured: dialog buttons are *drawn* 20 px tall (compact density takes 8 off a 28 px minimum) with a 40 px clickable box. One theme change plus a look at every dialog. Which reading the reporter means is open |
+| [#42](https://github.com/icmric/openote/issues/42) | **→ v1.0.3 S5.** The Sync dialog is cramped | S | A 480 × 460 box with the 8 px scrollbar drawn over its controls. Wider, taller as a share of the window, a gutter for the scrollbar — in one shared place, since seven dialogs scroll |
+| [#43](https://github.com/icmric/openote/issues/43) | **→ v1.0.3 C8.** A context menu to create things | S–M | Right-click on empty space does nothing today. One menu: section, group, page, notebook, open a notebook. The buttons stay — folding them into a menu adds a click. Same code as #18's *add below the last item* |
+| — (found on #39) | **→ v1.0.3, with S4.** Does a picture survive being pasted into another notebook? | S to check | Blobs are per notebook and a copied box carries the picture's hash, not its bytes, so it should not. Untested. If confirmed, carry the bytes or copy the blob across by the source notebook's id |
+| — (found on #41) | **→ v1.0.4.** *Comfortable / Compact* buttons, and comfortable by default for a pen or touch | S–M | The tablet people. Build it with [#15](https://github.com/icmric/openote/issues/15)'s interface scale, which is the same question about text. S5 fixes the default first |
+| — (found on #43) | **→ v1.0.4.** Ctrl+T for a new section | S | OneNote's chord, and Ctrl+N (a new page) is already bound. Belongs with the button-size setting |
 
 ---
 
