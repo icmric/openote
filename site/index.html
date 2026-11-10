@@ -343,6 +343,26 @@ sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></
     return n > 1048576 ? (n / 1048576).toFixed(0) + ' MB'
          : n > 1024 ? (n / 1024).toFixed(0) + ' KB' : n + ' B';
   }
+  // Only an https link on GitHub's own hosts is ever put in an href. The
+  // release JSON is data from outside this page, so a URL in it is checked
+  // rather than trusted: `javascript:` and look-alike hosts are refused.
+  function safeUrl(u) {
+    try {
+      var url = new URL(String(u), 'https://github.com/');
+      var h = url.hostname;
+      var ok = url.protocol === 'https:' &&
+        (h === 'github.com' || h === 'api.github.com' ||
+         /\.githubusercontent\.com$/.test(h));
+      return ok ? url.href : null;
+    } catch (e) { return null; }
+  }
+  // A link built from parts, so nothing in the text is read as markup.
+  function link(href, text) {
+    var a = document.createElement('a');
+    a.href = safeUrl(href) || RELEASES;
+    a.textContent = text;
+    return a;
+  }
   function find(assets, re) {
     for (var i = 0; i < assets.length; i++) if (re.test(assets[i].name)) return assets[i];
     return null;
@@ -364,12 +384,14 @@ sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></
       alt.textContent = '';
       return;
     }
-    a.href = asset.browser_download_url;
+    a.href = safeUrl(asset.browser_download_url) || RELEASES;
     a.textContent = 'Download for ' +
       (os === 'macos' ? 'macOS' : os[0].toUpperCase() + os.slice(1));
-    alt.innerHTML = bytes(asset.size) +
-      (altAsset ? ' &nbsp;·&nbsp; <a href="' + altAsset.browser_download_url +
-                  '">' + altLabel + '</a>' : '');
+    alt.textContent = bytes(Number(asset.size) || 0);
+    if (altAsset) {
+      alt.appendChild(document.createTextNode('\u00a0·\u00a0'));
+      alt.appendChild(link(altAsset.browser_download_url, altLabel));
+    }
   }
 
   // Ask our own edge first, GitHub second.
@@ -426,9 +448,14 @@ sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></
         ? (rel.name && rel.name !== rel.tag_name
             ? rel.tag_name + ' · ' + rel.name : rel.tag_name)
         : (rel.name || 'Latest release');
-      document.getElementById('release-line').innerHTML =
-        '<b>' + label + '</b>' + (when ? ' · released ' + when : '') +
-        ' · <a href="' + rel.html_url + '">release notes</a>';
+      var line = document.getElementById('release-line');
+      line.textContent = '';
+      var strong = document.createElement('b');
+      strong.textContent = label;
+      line.appendChild(strong);
+      line.appendChild(document.createTextNode(
+        (when ? ' · released ' + when : '') + ' · '));
+      line.appendChild(link(rel.html_url, 'release notes'));
     })
     .catch(function () {
       // No release yet, or the API is unreachable. Say which is likelier

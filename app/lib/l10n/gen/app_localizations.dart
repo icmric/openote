@@ -1154,19 +1154,19 @@ abstract class L {
   /// Snackbar after deleting a section group, with an Undo button beside it.
   ///
   /// In en, this message translates to:
-  /// **'Deleted group “{title}”'**
+  /// **'Moved group “{title}” to the bin'**
   String navDeletedGroup(String title);
 
-  /// Snackbar after deleting a page. Kept short because it carries an Undo button beside it.
+  /// Snackbar after moving a page to the recycle bin. Kept short because it carries an Undo button beside it.
   ///
   /// In en, this message translates to:
-  /// **'Deleted page “{title}”'**
+  /// **'Moved page “{title}” to the bin'**
   String navDeletedPage(String title);
 
   /// Snackbar after deleting a section, with an Undo button beside it.
   ///
   /// In en, this message translates to:
-  /// **'Deleted section “{title}”'**
+  /// **'Moved section “{title}” to the bin'**
   String navDeletedSection(String title);
 
   /// How long a deleted thing has left in the recycle bin.

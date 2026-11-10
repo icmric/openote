@@ -107,8 +107,10 @@ void main() {
     final pasted = app.blocks.firstWhere((b) => b.id != ink.id);
     final stroke = (pasted.content['strokes'] as List).first as Map;
     expect(stroke['id'], isNot('stroke-1'));
-    expect((stroke['x'] as List).first, pasted.x);
-    expect((stroke['y'] as List).first, pasted.y);
+    // An ink box is derived from its strokes, so the test is that the strokes
+    // moved by exactly as far as the box did.
+    expect((stroke['x'] as List).first - 50.0, pasted.x - ink.x);
+    expect((stroke['y'] as List).first - 300.0, pasted.y - ink.y);
   });
 
   test('a paste at the pointer puts the first box\'s bar under it', () {
@@ -125,7 +127,9 @@ void main() {
       ..sort((p, q) => p.y.compareTo(q.y));
     expect(pasted.length, 2);
     expect(pasted.first.x, closeTo(600, app.gridSize));
-    expect(pasted.last.y - pasted.first.y, 200,
+    expect(pasted.first.y, closeTo(500 - AppState.pasteBarOffset, app.gridSize),
+        reason: 'the first box\'s bar is at the pointer');
+    expect(pasted.last.y - pasted.first.y, closeTo(200, app.gridSize),
         reason: 'the boxes keep their distance from each other');
   });
 

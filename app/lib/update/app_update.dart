@@ -17,6 +17,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha256;
+
 import '../markdown/md_syntax.dart';
 
 /// The running app's version. pubspec.yaml is the source of truth;
@@ -32,6 +34,7 @@ class UpdateInfo {
     required this.pageUrl,
     this.notes,
     this.windowsSetupUrl,
+    this.windowsSetupSha256Url,
   });
 
   final String version;
@@ -42,6 +45,11 @@ class UpdateInfo {
 
   /// The `-setup.exe` asset, when the release has one.
   final String? windowsSetupUrl;
+
+  /// A small text asset beside the installer holding its SHA-256, published by
+  /// the release workflow. Without one Openote does not run the installer
+  /// itself, because there would be nothing to check the download against.
+  final String? windowsSetupSha256Url;
 }
 
 /// Numeric dotted-version compare. Tolerates a leading `v`, a `+build`
@@ -75,12 +83,14 @@ UpdateInfo? parseLatestRelease(
   final version = tag.startsWith('v') ? tag.substring(1) : tag;
   if (version.isEmpty || compareVersions(version, current) <= 0) return null;
 
-  String? setup;
+  String? setup, setupSum;
   final assets = json['assets'];
   if (assets is List) {
     for (final a in assets.whereType<Map>()) {
       if ('${a['name']}'.endsWith('-setup.exe')) {
         setup = a['browser_download_url'] as String?;
+      } else if ('${a['name']}'.endsWith('-setup.exe.sha256')) {
+        setupSum = a['browser_download_url'] as String?;
       }
     }
   }
@@ -88,6 +98,7 @@ UpdateInfo? parseLatestRelease(
     version: version,
     notes: json['body'] as String?,
     windowsSetupUrl: setup,
+    windowsSetupSha256Url: setupSum,
     pageUrl: json['html_url'] as String? ??
         'https://github.com/icmric/openote/releases',
   );
@@ -287,5 +298,43 @@ Future<File?> downloadUpdate(String url, String toPath,
     }
   } catch (_) {
     return null;
+  }
+}
+
+/// The SHA-256 in a checksum file: `<64 hex>  <name>` as `sha256sum` writes
+/// it, or the bare digest. Null when the text holds no digest.
+String? parseSha256File(String text) {
+  final m = RegExp(r'\b([0-9a-fA-F]{64})\b').firstMatch(text);
+  return m?.group(1)!.toLowerCase();
+}
+
+/// Fetch a small checksum file. Null on any failure.
+Future<String?> fetchSha256(String url) async {
+  try {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      req.headers.set(HttpHeaders.userAgentHeader, 'openote/$kAppVersion');
+      final res = await req.close();
+      if (res.statusCode != 200) return null;
+      final body = await utf8.decodeStream(res.take(4096));
+      return parseSha256File(body);
+    } finally {
+      client.close();
+    }
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Does [file] hash to [expectedHex]? Reads in chunks, so an installer's
+/// tens of megabytes never sit in memory at once.
+Future<bool> fileMatchesSha256(File file, String expectedHex) async {
+  try {
+    final digest = await sha256.bind(file.openRead()).first;
+    return digest.toString() == expectedHex.toLowerCase();
+  } catch (_) {
+    return false;
   }
 }

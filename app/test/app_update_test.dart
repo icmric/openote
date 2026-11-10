@@ -4,6 +4,7 @@
 // than remembered.
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/update/app_update.dart';
@@ -96,5 +97,58 @@ void main() {
     expect(m, isNotNull, reason: 'pubspec.yaml has no version line?');
     expect(kAppVersion, m!.group(1),
         reason: 'bump kAppVersion in update/app_update.dart with pubspec');
+  });
+
+  group('checksum of the installer', () {
+    test('the checksum asset beside the installer is found', () {
+      final u = parseLatestRelease(current: '1.0.0', json: {
+        'tag_name': 'v1.0.1',
+        'assets': [
+          {
+            'name': 'openote-1.0.1-windows-x64-setup.exe',
+            'browser_download_url': 'https://example.com/a-setup.exe'
+          },
+          {
+            'name': 'openote-1.0.1-windows-x64-setup.exe.sha256',
+            'browser_download_url': 'https://example.com/a-setup.exe.sha256'
+          },
+        ],
+      })!;
+      expect(u.windowsSetupUrl, 'https://example.com/a-setup.exe');
+      expect(u.windowsSetupSha256Url, 'https://example.com/a-setup.exe.sha256');
+    });
+
+    test('the checksum file is never mistaken for the installer', () {
+      final u = parseLatestRelease(current: '1.0.0', json: {
+        'tag_name': 'v1.0.1',
+        'assets': [
+          {
+            'name': 'openote-1.0.1-windows-x64-setup.exe.sha256',
+            'browser_download_url': 'https://example.com/sum'
+          },
+        ],
+      })!;
+      expect(u.windowsSetupUrl, isNull);
+    });
+
+    test('sha256sum output and a bare digest both parse', () {
+      const d =
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      expect(parseSha256File('$d  openote-setup.exe\n'), d);
+      expect(parseSha256File(d.toUpperCase()), d);
+      expect(parseSha256File('not a digest'), isNull);
+    });
+
+    test('a file matches only its own digest', () async {
+      final dir = Directory.systemTemp.createTempSync('onote_sum_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final f = File('${dir.path}/x.bin')..writeAsBytesSync([1, 2, 3]);
+      final good = sha256.convert([1, 2, 3]).toString();
+      expect(await fileMatchesSha256(f, good), isTrue);
+      expect(await fileMatchesSha256(f, good.toUpperCase()), isTrue);
+      expect(await fileMatchesSha256(f, '0' * 64), isFalse,
+          reason: 'a different file must not pass');
+      expect(await fileMatchesSha256(File('${dir.path}/missing'), good), isFalse);
+    });
   });
 }
