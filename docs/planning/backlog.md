@@ -67,6 +67,72 @@ numbers stay findable.
 | — (found on #41) | **→ v1.0.4.** *Comfortable / Compact* buttons, and comfortable by default for a pen or touch | S–M | The tablet people. Build it with [#15](https://github.com/icmric/openote/issues/15)'s interface scale, which is the same question about text. S5 fixes the default first |
 | — (found on #43) | **→ v1.0.4.** Ctrl+T for a new section | S | OneNote's chord, and Ctrl+N (a new page) is already bound. Belongs with the button-size setting |
 
+## The owner's UI notes, 11 November
+
+From going through the [design recreation](design-mockups.md) next to the real app. **None is placed in a
+release**: they were noted to be thought through, not fixed now. Sizes are first guesses.
+
+| Note | Size | What was said, and what is already known |
+|---|---|---|
+| **New sections cycle through colours** | S, plus design time | Today every section defaults to the same colour. Cycle through a palette as sections are made. The palette is the real work: it is **the same for everyone unless they change it**, so it has to be good. Needs to hold up in light and dark, tell colours apart by lightness as well as hue, and be a chosen number (about eight) that repeats. Decide before building whether sections that already exist are left alone — they should be, silently recolouring someone's notebook is worse than the sameness |
+| **"New section" does not make sense beside a bare "+"** | S | The footer says *Section* with a folder icon while the new-page button, up in the pages header, is a plain plus. Two buttons that make a thing, said two ways. Settle it together with [#43 and #18](v1.0.3.md#43--one-menu-to-create-things): one way of saying "new", used for page, section and group |
+| **Hide the Home tab** | S | Home (favourites and recents) has never earned its place for the owner. At minimum an option to hide it; whether it should exist at all is the larger question |
+| **Drop "· open" and "1 open" from the notebook list** | S | The open notebook is already highlighted, so both say it twice |
+| **More themes, and how to choose one** | M–L | Already [#12 and PR #22](v1.0.3.md#the-theme-catalogue-12). New here: the default stays *follow the computer*, and how a person *picks* one is undecided — a short list, swatches, or a gallery. Settle the picker before the themes |
+| **One phrase for "follow the computer"** | S | Theme says *System*, Language right under it says *Same as my computer*. Use *Same as my computer* for both: it is the plain one |
+| **The Sync dialog does too much** | M | See below |
+| **A popup with a nice animation, from the lab project** | — | To be looked at, **not** implemented. The owner has not yet tested whether the toast fix ([#38](https://github.com/icmric/openote/issues/38)) is in or works. The lab project is a web app (`C:\src\lab`) and no animated dialog was found in it by search: the owner will say which one |
+
+### The Sync dialog, backups and restore
+
+**The dialog is three things at once.** *Where this notebook syncs* is one. *Backups* and *extra
+copies* are another. Git is a third, for a few people. A great deal of the text on it explains what
+the controls are rather than helping to use them. It was already capped and folded once, because
+stacked open it was four screens (see `sync_dialog.dart`); it is still too much.
+
+**Mirror and backup are the same mechanism with one number.** In `sync/mirrors.dart` a target with
+`keepVersions` of 0 is a *mirror*: one copy, overwritten each time. One above 0 is a *backup*: that
+many dated copies, oldest dropped first. The person never meant to choose a number, and the two words
+mean nothing to someone who has not read the code. The fix is the vocabulary: **one thing, "Backups"**,
+with *how many to keep* hidden away. (The first two parts of [v1.0.3's C2](v1.0.3.md#could--in-order-cut-from-the-bottom),
+which make the label match what the code does, are the cheap start.)
+
+**There is no way to restore, and that is the real gap.** Taking copies nobody can read back is not a
+backup. v1.0.3's C2 calls restore L.
+The owner's requirements, as stated:
+
+1. **A default place that just works.** Nobody is made to pick a folder. They can change it, and add
+   more than one (a local copy *and* one in a cloud folder).
+2. **Somewhere the notebook being deleted or corrupted cannot reach.** Not inside the notebook's own
+   folder, and a synced folder is a poor home for the only copy, because a sync *replicates* a delete.
+3. **Restore inside the app, in two cases:** put an existing notebook back to an earlier point, or
+   bring back a notebook that has since been deleted, which means making a new one and filling it in.
+
+**Where to keep them — a view, not a decision.**
+
+| | Beside each notebook | One place for everything |
+|---|---|---|
+| Survives the notebook being deleted | **No** | Yes |
+| Survives its folder being corrupted or synced-away | No | Yes |
+| Finds a *deleted* notebook's backups | Cannot | One list holds them all |
+| Cost | None | A new default folder the person did not choose |
+
+One place wins on the owner's own test. A sensible default is a folder in the person's own documents,
+outside any cloud folder, with *add another place* for the cloud copy. **Two things need measuring first:**
+how big ten dated copies of a real notebook are (the owner's old OneNote one is 184 MB; Openote stores
+pictures by hash, so copies could share them and differ only in the log — unconfirmed), and how often a
+backup should run (on close, daily, both).
+
+**Restore, in two verbs.** *Restore as a new notebook* is always safe: nothing is overwritten, and it is the
+only route for a notebook that no longer exists. *Put this notebook back to then* replaces what is there,
+so it should take a fresh backup of the present first, and be the second choice, never the first button.
+The list shows dates in plain words, grouped by notebook, with a *Notebooks no longer in Openote* group.
+
+**The dialog after that.** *Sync* keeps the folder choice and the computer name, and loses its prose.
+*Backups* becomes its own place — a list, a *Back up now* button, a place to add destinations, and
+restore. Git moves behind an *Advanced* fold. Each question has one home, which is the design rule the
+rest of the app follows.
+
 ---
 
 ## 1. Engineering debt
