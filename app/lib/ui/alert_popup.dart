@@ -33,6 +33,7 @@ import '../planner/event_kinds.dart';
 import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'toast.dart';
 
 /// How many cards are shown before the rest collapse into a count.
 ///
@@ -272,7 +273,7 @@ class _AlertCard extends StatelessWidget {
     } else {
       // Never silently do nothing. A Join button that appears to work and
       // does not is worse than no Join button, because you find out at 9:02.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showToast(SnackBar(
           content: Text("Couldn't open that link: ${join.url}")));
     }
   }

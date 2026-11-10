@@ -109,6 +109,10 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The pointer's position in the canvas widget, or null while it is outside
+  /// the canvas. Written by the canvas on hover; read by paste.
+  Offset? pointer;
+
   /// Last known viewport size (set by the canvas widget each layout).
   Size viewport = Size.zero;
 

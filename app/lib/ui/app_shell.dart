@@ -34,6 +34,7 @@ import 'study_panel.dart';
 import 'sync_dialog.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
+import 'toast.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
 ///
@@ -1258,6 +1259,7 @@ class _AppShellState extends State<AppShell> {
     // while the keystroke itself is swallowed either way. Swallowing is safe
     // because the fallback below does the plain-text paste itself.
     unawaited(() async {
+      await app.settleBlockClipboard();
       final probe = await probeClipboard();
       if (!mounted) return;
       final theirs = probe.kind == PasteResult.text ? probe.text : null;
@@ -1300,8 +1302,13 @@ class _AppShellState extends State<AppShell> {
   /// Ctrl+V on the canvas: system clipboard media if there is any, else our
   /// own copied blocks.
   Future<void> _pasteFromSystemOrBlocks() async {
-    final at = app.canvas.screenToPage(Offset(
-        app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
+    // The pointer, taken before any await: it can move while the clipboard is
+    // read, and the paste belongs where it was when Ctrl+V was pressed.
+    final pointer = app.pointerOnPage();
+    final at = pointer ??
+        app.canvas.screenToPage(Offset(
+            app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
+    await app.settleBlockClipboard();
     final dark = Theme.of(context).brightness == Brightness.dark;
     // Images and files keep first claim — a screenshot just taken must beat
     // a block copied minutes ago (the comment at the Ctrl+V key handler).
@@ -1313,12 +1320,12 @@ class _AppShellState extends State<AppShell> {
     final probe = await probeClipboard();
     if (probe.kind == PasteResult.text &&
         await app.blockClipboardIsNewer(probe.plainText)) {
-      app.pasteBlocks();
+      app.pasteBlocks(at: pointer);
       return;
     }
     final result = await pasteOntoCanvas(app, at, dark: dark);
     if (result == PasteResult.nothing && app.canPasteBlocks) {
-      app.pasteBlocks();
+      app.pasteBlocks(at: pointer);
     }
   }
 
@@ -1514,7 +1521,7 @@ class _FindBarState extends State<_FindBar> {
     final n = app.replaceAll(app.findQuery, _replaceCtl.text,
         onlyCurrent: !all);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text(n == 0
             ? L.of(context).shellNothingReplaced
             : L.of(context).shellReplaced(n))));
@@ -2236,7 +2243,7 @@ class _SyncChip extends StatelessWidget {
                         final n = s.gitRemote != null
                             ? await app.syncGitNow()
                             : await app.syncPull(nb);
-                        messenger.showSnackBar(SnackBar(
+                        messenger.showToast(SnackBar(
                             content: Text(n == 0
                                 ? L.of(context).shellAlreadyUpToDate
                                 : L.of(context).shellPulled(n))));

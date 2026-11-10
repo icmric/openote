@@ -174,7 +174,7 @@
   "navDeleteForeverBody": "“{title}”及其所有页面都将被永久删除，无法撤销。{caveat}",
   "navDeleteForeverTitle": "彻底删除？",
   "navDeletePermanently": "彻底删除",
-  "navDeletedGroup": "已删除分区组“{title}”",
+  "navDeletedGroup": "已将分区组“{title}”移至回收站",
   "@navDeletedGroup": {
     "placeholders": {
       "title": {
@@ -182,7 +182,7 @@
       }
     }
   },
-  "navDeletedPage": "已删除页面“{title}”",
+  "navDeletedPage": "已将页面“{title}”移至回收站",
   "@navDeletedPage": {
     "placeholders": {
       "title": {
@@ -190,7 +190,7 @@
       }
     }
   },
-  "navDeletedSection": "已删除分区“{title}”",
+  "navDeletedSection": "已将分区“{title}”移至回收站",
   "@navDeletedSection": {
     "placeholders": {
       "title": {

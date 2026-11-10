@@ -27,7 +27,12 @@ abstract final class PdfPages {
   /// Open documents, keyed by blob hash. An open pdfium document holds a file
   /// parse and native memory, so the cache is small and evicts the least
   /// recently used document that has no render in flight.
+  ///
+  /// An entry is only ever put here once its document is open, and a second
+  /// caller asking for a hash that is still opening waits on [_opening] rather
+  /// than being handed a half-built entry.
   static final LinkedHashMap<String, _Doc> _docs = LinkedHashMap();
+  static final Map<String, Future<_Doc?>> _opening = {};
   static const _maxDocs = 4;
 
   /// Rendered page PNGs, keyed `hash#page`. Bounded by total bytes rather
@@ -49,11 +54,14 @@ abstract final class PdfPages {
     }
     final doc = await _open(app, hash);
     if (doc == null) return null;
-    doc.busy++;
+    // `_open` hands the document back with a render already counted against
+    // it, so no eviction can dispose it between the await and here.
     try {
       if (page < 0 || page >= doc.doc.pages.length) return null;
       final png = await renderPdfPageToPng(doc.doc.pages[page]);
       if (png == null) return null;
+      final old = _pages.remove(key);
+      if (old != null) _pageBytes -= old.length;
       _pages[key] = png.png;
       _pageBytes += png.png.length;
       while (_pageBytes > _maxPageBytes && _pages.length > 1) {
@@ -69,45 +77,82 @@ abstract final class PdfPages {
   static Uint8List? cached(String hash, int page) => _pages['$hash#$page'];
 
   /// How many pages the stored PDF has, or null when it cannot be opened.
-  static Future<int?> pageCount(AppState app, String hash) async =>
-      (await _open(app, hash))?.doc.pages.length;
+  static Future<int?> pageCount(AppState app, String hash) async {
+    final doc = await _open(app, hash);
+    if (doc == null) return null;
+    try {
+      return doc.doc.pages.length;
+    } finally {
+      doc.busy--;
+    }
+  }
 
+  /// The open document for [hash] with `busy` already incremented; the caller
+  /// must decrement it. Null when the bytes are absent or unreadable.
+  ///
+  /// **A failure is not remembered.** It used to be, to stop a corrupt blob
+  /// being re-parsed per frame — but the same null also answers "the bytes
+  /// have not arrived yet" and "the first open raced a second", and a PDF that
+  /// failed once then stayed unopenable until a restart. Callers hold their
+  /// future instead of asking per frame, so retrying costs nothing.
   static Future<_Doc?> _open(AppState app, String hash) async {
     final held = _docs.remove(hash);
     if (held != null) {
       _docs[hash] = held;
-      return held.failed ? null : held;
+      held.busy++;
+      return held;
+    }
+    final pending = _opening[hash];
+    if (pending != null) {
+      final entry = await pending;
+      if (entry == null) return null;
+      // The first caller's claim is released by that caller; take our own.
+      if (!identical(_docs[hash], entry)) return _open(app, hash);
+      entry.busy++;
+      return entry;
     }
     final bytes = app.blob(hash);
     if (bytes == null) return null;
-    final entry = _Doc();
-    _docs[hash] = entry;
+    final opening = _load(hash, bytes);
+    _opening[hash] = opening;
+    unawaited(opening.whenComplete(() => _opening.remove(hash)));
+    final entry = await opening;
+    if (entry == null) return null;
+    entry.busy++;
+    _evict(hash);
+    return entry;
+  }
+
+  static Future<_Doc?> _load(String hash, Uint8List bytes) async {
     try {
-      entry.doc = await PdfDocument.openData(bytes, sourceName: hash);
+      final entry = _Doc()
+        ..doc = await PdfDocument.openData(bytes, sourceName: hash);
+      _docs[hash] = entry;
+      return entry;
     } catch (e) {
-      // Remembered as failed rather than retried per frame: a corrupt blob
-      // stays corrupt, and every caller re-opening it would jank the canvas.
-      entry.failed = true;
       debugPrint('[openote/pdf] could not open $hash: $e');
       return null;
     }
-    // Evict beyond the cap — least recently used first, never one mid-render.
+  }
+
+  /// Evict beyond the cap — least recently used first, never one mid-render.
+  static void _evict(String keep) {
     final evictable = _docs.entries
-        .where((e) => e.key != hash && e.value.busy == 0 && !e.value.failed)
+        .where((e) => e.key != keep && e.value.busy == 0)
         .map((e) => e.key)
         .toList();
     while (_docs.length > _maxDocs && evictable.isNotEmpty) {
       final victim = _docs.remove(evictable.removeAt(0))!;
       unawaited(victim.doc.dispose());
     }
-    return entry;
   }
 
   /// Drop everything — for tests, and for a notebook switch where holding
   /// another notebook's documents open would pin its blobs in memory.
   static Future<void> reset() async {
-    final docs = _docs.values.where((d) => !d.failed).toList();
+    final docs = _docs.values.toList();
     _docs.clear();
+    _opening.clear();
     _pages.clear();
     _pageBytes = 0;
     for (final d in docs) {
@@ -119,7 +164,6 @@ abstract final class PdfPages {
 class _Doc {
   late PdfDocument doc;
   var busy = 0;
-  var failed = false;
 }
 
 /// A rendered page's PNG bytes and pixel size.

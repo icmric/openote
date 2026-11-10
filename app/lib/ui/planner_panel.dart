@@ -37,6 +37,7 @@ import 'side_panel.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 class PlannerPanel extends StatefulWidget {
   const PlannerPanel({super.key, required this.app});
@@ -672,7 +673,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     ];
     if (candidates.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showToast(const SnackBar(
           content: Text('Tag a line on this page first — then it can have a '
               'due date.')));
       return;
@@ -727,7 +728,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
       pageId: page?.id,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text('Reminder set for ${formatClock(r.at)} '
             '${relativeWhen(DatedItem(id: '', kind: DatedKind.reminder, title: '', when: r.at, allDay: true), now)}. '
             'Openote will nudge you if it is open — and tell you if it wasn’t.')));
@@ -742,7 +743,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     await planner.subscribeCalendar(url);
     if (!mounted) return;
     final err = planner.calendar?.lastError;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text(err == null
             ? 'Timetable added. It refreshes when Openote opens.'
             : 'Could not load that calendar: $err')));
@@ -1196,7 +1197,7 @@ class _EventLine extends StatelessWidget {
   Future<void> _join(BuildContext context, JoinLink join) async {
     final ok = await PlatformOpen.url(join.url);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showToast(
           SnackBar(content: Text("Couldn't open that link: ${join.url}")));
     }
   }

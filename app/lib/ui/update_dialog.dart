@@ -180,7 +180,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   /// So everywhere else the button sends them to the download page and the
   /// dialog says, in one line, that they install it themselves.
   bool get _canAutoUpdate =>
-      Platform.isWindows && info.windowsSetupUrl != null;
+      Platform.isWindows &&
+      info.windowsSetupUrl != null &&
+      info.windowsSetupSha256Url != null;
 
   /// **Where the button goes when Openote cannot install it itself.**
   ///
@@ -199,20 +201,40 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     });
     // Save EVERYTHING first — the app is about to be replaced under us.
     await widget.app.flushSave();
-    final to =
-        '${Directory.systemTemp.path}${Platform.pathSeparator}openote-${info.version}-setup.exe';
-    final file = await downloadUpdate(info.windowsSetupUrl!, to,
-        onProgress: (got, total) {
-      if (!mounted) return;
-      setState(() => _progress = total > 0 ? got / total : null);
-    });
+    // The expected digest first: with none to check against, the installer is
+    // not run at all.
+    final expected = await fetchSha256(info.windowsSetupSha256Url!);
+    // A directory made for this download and nobody else's, with a name that
+    // cannot be guessed, so nothing can be waiting at the path.
+    Directory? dir;
+    File? file;
+    if (expected != null) {
+      try {
+        dir = await Directory.systemTemp.createTemp('openote-update-');
+        file = await downloadUpdate(info.windowsSetupUrl!,
+            '${dir.path}${Platform.pathSeparator}openote-${info.version}-setup.exe',
+            onProgress: (got, total) {
+          if (!mounted) return;
+          setState(() => _progress = total > 0 ? got / total : null);
+        });
+        if (file != null && !await fileMatchesSha256(file, expected)) {
+          try {
+            await dir.delete(recursive: true);
+          } catch (_) {}
+          file = null;
+        }
+      } catch (_) {
+        file = null;
+      }
+    }
     if (!mounted) return;
     if (file == null) {
       setState(() {
         _busy = false;
         _progress = null;
-        _error = "The download didn't finish. Check your internet "
-            'connection and try again — nothing has been changed.';
+        _error = "The download didn't finish, or didn't match the checksum "
+            'published with this release, so it was not run. Check your '
+            'internet connection and try again — nothing has been changed.';
       });
       return;
     }

@@ -15,6 +15,7 @@ import '../theme/tokens.dart';
 import '../ui/pdf_viewer_dialog.dart';
 import 'video_block_view.dart';
 import '../ui/onote_dialog.dart';
+import '../ui/toast.dart';
 
 /// File attachment block (MEDIA-2): the file lives in the notebook's
 /// content-addressed blob store; "Save a copy…" extracts it back out.
@@ -136,23 +137,7 @@ class FileBlockView extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-            child: FutureBuilder<Uint8List?>(
-              future: PdfPages.pageImage(app, blob, 0),
-              builder: (context, snap) => snap.data == null
-                  ? Container(
-                      height: 120,
-                      color: OnoteColors.paper100,
-                      child: const Center(
-                        child: Icon(Icons.picture_as_pdf_outlined,
-                            size: 32, color: OnoteColors.graphite400),
-                      ),
-                    )
-                  : Image.memory(snap.data!,
-                      height: 160,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                      gaplessPlayback: true),
-            ),
+            child: _PdfThumbnail(app: app, hash: blob),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
@@ -348,7 +333,7 @@ class FileBlockView extends StatelessWidget {
       );
 
   void _toast(BuildContext context, String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context).showToast(SnackBar(content: Text(msg)));
 
   Future<void> _saveCopy(BuildContext context) async {
     final hash = block.content['blob'] as String?;
@@ -379,4 +364,66 @@ class FileBlockView extends StatelessWidget {
       : b < 1024 * 1024
           ? '${(b / 1024).toStringAsFixed(1)} KB'
           : '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
+}
+
+/// The first page of a stored PDF, rendered once per card.
+///
+/// The render is started in `initState` and held, not started from `build`:
+/// a `FutureBuilder` handed a fresh future every rebuild restarted the render
+/// on each one, and on a large PDF those overlapping renders raced each other
+/// for the same document.
+class _PdfThumbnail extends StatefulWidget {
+  const _PdfThumbnail({required this.app, required this.hash});
+  final AppState app;
+  final String hash;
+
+  @override
+  State<_PdfThumbnail> createState() => _PdfThumbnailState();
+}
+
+class _PdfThumbnailState extends State<_PdfThumbnail> {
+  late Future<Uint8List?> _image;
+  int _seenRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _seenRevision = widget.app.blobRevision;
+    _image = _render();
+  }
+
+  @override
+  void didUpdateWidget(_PdfThumbnail old) {
+    super.didUpdateWidget(old);
+    // Same card, but the bytes may have arrived since the last look, or the
+    // card may now name another file.
+    if (old.hash != widget.hash ||
+        widget.app.blobRevision != _seenRevision) {
+      _seenRevision = widget.app.blobRevision;
+      _image = _render();
+    }
+  }
+
+  Future<Uint8List?> _render() =>
+      PdfPages.pageImage(widget.app, widget.hash, 0)
+          .catchError((Object _) => null);
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
+        future: _image,
+        builder: (context, snap) => snap.data == null
+            ? Container(
+                height: 120,
+                color: OnoteColors.paper100,
+                child: const Center(
+                  child: Icon(Icons.picture_as_pdf_outlined,
+                      size: 32, color: OnoteColors.graphite400),
+                ),
+              )
+            : Image.memory(snap.data!,
+                height: 160,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                gaplessPlayback: true),
+      );
 }

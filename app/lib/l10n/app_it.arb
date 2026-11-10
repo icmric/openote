@@ -174,7 +174,7 @@
   "navDeleteForeverBody": "«{title}» e tutte le sue pagine saranno rimosse per sempre. Non si può annullare.{caveat}",
   "navDeleteForeverTitle": "Eliminare per sempre?",
   "navDeletePermanently": "Elimina per sempre",
-  "navDeletedGroup": "Gruppo “{title}” eliminato",
+  "navDeletedGroup": "Gruppo “{title}” spostato nel cestino",
   "@navDeletedGroup": {
     "placeholders": {
       "title": {
@@ -182,7 +182,7 @@
       }
     }
   },
-  "navDeletedPage": "Pagina “{title}” eliminata",
+  "navDeletedPage": "Pagina “{title}” spostata nel cestino",
   "@navDeletedPage": {
     "placeholders": {
       "title": {
@@ -190,7 +190,7 @@
       }
     }
   },
-  "navDeletedSection": "Sezione “{title}” eliminata",
+  "navDeletedSection": "Sezione “{title}” spostata nel cestino",
   "@navDeletedSection": {
     "placeholders": {
       "title": {

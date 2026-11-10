@@ -26,6 +26,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../store/repository.dart';
+import 'toast.dart';
 
 /// The extension for [mime], defaulting to `png`.
 ///
@@ -68,7 +69,7 @@ Future<void> savePictureBytes(
   required String notHereYet,
 }) async {
   void say(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
+      .showToast(SnackBar(content: Text(msg)));
 
   if (bytes == null) {
     say(notHereYet);

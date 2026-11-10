@@ -14,6 +14,7 @@ import 'color_picker.dart';
 import 'insert_catalog.dart';
 import 'pdf_viewer_dialog.dart';
 import 'save_picture.dart';
+import 'toast.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
@@ -352,7 +353,7 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // looking at — and because undo only covers this one (see
       // [AppState.setPdfLocked]).
       if (context.mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        ScaffoldMessenger.maybeOf(context)?.showToast(SnackBar(
             content: Text(want
                 ? 'Locked $n ${n == 1 ? 'slide' : 'slides'} in place'
                 : 'Unlocked $n ${n == 1 ? 'slide' : 'slides'}')));

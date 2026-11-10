@@ -6,6 +6,7 @@ import 'package:pdfrx/pdfrx.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 /// The popup PDF viewer: the whole document behind a card or a slide, with
 /// REAL text — select it, copy it — because the pages in here are drawn by
@@ -24,7 +25,7 @@ Future<void> showPdfViewerDialog(
 }) {
   final bytes = app.blob(hash);
   if (bytes == null) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+    ScaffoldMessenger.of(context).showToast(const SnackBar(
         content: Text("The PDF isn't on this computer yet — still syncing?")));
     return Future.value();
   }

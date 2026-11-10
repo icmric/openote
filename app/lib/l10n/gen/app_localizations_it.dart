@@ -674,17 +674,17 @@ class LIt extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return 'Gruppo “$title” eliminato';
+    return 'Gruppo “$title” spostato nel cestino';
   }
 
   @override
   String navDeletedPage(String title) {
-    return 'Pagina “$title” eliminata';
+    return 'Pagina “$title” spostata nel cestino';
   }
 
   @override
   String navDeletedSection(String title) {
-    return 'Sezione “$title” eliminata';
+    return 'Sezione “$title” spostata nel cestino';
   }
 
   @override

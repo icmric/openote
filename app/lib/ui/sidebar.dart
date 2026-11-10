@@ -18,6 +18,7 @@ import 'sync_dot.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -2094,7 +2095,7 @@ class _NavPaneKeysState extends State<_NavPaneKeys> {
     final page = app.node(app.pageId);
     if (page == null) return KeyEventResult.ignored;
     if (app.protectionFor(page.id) != null || app.isLocked(page.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showToast(SnackBar(
           content: Text(L.of(context).navLockedCannotDelete(page.title))));
       return KeyEventResult.handled;
     }
@@ -2154,7 +2155,7 @@ KeyEventResult _nodeDeleteKey(BuildContext context, AppState app, TreeNode node,
   // [AppState.isLocked] catches a page sitting inside a section that is still
   // locked.
   if (app.protectionFor(node.id) != null || app.isLocked(node.id)) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text(L.of(context).navLockedCannotDelete(node.title))));
     return KeyEventResult.handled;
   }
@@ -2179,7 +2180,7 @@ void showDeletedSnackBar(
     NodeKind.sectionGroup => l.navDeletedGroup(title),
   };
   messenger.hideCurrentSnackBar();
-  messenger.showSnackBar(SnackBar(
+  messenger.showToast(SnackBar(
     content: Text(text),
     action: SnackBarAction(
         label: l.navUndo, onPressed: () => app.undoNodeDelete(node.id)),
@@ -2368,14 +2369,14 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (set == null) return;
       app.protectNode(node.id, set.passcode, set.policy);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(context).showToast(SnackBar(
             content: Text(L.of(context).navLockedNotEncrypted(node.title))));
       }
     case 'unprotect':
       final ok = await askToUnlock(
           context, node.title, (pw) => app.unprotectNode(node.id, pw));
       if (ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showToast(
             SnackBar(content: Text(L.of(context).navPasscodeRemoved(node.title))));
       }
     case 'up':
@@ -2412,13 +2413,13 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (cameFrom != null) await app.selectPage(cameFrom);
       if (saved != null && context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l.navSavedTo(saved))));
+            .showToast(SnackBar(content: Text(l.navSavedTo(saved))));
       }
     case 'sectionpdf':
       final messenger = ScaffoldMessenger.of(context);
       final saved = await exportSectionPdfVector(app, node.id);
       if (saved != null) {
-        messenger.showSnackBar(SnackBar(content: Text(l.navSavedTo(saved))));
+        messenger.showToast(SnackBar(content: Text(l.navSavedTo(saved))));
       }
     case 'copylink':
       // The wiki-link form the editor already resolves. Copying it means
@@ -2426,7 +2427,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       await Clipboard.setData(
           ClipboardData(text: '[[${node.title}|${node.id}]]'));
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(context).showToast(SnackBar(
             content: Text(L.of(context).navLinkCopied)));
       }
     case 'togroup':

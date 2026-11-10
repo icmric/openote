@@ -286,12 +286,25 @@ jobs:
           }
           Move-Item packaging/windows/openote-*-setup.exe . -Force
 
+      # The installer's SHA-256, published beside it. The in-app updater
+      # downloads the installer and runs it, and refuses to unless the bytes
+      # match this file (app/lib/update/app_update.dart). Same `sha256sum`
+      # layout, so a person can check it by hand too.
+      - name: Checksum the installer
+        shell: pwsh
+        run: |
+          Get-ChildItem openote-*-setup.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File -FilePath "$($_.Name).sha256" -Encoding ascii
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
           path: |
             openote-*.zip
             openote-*-setup.exe
+            openote-*-setup.exe.sha256
           if-no-files-found: error
       # `openote-*.zip` above already picks up the video-player archive; it is
       # named so that it can never end with `-setup.exe`, which is the exact

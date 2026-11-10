@@ -4,6 +4,29 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+
+- **A large PDF added as a thumbnail opens every time.** Two renders of the
+  same file could race for it while it was still opening, and a failure was
+  remembered until restart. The thumbnail now renders once per card and a
+  failed open is retried.
+- **Notices at the foot of the window go away by themselves**, within five
+  seconds. Ones carrying a button (Undo) stayed until swiped away.
+- **Deleting a page, section or group says it was moved to the bin**, in all
+  seven languages, instead of "deleted".
+- **Pasting a copied block pastes that block**, not whatever was on the
+  clipboard before. Copying now also puts the blocks on the system clipboard.
+- **Pasted blocks land where the pointer is**, with the move bar under it, and
+  keep their positions relative to each other. With no pointer over the page
+  they go at the left margin under the lowest box. Repeated pastes no longer
+  stack.
+
+### Added
+
+- **Copy or cut blocks, paste into Word or Google Docs.** Text, code, tables
+  and pictures go on the clipboard as formatted HTML, and as Markdown for
+  anything that reads that. Handwriting, graphs and boards have no text form.
+
 ## [1.0.2] — 2026-11-01
 
 ### Changed — updating on Linux and macOS

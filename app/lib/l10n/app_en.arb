@@ -895,7 +895,7 @@
   "@navDeletePermanently": {
     "description": "Tooltip on the button that removes something for good."
   },
-  "navDeletedGroup": "Deleted group “{title}”",
+  "navDeletedGroup": "Moved group “{title}” to the bin",
   "@navDeletedGroup": {
     "description": "Snackbar after deleting a section group, with an Undo button beside it.",
     "placeholders": {
@@ -904,16 +904,16 @@
       }
     }
   },
-  "navDeletedPage": "Deleted page “{title}”",
+  "navDeletedPage": "Moved page “{title}” to the bin",
   "@navDeletedPage": {
-    "description": "Snackbar after deleting a page. Kept short because it carries an Undo button beside it.",
+    "description": "Snackbar after moving a page to the recycle bin. Kept short because it carries an Undo button beside it.",
     "placeholders": {
       "title": {
         "type": "String"
       }
     }
   },
-  "navDeletedSection": "Deleted section “{title}”",
+  "navDeletedSection": "Moved section “{title}” to the bin",
   "@navDeletedSection": {
     "description": "Snackbar after deleting a section, with an Undo button beside it.",
     "placeholders": {

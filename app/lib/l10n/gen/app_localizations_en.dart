@@ -673,17 +673,17 @@ class LEn extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return 'Deleted group “$title”';
+    return 'Moved group “$title” to the bin';
   }
 
   @override
   String navDeletedPage(String title) {
-    return 'Deleted page “$title”';
+    return 'Moved page “$title” to the bin';
   }
 
   @override
   String navDeletedSection(String title) {
-    return 'Deleted section “$title”';
+    return 'Moved section “$title” to the bin';
   }
 
   @override

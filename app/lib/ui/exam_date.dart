@@ -27,6 +27,7 @@ import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 /// How far out a new date lands when there isn't one yet. Two weeks is the
 /// horizon at which revision starts feeling real — far enough that a plan has
@@ -75,7 +76,7 @@ void clearExamDate(BuildContext context, AppState app, String sectionId) {
   final had = app.study.examDate(sectionId);
   app.study.setExamDate(sectionId, null);
   if (had == null || !context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+  ScaffoldMessenger.of(context).showToast(SnackBar(
       content: Text('Exam date removed '
           '(${formatExamDate(had, DateTime.now())}). Your cards are unchanged.')));
 }

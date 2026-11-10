@@ -174,7 +174,7 @@
   "navDeleteForeverBody": "«{title}» y todas sus páginas se borrarán para siempre. Esto no se puede deshacer.{caveat}",
   "navDeleteForeverTitle": "¿Borrar definitivamente?",
   "navDeletePermanently": "Borrar definitivamente",
-  "navDeletedGroup": "Grupo “{title}” borrado",
+  "navDeletedGroup": "Grupo “{title}” movido a la papelera",
   "@navDeletedGroup": {
     "placeholders": {
       "title": {
@@ -182,7 +182,7 @@
       }
     }
   },
-  "navDeletedPage": "Página “{title}” borrada",
+  "navDeletedPage": "Página “{title}” movida a la papelera",
   "@navDeletedPage": {
     "placeholders": {
       "title": {
@@ -190,7 +190,7 @@
       }
     }
   },
-  "navDeletedSection": "Sección “{title}” borrada",
+  "navDeletedSection": "Sección “{title}” movida a la papelera",
   "@navDeletedSection": {
     "placeholders": {
       "title": {

@@ -673,17 +673,17 @@ class LFr extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return 'Groupe « $title » supprimé';
+    return 'Groupe « $title » déplacé dans la corbeille';
   }
 
   @override
   String navDeletedPage(String title) {
-    return 'Page « $title » supprimée';
+    return 'Page « $title » déplacée dans la corbeille';
   }
 
   @override
   String navDeletedSection(String title) {
-    return 'Section « $title » supprimée';
+    return 'Section « $title » déplacée dans la corbeille';
   }
 
   @override

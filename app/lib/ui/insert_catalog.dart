@@ -57,6 +57,7 @@ import 'insert_portal_dialog.dart';
 import 'link_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 /// Put one thing on the page. [at] is the top-left the block should take.
 typedef InsertRun = Future<void> Function(
@@ -479,7 +480,7 @@ final List<InsertGroup> kInsertGroups = [
 void _say(BuildContext context, String message) {
   if (!context.mounted) return;
   ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(message)));
+      .showToast(SnackBar(content: Text(message)));
 }
 
 Future<XFile?> _pick(BuildContext context,
@@ -780,7 +781,7 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     if (result == null) return; // cancelled at the file picker
     if (!context.mounted) return;
     if (result.pages == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showToast(SnackBar(
           content: Text(L.of(context).insertPdfUnreadable)));
       return;
     }
@@ -790,7 +791,7 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
       await app.selectPage(result.firstPageId!);
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
       duration: const Duration(seconds: 6),
       content: Text(L.of(context).insertPdfImported(
           result.pages,
@@ -804,7 +805,7 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(
+          .showToast(SnackBar(
               content: Text(L.of(context).insertPdfFailed('$e'))));
     }
   } finally {

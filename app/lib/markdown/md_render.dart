@@ -15,6 +15,7 @@ import 'md_table.dart';
 import '../editor/flashcard_view.dart';
 import '../study/flashcards.dart' show inlineCardRe;
 import '../editor/live_markdown_controller.dart' show kEditorCaretMargin;
+import '../ui/toast.dart';
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -1094,7 +1095,7 @@ class _ExternalLink extends StatelessWidget {
           onTap: () async {
             final ok = await PlatformOpen.url(url);
             if (!ok && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              ScaffoldMessenger.of(context).showToast(
                   SnackBar(content: Text("Couldn't open $url")));
             }
           },

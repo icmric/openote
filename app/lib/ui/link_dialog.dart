@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import '../core/platform_open.dart';
 import '../editor/live_markdown_controller.dart';
 import '../theme/tokens.dart';
+import 'toast.dart';
 
 /// What the dialog came back with.
 class LinkChoice {
@@ -286,7 +287,7 @@ Future<bool> runLinkFlow(
   final site = linkSiteAt(ctl.text, ctl.selection);
   if (!site.ok) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(linkRefusal(site.blocked!))));
+        .showToast(SnackBar(content: Text(linkRefusal(site.blocked!))));
     return false;
   }
   final choice = await showLinkDialog(

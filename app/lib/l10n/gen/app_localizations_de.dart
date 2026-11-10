@@ -674,17 +674,17 @@ class LDe extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return 'Gruppe „$title“ gelöscht';
+    return 'Gruppe „$title“ in den Papierkorb verschoben';
   }
 
   @override
   String navDeletedPage(String title) {
-    return 'Seite „$title“ gelöscht';
+    return 'Seite „$title“ in den Papierkorb verschoben';
   }
 
   @override
   String navDeletedSection(String title) {
-    return 'Abschnitt „$title“ gelöscht';
+    return 'Abschnitt „$title“ in den Papierkorb verschoben';
   }
 
   @override

@@ -174,7 +174,7 @@
   "navDeleteForeverBody": "« {title} » et toutes ses pages seront supprimées pour de bon. C'est irréversible.{caveat}",
   "navDeleteForeverTitle": "Supprimer définitivement ?",
   "navDeletePermanently": "Supprimer définitivement",
-  "navDeletedGroup": "Groupe « {title} » supprimé",
+  "navDeletedGroup": "Groupe « {title} » déplacé dans la corbeille",
   "@navDeletedGroup": {
     "placeholders": {
       "title": {
@@ -182,7 +182,7 @@
       }
     }
   },
-  "navDeletedPage": "Page « {title} » supprimée",
+  "navDeletedPage": "Page « {title} » déplacée dans la corbeille",
   "@navDeletedPage": {
     "placeholders": {
       "title": {
@@ -190,7 +190,7 @@
       }
     }
   },
-  "navDeletedSection": "Section « {title} » supprimée",
+  "navDeletedSection": "Section « {title} » déplacée dans la corbeille",
   "@navDeletedSection": {
     "placeholders": {
       "title": {
