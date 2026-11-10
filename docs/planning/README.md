@@ -7,7 +7,8 @@ was reported, what was measured, which options were weighed, and what it cost.
 | | |
 |---|---|
 | [backlog.md](backlog.md) | What to do next, ranked — and what has been decided against. **Start here.** |
-| [v1.0.2.md](v1.0.2.md) | The release being worked on now |
+| [v1.0.3.md](v1.0.3.md) | The release being worked on now, and where new GitHub issues are placed |
+| [v1.0.2.md](v1.0.2.md) | Shipped 1 November; kept beside it for the reasoning |
 | [archive/](archive/) | Work that has shipped, kept for the reasoning |
 
 ## Open plans
