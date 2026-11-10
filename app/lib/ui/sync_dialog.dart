@@ -30,6 +30,7 @@ import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
   final nb = app.notebookId;
@@ -203,7 +204,7 @@ class _SyncDialogState extends State<_SyncDialog> {
       final moved = app.syncStatus(nb).folder;
       final caveat = moved == null ? null : cloudCaveat(moved.kind);
       if (caveat == null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(context).showToast(SnackBar(
           duration: const Duration(seconds: 7),
           content: Text('Notebook moved to $path — open Openote on your other '
               'device and add it from the same folder.'),
@@ -270,7 +271,7 @@ class _SyncDialogState extends State<_SyncDialog> {
               if (await PlatformOpen.folder(path)) return;
               if (!ctx.mounted) return;
               ScaffoldMessenger.of(ctx)
-                  .showSnackBar(SnackBar(content: Text("Couldn't open $path")));
+                  .showToast(SnackBar(content: Text("Couldn't open $path")));
             },
             child: const Text('Open folder'),
           ),
@@ -647,7 +648,7 @@ class _SyncDialogState extends State<_SyncDialog> {
       await app.moveContainerOutOfSyncFolder(nb);
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showToast(const SnackBar(
         duration: Duration(seconds: 6),
         content: Text('Done — the working file is back on this computer, and '
             'your notes are still syncing.'),
@@ -729,7 +730,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                 onPressed: () async {
                   if (await PlatformOpen.folder(path)) return;
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  ScaffoldMessenger.of(context).showToast(SnackBar(
                       content: Text("Couldn't open $path")));
                 },
                 icon: const Icon(Icons.folder_open, size: 16),
@@ -834,7 +835,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                       setState(() => _busy = false);
                       final bad = app.mirrorTroubleFor(nb);
                       final messenger = ScaffoldMessenger.maybeOf(context);
-                      messenger?.showSnackBar(SnackBar(
+                      messenger?.showToast(SnackBar(
                         content: Text(bad.isEmpty
                             ? 'Copied to ${targets.length} '
                                 '${targets.length == 1 ? 'place' : 'places'}.'
@@ -1515,7 +1516,7 @@ class _StorageSectionState extends State<_StorageSection> {
           if (await PlatformOpen.folder(dir)) return;
           if (!context.mounted) return;
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text("Couldn't open $dir")));
+              .showToast(SnackBar(content: Text("Couldn't open $dir")));
         },
       ),
     ]);
@@ -1604,7 +1605,7 @@ class _StorageSectionState extends State<_StorageSection> {
                               app.findUnusedVideos(widget.notebookId);
                           _storage = app.storageFor(widget.notebookId);
                         });
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(context).showToast(
                             SnackBar(content: Text('Freed ${_bytes(freed)}')));
                       },
                 icon: const Icon(Icons.delete_outline, size: 16),
@@ -1682,7 +1683,7 @@ class _StorageSectionState extends State<_StorageSection> {
                             _orphans = app.findOrphanFiles();
                             _storage = app.storageFor(widget.notebookId);
                           });
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          ScaffoldMessenger.of(context).showToast(SnackBar(
                               content:
                                   Text('Reclaimed ${_bytes(freed)}')));
                         },
@@ -1841,7 +1842,7 @@ class _GitSectionState extends State<_GitSection> {
       if (File(private).existsSync()) {
         path = private;
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        ScaffoldMessenger.of(context).showToast(const SnackBar(
             content: Text('That is the public half of a key. Choose the file '
                 'with the same name but no “.pub” on the end.')));
         return;
@@ -2157,7 +2158,7 @@ class _GitHubPublishState extends State<_GitHubPublish> {
                 final opened = await PlatformOpen.url(GitHubApi.tokenPage);
                 if (!mounted) return;
                 if (!opened) {
-                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+                  ScaffoldMessenger.maybeOf(context)?.showToast(SnackBar(
                     content: Text(
                         "Openote couldn't open your browser. Go to "
                         '${GitHubApi.tokenPage} and make a token there.'),

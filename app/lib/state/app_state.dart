@@ -25,6 +25,7 @@ import '../core/open_target.dart'
     show isOpenoteWorkingCopy, notebookFolderNamedBy;
 import '../editor/live_markdown_controller.dart' show LiveMarkdownController;
 import '../editor/onote_text_editor.dart';
+import '../export/block_clipboard.dart' show writeBlocksToSystemClipboard;
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/block_metrics.dart';
@@ -7280,16 +7281,32 @@ class AppState extends ChangeNotifier
 
   void copySelectedBlocks() {
     if (selectedIds.isEmpty) return;
-    _blockClipboard = jsonEncode([
-      for (final b in blocks.where((b) => selectedIds.contains(b.id)))
-        b.toJson()
-    ]);
+    final copied = [for (final b in blocks) if (selectedIds.contains(b.id)) b];
+    _blockClipboard = jsonEncode([for (final b in copied) b.toJson()]);
     _blockClipboardAt = DateTime.now().millisecondsSinceEpoch;
     // Kept as a Future rather than its value: Ctrl+X → Ctrl+V can land
-    // before a clipboard read completes, and the paste decision awaits the
+    // before the clipboard write completes, and the paste decision awaits the
     // snapshot instead of racing it.
-    _systemTextWhenCopied = readSystemClipboardText();
+    //
+    // **What the system clipboard holds right after this copy.** The blocks
+    // are written there as Markdown and HTML, so the text IS the snapshot and
+    // nothing has to be read back. Only when nothing could be written (no text
+    // form, no clipboard) does the snapshot fall back to reading whatever is
+    // there, which is the case the older-clipboard check was built for.
+    final snapshot = () async {
+      final written = await writeBlocksToSystemClipboard(this, copied);
+      return written ?? await readSystemClipboardText();
+    }();
+    _systemTextWhenCopied = snapshot;
     notifyListeners();
+  }
+
+  /// Completes once a copy's write to the system clipboard has finished, so a
+  /// paste that follows straight after reads the copy and not what was there.
+  Future<void> settleBlockClipboard() async {
+    try {
+      await _systemTextWhenCopied;
+    } catch (_) {}
   }
 
   /// Should a canvas Ctrl+V paste OUR copied blocks instead of the plain
@@ -7304,7 +7321,15 @@ class AppState extends ChangeNotifier
     if (_blockClipboard == null || _blockClipboardAt == 0) return false;
     final snapshot = _systemTextWhenCopied;
     if (snapshot == null) return false;
-    return systemTextNow == await snapshot;
+    return _sameClipboardText(systemTextNow, await snapshot);
+  }
+
+  /// Line endings and trailing space differ between what was written and what
+  /// the platform hands back; the words do not.
+  static bool _sameClipboardText(String? a, String? b) {
+    if (a == null || b == null) return a == b;
+    String n(String s) => s.replaceAll('\r\n', '\n').trim();
+    return n(a) == n(b);
   }
 
   void cutSelectedBlocks() {
@@ -7442,6 +7467,37 @@ class AppState extends ChangeNotifier
     return true;
   }
 
+  /// How far above the pointer a paste puts the top of its first box, so the
+  /// 16px move bar is what the pointer is over.
+  static const double pasteBarOffset = 8;
+
+  /// Where a paste with no usable pointer goes: the spot the first box takes on
+  /// an empty page, otherwise the left margin a small gap under the lowest box
+  /// so nothing overlaps.
+  Offset _pasteDefaultOrigin() {
+    if (blocks.isEmpty) return const Offset(pageLeftMargin, contentTop);
+    var bottom = contentTop;
+    for (final b in blocks) {
+      final h = b.h ?? renderSizes[b.id]?.height ?? estimatedHeight(b);
+      if (b.y + h > bottom) bottom = b.y + h;
+    }
+    return Offset(pageLeftMargin, bottom + gridSize * 2);
+  }
+
+  /// The pointer in page coordinates, or null when it is outside the canvas or
+  /// not known — the caller then uses the default placement.
+  Offset? pointerOnPage() {
+    final p = canvas.pointer;
+    final v = canvas.viewport;
+    if (p == null || v.isEmpty) return null;
+    if (p.dx < 0 || p.dy < 0 || p.dx > v.width || p.dy > v.height) return null;
+    final page = canvas.screenToPage(p);
+    if (page.dx < 0 || page.dy < 0 || page.dx > pageProps.pageWidth) {
+      return null;
+    }
+    return page;
+  }
+
   void pasteBlocks({Offset? at}) {
     final raw = _blockClipboard;
     if (raw == null) return;
@@ -7456,6 +7512,27 @@ class AppState extends ChangeNotifier
     // `unknownFields`, so pasting a block a NEWER build had written
     // destroyed its type on the spot (the exact loss Block.rawType exists
     // to prevent). The format is the copy, the way it is the API.
+    // **Where the paste lands.** At [at] when there is one — the pointer — with
+    // the group's top-left there, so the move bar sits under the pointer and
+    // the paste can be dragged on from where the hand already is. Without one,
+    // under the lowest box at the left margin (or where the first box goes on
+    // an empty page). Either way the boxes keep their positions RELATIVE to
+    // each other: they used to be pinned to one point, which stacked a
+    // multi-box paste into a single pile.
+    final target = at == null
+        ? _pasteDefaultOrigin()
+        : Offset(at.dx, at.dy - pasteBarOffset);
+    var minX = double.infinity, minY = double.infinity;
+    for (final src in list) {
+      if (src.x < minX) minX = src.x;
+      if (src.y < minY) minY = src.y;
+    }
+    // Only a pointer position is snapped: the default origin is the left
+    // margin, and snapping it would pull it off the margin the rest of the
+    // page is aligned to.
+    final snapped = at != null && effectiveSnap;
+    final shift = Offset((snapped ? snap(target.dx) : target.dx) - minX,
+        (snapped ? snap(target.dy) : target.dy) - minY);
     final newIds = <String>[];
     final oldToNew = <String, String>{};
     // One map for the whole paste, so blocks that shared a group still share
@@ -7474,8 +7551,8 @@ class AppState extends ChangeNotifier
       // of a group and the paste is a group of just that part.
       final g = fresh.groupId;
       if (g != null) fresh.groupId = oldToNewGroup.putIfAbsent(g, newId);
-      fresh.x = at?.dx ?? src.x + 28;
-      fresh.y = at?.dy ?? src.y + 28;
+      fresh.x = src.x + shift.dx;
+      fresh.y = src.y + shift.dy;
       if (fresh.type == BlockType.ink) {
         final dx = fresh.x - src.x, dy = fresh.y - src.y;
         for (final sj in (fresh.content['strokes'] as List)) {

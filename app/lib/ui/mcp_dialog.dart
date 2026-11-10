@@ -7,6 +7,7 @@ import '../api/mcp_connect.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 /// AI access (spec 14 §8). The audience is a student who has never heard
 /// the word MCP: the visible path is a switch and ONE button — "Connect
@@ -209,7 +210,7 @@ class _McpDialogState extends State<_McpDialog> {
 
   void _copy(BuildContext context, String text) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+    ScaffoldMessenger.of(context).showToast(const SnackBar(
         content: Text('Copied. The key inside is a password — paste it only '
             'into your own tools.')));
   }

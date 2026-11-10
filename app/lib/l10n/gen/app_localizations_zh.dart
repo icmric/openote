@@ -651,17 +651,17 @@ class LZh extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return '已删除分区组“$title”';
+    return '已将分区组“$title”移至回收站';
   }
 
   @override
   String navDeletedPage(String title) {
-    return '已删除页面“$title”';
+    return '已将页面“$title”移至回收站';
   }
 
   @override
   String navDeletedSection(String title) {
-    return '已删除分区“$title”';
+    return '已将分区“$title”移至回收站';
   }
 
   @override

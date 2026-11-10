@@ -673,17 +673,17 @@ class LEs extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return 'Grupo “$title” borrado';
+    return 'Grupo “$title” movido a la papelera';
   }
 
   @override
   String navDeletedPage(String title) {
-    return 'Página “$title” borrada';
+    return 'Página “$title” movida a la papelera';
   }
 
   @override
   String navDeletedSection(String title) {
-    return 'Sección “$title” borrada';
+    return 'Sección “$title” movida a la papelera';
   }
 
   @override

@@ -16,6 +16,7 @@ import 'sync_dot.dart';
 import '../theme/tokens.dart';
 import 'onenote_cloud_dialog.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
 ///
@@ -113,7 +114,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   void _toast(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
+      .showToast(SnackBar(content: Text(msg)));
 
   @override
   Widget build(BuildContext context) {
@@ -714,7 +715,7 @@ Future<void> importMarkdownWithFeedback(
 
 /// Show a snackbar through a messenger that cannot go stale.
 void _say(ScaffoldMessengerState m, String msg, {int seconds = 4}) =>
-    m.showSnackBar(
+    m.showToast(
         SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
 
 /// One sentence when the parser dropped undecodable ink (~0.02 % of strokes on
@@ -770,7 +771,7 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
       open = false;
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
       duration: const Duration(seconds: 5),
       content: Text(r.pages == 0
           ? l.nbNothingToRepair
@@ -783,7 +784,7 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l.nbRepairFailed('$e'))));
+          .showToast(SnackBar(content: Text(l.nbRepairFailed('$e'))));
     }
   } finally {
     progress.dispose();

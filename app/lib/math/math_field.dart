@@ -26,6 +26,7 @@ import 'math_hit.dart';
 import 'math_inventory.dart';
 import 'math_tree.dart';
 import 'math_view.dart';
+import '../ui/toast.dart';
 
 /// Which way the caret left the equation, so the caller can put it back into
 /// the sentence on the correct side.
@@ -216,7 +217,7 @@ class MathFieldState extends State<MathField> {
       // the object row offers "Write the LaTeX by hand" the whole time an
       // equation is open. This used to send people to the Maths TAB, which
       // has not existed since the object row replaced it.
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+      ScaffoldMessenger.maybeOf(context)?.showToast(const SnackBar(
         content: Text("That maths couldn't be read, so nothing was changed. "
             "It's still on your clipboard."),
         duration: Duration(seconds: 4),

@@ -671,17 +671,17 @@ class LPt extends L {
 
   @override
   String navDeletedGroup(String title) {
-    return 'Grupo “$title” apagado';
+    return 'Grupo “$title” movido para a lixeira';
   }
 
   @override
   String navDeletedPage(String title) {
-    return 'Página “$title” apagada';
+    return 'Página “$title” movida para a lixeira';
   }
 
   @override
   String navDeletedSection(String title) {
-    return 'Seção “$title” apagada';
+    return 'Seção “$title” movida para a lixeira';
   }
 
   @override

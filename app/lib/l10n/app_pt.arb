@@ -174,7 +174,7 @@
   "navDeleteForeverBody": "“{title}” e todas as suas páginas serão removidas para sempre. Não dá para desfazer.{caveat}",
   "navDeleteForeverTitle": "Apagar de vez?",
   "navDeletePermanently": "Apagar de vez",
-  "navDeletedGroup": "Grupo “{title}” apagado",
+  "navDeletedGroup": "Grupo “{title}” movido para a lixeira",
   "@navDeletedGroup": {
     "placeholders": {
       "title": {
@@ -182,7 +182,7 @@
       }
     }
   },
-  "navDeletedPage": "Página “{title}” apagada",
+  "navDeletedPage": "Página “{title}” movida para a lixeira",
   "@navDeletedPage": {
     "placeholders": {
       "title": {
@@ -190,7 +190,7 @@
       }
     }
   },
-  "navDeletedSection": "Seção “{title}” apagada",
+  "navDeletedSection": "Seção “{title}” movida para a lixeira",
   "@navDeletedSection": {
     "placeholders": {
       "title": {

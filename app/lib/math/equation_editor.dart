@@ -34,6 +34,7 @@ import 'math_field.dart';
 import 'math_inventory.dart';
 import 'math_parse.dart';
 import 'math_view.dart';
+import '../ui/toast.dart';
 
 /// Where the equation lives, which decides display vs text style, what Enter
 /// means (matrix row vs finish), and how the LaTeX escape hatch is shown.
@@ -216,7 +217,7 @@ class EquationEditorState extends State<EquationEditor> {
       final check = parseLatex(latex);
       if (!check.supported || check.root == null) {
         final bit = (check.unknown ?? '').trim();
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        ScaffoldMessenger.maybeOf(context)?.showToast(SnackBar(
           content: Text(bit.isEmpty
               ? 'The buttons cannot draw this one, so it stays as typed text.'
               : "The buttons cannot draw '$bit' yet, so this stays as typed "

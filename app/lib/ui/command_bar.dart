@@ -35,6 +35,7 @@ import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 import 'pen_size_button.dart';
 import '../canvas/ink_shapes.dart';
+import 'toast.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -668,14 +669,14 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     }
     progress.dispose();
     if (failed != null) {
-      messenger?.showSnackBar(SnackBar(
+      messenger?.showToast(SnackBar(
         content: Text(L.of(context).barSaveFailed('$failed')),
         duration: const Duration(seconds: 6),
       ));
       return;
     }
     if (path != null && context.mounted) {
-      messenger?.showSnackBar(
+      messenger?.showToast(
           SnackBar(content: Text(L.of(context).barExportedTo(path))));
     }
   }
@@ -744,11 +745,11 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     try {
       final path = await fn(app);
       if (path != null && context.mounted) {
-        messenger?.showSnackBar(
+        messenger?.showToast(
             SnackBar(content: Text(L.of(context).barExportedTo(path))));
       }
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(
+      messenger?.showToast(SnackBar(
         content: Text(L.of(context).barSaveFailed('$e')),
         duration: const Duration(seconds: 6),
       ));
@@ -1639,7 +1640,7 @@ class _MakeCardButton extends StatelessWidget {
 
   void _say(BuildContext context, String? msg) {
     if (msg == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context).showToast(
         SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
   }
 

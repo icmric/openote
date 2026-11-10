@@ -30,6 +30,7 @@ import 'exam_date.dart';
 import 'side_panel.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 /// Which pages a session draws from. Pages ARE the deck structure — a lecture
 /// page is a deck without anyone having to build one — so this is a view over
@@ -172,7 +173,7 @@ class _StudyPanelState extends State<StudyPanel> {
     );
     await file.saveTo(path.path);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text('Exported ${cards.length} cards — '
             'import into Anki with File ▸ Import')));
   }
@@ -199,7 +200,7 @@ class _StudyPanelState extends State<StudyPanel> {
     if (!mounted) return;
     _end();
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Reset $n cards')));
+        .showToast(SnackBar(content: Text('Reset $n cards')));
   }
 
   @override

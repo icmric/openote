@@ -16,6 +16,7 @@ import '../theme/tokens.dart';
 import '../ui/onote_dialog.dart';
 import '../ui/media_link_dialog.dart';
 import 'dart:async';
+import '../ui/toast.dart';
 
 /// A video or recording kept in the notebook and played in the page.
 ///
@@ -274,7 +275,7 @@ class _VideoBlockViewState extends State<VideoBlockView> {
   Future<void> _openExternally(BuildContext context, File file) async {
     final ok = await PlatformOpen.file(file.path);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showToast(const SnackBar(
           content: Text('No app on this computer opens that kind of file.')));
     }
   }
@@ -317,7 +318,7 @@ class _VideoBlockViewState extends State<VideoBlockView> {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved to ${loc.path}')));
+            .showToast(SnackBar(content: Text('Saved to ${loc.path}')));
       }
     } catch (e) {
       if (dialogOpen && context.mounted) {
@@ -329,7 +330,7 @@ class _VideoBlockViewState extends State<VideoBlockView> {
         if (out.existsSync()) out.deleteSync();
       } catch (_) {}
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showToast(
             SnackBar(content: Text("That copy didn't finish: $e")));
       }
     } finally {

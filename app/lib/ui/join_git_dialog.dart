@@ -15,6 +15,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'toast.dart';
 
 Future<void> showJoinFromGitDialog(BuildContext context, AppState app,
     {ScaffoldMessengerState? messenger}) async {
@@ -24,7 +25,7 @@ Future<void> showJoinFromGitDialog(BuildContext context, AppState app,
     builder: (_) => _JoinDialog(app: app),
   );
   if (joined != null) {
-    m.showSnackBar(SnackBar(content: Text('Opened $joined.')));
+    m.showToast(SnackBar(content: Text('Opened $joined.')));
   }
 }
 

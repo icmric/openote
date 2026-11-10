@@ -27,6 +27,7 @@ import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
 import 'portal_view.dart';
+import '../ui/toast.dart';
 
 /// The page canvas (CANVAS-1 v0.3): an auto-growing page surface on a neutral
 /// backdrop. Select-mode input model (style guide §8):
@@ -2144,12 +2145,12 @@ class _PageCanvasState extends State<PageCanvas> {
         // told the student was not accepted.
         final messenger = ScaffoldMessenger.of(context);
         if (n > 0) {
-          messenger.showSnackBar(SnackBar(
+          messenger.showToast(SnackBar(
               content: Text('Added $n item${n == 1 ? '' : 's'}')));
         } else {
           final droppedFolder = details.files.any(
               (f) => Directory(f.path).existsSync());
-          messenger.showSnackBar(SnackBar(
+          messenger.showToast(SnackBar(
             content: Text(droppedFolder
                 ? "Folders can't be dropped in yet — only files."
                 : "That couldn't be added."),
@@ -2277,7 +2278,12 @@ class _PageCanvasState extends State<PageCanvas> {
         // The ring goes with the pointer that owns it. A `Listener` has no
         // exit event; the region that sets the cursor is the one that knows
         // when the pointer has left.
-        onExit: (_) => _noteEraser(null),
+        onEnter: (e) => controller.pointer = e.localPosition,
+        onHover: (e) => controller.pointer = e.localPosition,
+        onExit: (_) {
+          controller.pointer = null;
+          _noteEraser(null);
+        },
         cursor: switch (app.tool) {
           // The button held means erase, whatever tool is selected.
           _ when _penErasing => SystemMouseCursors.cell,

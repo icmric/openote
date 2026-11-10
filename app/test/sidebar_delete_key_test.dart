@@ -146,7 +146,7 @@ void main() {
       // the failure mode the snackbar exists for. It says what went and
       // offers to put it back — it used to spend its words sending you to
       // the recycle bin instead, which is a errand, not an answer.
-      expect(find.text('Deleted page “Chapter 3”'), findsOneWidget);
+      expect(find.text('Moved page “Chapter 3” to the bin'), findsOneWidget);
       expect(find.text('Undo'), findsOneWidget);
       await quiesce(tester);
     });
@@ -233,7 +233,7 @@ void main() {
       await tester.pumpAndSettle();
       await press(tester, LogicalKeyboardKey.delete);
       expect(app.node(term2.id), isNull);
-      expect(find.text('Deleted section “Term 2”'), findsOneWidget);
+      expect(find.text('Moved section “Term 2” to the bin'), findsOneWidget);
 
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
