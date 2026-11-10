@@ -28,6 +28,7 @@ starting the work.
 |---|---|
 | [onenote-over-graph.md](onenote-over-graph.md) | What Microsoft Graph actually sends, measured against a real notebook rather than read out of the documentation |
 | [onenote-share-link.md](onenote-share-link.md) | Importing a notebook from a share link ([#36](https://github.com/icmric/openote/issues/36)): what a link is, what was tried, what does not work, and which questions to answer next. **Open** |
+| [design-mockups.md](design-mockups.md) | The desktop UI recreated in Claude Design as a base for changes and for the Android layout: what is on the canvas, and what is approximate |
 
 ## House style
 
