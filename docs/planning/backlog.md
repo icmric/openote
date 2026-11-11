@@ -538,6 +538,32 @@ minutes. Not measured: GitHub's runners (slower or faster than this machine), an
 **Newer version.** Version 3.0.0 of `harper-core` was available when this was tested (2.13.0 was used).
 Check what changed before pinning, and pin the exact version so a rebuild cannot change what gets underlined.
 
+#### Built on the branch, 11 November (hand test owed)
+
+Decided to ship it **inside the app**, not as a download or a separate program: `rust/onote_text` is
+built and bundled by the same hooks as the core (Windows and Linux CMake, a macOS script chained from
+the core's, both release workflows and the Linux package check). Harper is pinned at 2.13.0, thesaurus off.
+
+| Piece | What it does | Where |
+|---|---|---|
+| **Spelling and grammar** | Red wavy line for spelling, blue for grammar; right-click shows the reason and the fixes. Dialect from the computer's region (en-AU is Australian) or *Settings → Writing → Spelling language*. Falls back to the old word list if the library is missing | `rust/onote_text`, `spell/writing_checker.dart`, `spell/writing_language.dart`, `editor/live_markdown_engine.dart` |
+| **Typo fixes** | `teh` → `the`, only when one word is a sure answer; one typed character; never in code, links, equations, names or after an abbreviation | `editor/auto_writing.dart` |
+| **Capitals** | First word of a sentence and a lone `i`; not after *e.g.*, *Dr.*, an initial, a number or an ellipsis | same |
+| **Take-back** | Backspace straight after a fix returns the word as typed and the fix is not made again | `_undoAutoFix` in the engine |
+| **Settings** | Spell check, Check grammar, Fix small typos, Capitalise sentences, each on by default and independent; *Spelling language* with *System default*; one line saying they are English-only for now | `ui/settings_dialog.dart`, all seven languages (translations are mine: want a native eye) |
+| **Other languages** | Everything above is gated on one value, `AppState.writingDialect`, which is null when the computer (or the choice) is not English: no underline, no fix, no capital. Tested on German, French, Spanish, Italian, Portuguese and Chinese computers. **A change from before:** those computers used to have the English list applied to their notes and now get no checking at all, until Hunspell spelling is added for them | `writing_language.dart` |
+
+**Checked.** 11 tests on the crate, 51 new Dart tests (including typing into the real editor one character
+at a time, and Backspace taking a fix back), the whole suite (4,243 passed), the analyzer, and
+`cargo deny` on the crate's licences. **Not checked:** a real `flutter build` of the CMake hook (a build
+would have rewritten the core's DLL, which is left alone while the app is in use), the macOS script
+(unverified on a Mac like the one it follows), the release and CI workflows (YAML parses, nothing ran),
+and the app on screen. The first build on any machine compiles Harper: **about 13 minutes**.
+
+**Still open.** Harper's data provenance (see [LICENSING.md](../../LICENSING.md)); the 3.0 upgrade;
+Hunspell spelling for the other six languages; whether an underline-free *Add to dictionary* for
+grammar is wanted; a per-section language for notes that mix two.
+
 ### 1.17 Two settings the rail was built to hold
 
 Named by the owner while redesigning Settings — *"In time we will include more
