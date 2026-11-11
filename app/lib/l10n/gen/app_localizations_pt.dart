@@ -1670,4 +1670,42 @@ class LPt extends L {
 
   @override
   String get updateDownload => 'Baixar';
+
+  @override
+  String get settingsGrammarCheck => 'Verificar a gramática';
+
+  @override
+  String get settingsAutoCorrect =>
+      'Corrigir pequenos erros de digitação ao escrever';
+
+  @override
+  String get settingsAutoCapitalize => 'Maiúscula no início das frases';
+
+  @override
+  String get settingsSpellLanguage => 'Idioma da ortografia';
+
+  @override
+  String get settingsSpellLanguageSystem => 'Padrão do sistema';
+
+  @override
+  String get settingsSpellLanguageOther => 'Outro idioma (não verificado)';
+
+  @override
+  String get settingsEnglishAU => 'Inglês (Austrália)';
+
+  @override
+  String get settingsEnglishGB => 'Inglês (Reino Unido)';
+
+  @override
+  String get settingsEnglishUS => 'Inglês (Estados Unidos)';
+
+  @override
+  String get settingsEnglishCA => 'Inglês (Canadá)';
+
+  @override
+  String get settingsEnglishIN => 'Inglês (Índia)';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      'Por enquanto, gramática, correção de erros de digitação e maiúsculas só funcionam em inglês. Em outros idiomas ficam desativadas.';
 }

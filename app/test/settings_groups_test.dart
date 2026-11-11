@@ -161,15 +161,37 @@ void main() {
     await t.tap(find.text('Writing and drawing'));
     await t.pumpAndSettle();
 
+    // The writing rows (spelling, grammar, typos, capitals, language) fill the
+    // top of this page now, so the hardware rows are reached by scrolling.
+    await t.scrollUntilVisible(find.text('Pen and touch'), 200,
+        scrollable: find
+            .ancestor(
+                of: find.text('Spell check'),
+                matching: find.byType(Scrollable))
+            .first);
     expect(find.text('Pen and touch'), findsOneWidget,
         reason: 'the two hardware rows are not about writing');
-    expect(find.text('Spell check'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Draw with your finger'), 200,
+        scrollable: find
+            .ancestor(
+                of: find.text('Pen and touch'),
+                matching: find.byType(Scrollable))
+            .first);
     expect(find.text('Draw with your finger'), findsOneWidget);
     // **One rule, both halves.** A line goes between two settings, and never
     // against a subheading — which is already a boundary, so a line there
-    // would be a line under a line. On this page that leaves exactly one: the
-    // two rows under the subheading.
-    expect(find.byType(Divider), findsOneWidget);
+    // would be a line under a line. There are many lines on this page now, so
+    // the test measures instead of counting: no line may touch the subheading
+    // (a line next to it would be less than a row away; the nearest allowed is
+    // a whole row, past the first setting under it or above the last over it).
+    final sub = t.getRect(find.text('Pen and touch'));
+    for (final d in t.widgetList<Divider>(find.byType(Divider)).indexed) {
+      final r = t.getRect(find.byType(Divider).at(d.$1));
+      final gap = r.center.dy < sub.center.dy
+          ? sub.top - r.bottom
+          : r.top - sub.bottom;
+      expect(gap, greaterThan(20), reason: 'a line against the subheading');
+    }
     expect(t.takeException(), isNull);
   });
 

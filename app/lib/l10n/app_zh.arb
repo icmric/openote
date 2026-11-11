@@ -467,5 +467,17 @@
   "updateInstallYourself": "你需要自己下载并安装。",
   "updateNotNow": "暂不更新",
   "updateNow": "立即更新",
-  "updateDownload": "前往下载"
+  "updateDownload": "前往下载",
+  "settingsGrammarCheck": "检查语法",
+  "settingsAutoCorrect": "输入时自动更正小的拼写错误",
+  "settingsAutoCapitalize": "句首自动大写",
+  "settingsSpellLanguage": "拼写检查语言",
+  "settingsSpellLanguageSystem": "系统默认",
+  "settingsSpellLanguageOther": "其他语言（不检查）",
+  "settingsEnglishAU": "英语（澳大利亚）",
+  "settingsEnglishGB": "英语（英国）",
+  "settingsEnglishUS": "英语（美国）",
+  "settingsEnglishCA": "英语（加拿大）",
+  "settingsEnglishIN": "英语（印度）",
+  "settingsWritingEnglishOnly": "语法、拼写自动更正和大小写目前只适用于英语。其他语言下这些功能保持关闭。"
 }

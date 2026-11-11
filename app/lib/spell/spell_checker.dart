@@ -228,6 +228,49 @@ class SpellChecker {
     return hits;
   }
 
+  /// [text] with everything that is not prose replaced by spaces, so the same
+  /// length and every offset survive. This is what the grammar checker is
+  /// given: it reads whole sentences, so it must never see code, links,
+  /// markers or equations as if they were words.
+  ///
+  /// Line breaks are kept as they are, so a blanked region that spans lines
+  /// does not glue two sentences together.
+  static String proseOnly(String text) {
+    final out = StringBuffer();
+    var i = 0;
+    void blank(int from, int to) {
+      for (var k = from; k < to; k++) {
+        final c = text.codeUnitAt(k);
+        out.writeCharCode(c == 0x0A || c == 0x0D ? c : 0x20);
+      }
+    }
+
+    while (i < text.length) {
+      var skipTo = _skipRegionEnd(text, i);
+      // `$x^2$`: an inline equation is not words. Same line only, and not the
+      // escaped `\$` that means a dollar sign.
+      if (skipTo == i &&
+          text.codeUnitAt(i) == 0x24 &&
+          (i == 0 || text.codeUnitAt(i - 1) != 0x5C)) {
+        var j = i + 1;
+        while (j < text.length &&
+            text.codeUnitAt(j) != 0x0A &&
+            !(text.codeUnitAt(j) == 0x24 && text.codeUnitAt(j - 1) != 0x5C)) {
+          j++;
+        }
+        if (j < text.length && text.codeUnitAt(j) == 0x24) skipTo = j + 1;
+      }
+      if (skipTo > i) {
+        blank(i, skipTo);
+        i = skipTo;
+      } else {
+        out.writeCharCode(text.codeUnitAt(i));
+        i++;
+      }
+    }
+    return out.toString();
+  }
+
   /// Word spans worth checking, skipping everything that isn't prose.
   ///
   /// The text is Markdown in our own dialect, so a naive tokenizer would flag

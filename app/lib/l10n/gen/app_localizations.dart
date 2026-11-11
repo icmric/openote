@@ -2788,6 +2788,78 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Download'**
   String get updateDownload;
+
+  /// Row label. A switch: underline grammar and wording in blue, as well as spelling in red.
+  ///
+  /// In en, this message translates to:
+  /// **'Check grammar'**
+  String get settingsGrammarCheck;
+
+  /// Row label. A switch: fix small, certain typos when a word is finished, for example teh becomes the.
+  ///
+  /// In en, this message translates to:
+  /// **'Fix small typos as I type'**
+  String get settingsAutoCorrect;
+
+  /// Row label. A switch: capitalise the first word of a sentence and a lone i.
+  ///
+  /// In en, this message translates to:
+  /// **'Capitalise sentences'**
+  String get settingsAutoCapitalize;
+
+  /// Row label. Which language Openote checks spelling in.
+  ///
+  /// In en, this message translates to:
+  /// **'Spelling language'**
+  String get settingsSpellLanguage;
+
+  /// Choice: follow the computer’s language and region. Same words as the theme and interface-language choices.
+  ///
+  /// In en, this message translates to:
+  /// **'System default'**
+  String get settingsSpellLanguageSystem;
+
+  /// Choice: the person writes in a language Openote cannot check yet, so nothing is checked or changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Other language (not checked)'**
+  String get settingsSpellLanguageOther;
+
+  /// Choice: Australian English.
+  ///
+  /// In en, this message translates to:
+  /// **'English (Australia)'**
+  String get settingsEnglishAU;
+
+  /// Choice: British English.
+  ///
+  /// In en, this message translates to:
+  /// **'English (United Kingdom)'**
+  String get settingsEnglishGB;
+
+  /// Choice: American English.
+  ///
+  /// In en, this message translates to:
+  /// **'English (United States)'**
+  String get settingsEnglishUS;
+
+  /// Choice: Canadian English.
+  ///
+  /// In en, this message translates to:
+  /// **'English (Canada)'**
+  String get settingsEnglishCA;
+
+  /// Choice: Indian English.
+  ///
+  /// In en, this message translates to:
+  /// **'English (India)'**
+  String get settingsEnglishIN;
+
+  /// Supporting line under the writing switches. Says plainly that grammar, typo fixes and capitals only work in English for now.
+  ///
+  /// In en, this message translates to:
+  /// **'Grammar, typo fixes and capital letters work in English for now. In any other language they stay off.'**
+  String get settingsWritingEnglishOnly;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

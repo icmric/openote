@@ -467,5 +467,17 @@
   "updateInstallYourself": "Dovrai scaricarla e installarla tu.",
   "updateNotNow": "Non ora",
   "updateNow": "Aggiorna ora",
-  "updateDownload": "Scarica"
+  "updateDownload": "Scarica",
+  "settingsGrammarCheck": "Controlla la grammatica",
+  "settingsAutoCorrect": "Correggi i piccoli errori di battitura mentre scrivo",
+  "settingsAutoCapitalize": "Maiuscola a inizio frase",
+  "settingsSpellLanguage": "Lingua del controllo ortografico",
+  "settingsSpellLanguageSystem": "Predefinito del sistema",
+  "settingsSpellLanguageOther": "Altra lingua (non controllata)",
+  "settingsEnglishAU": "Inglese (Australia)",
+  "settingsEnglishGB": "Inglese (Regno Unito)",
+  "settingsEnglishUS": "Inglese (Stati Uniti)",
+  "settingsEnglishCA": "Inglese (Canada)",
+  "settingsEnglishIN": "Inglese (India)",
+  "settingsWritingEnglishOnly": "Per ora grammatica, correzione dei refusi e maiuscole funzionano solo in inglese. Nelle altre lingue restano disattivate."
 }

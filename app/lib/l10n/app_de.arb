@@ -467,5 +467,17 @@
   "updateInstallYourself": "Du musst sie selbst herunterladen und installieren.",
   "updateNotNow": "Jetzt nicht",
   "updateNow": "Jetzt aktualisieren",
-  "updateDownload": "Herunterladen"
+  "updateDownload": "Herunterladen",
+  "settingsGrammarCheck": "Grammatik prüfen",
+  "settingsAutoCorrect": "Kleine Tippfehler automatisch korrigieren",
+  "settingsAutoCapitalize": "Satzanfänge großschreiben",
+  "settingsSpellLanguage": "Sprache der Rechtschreibung",
+  "settingsSpellLanguageSystem": "Systemstandard",
+  "settingsSpellLanguageOther": "Andere Sprache (nicht geprüft)",
+  "settingsEnglishAU": "Englisch (Australien)",
+  "settingsEnglishGB": "Englisch (Vereinigtes Königreich)",
+  "settingsEnglishUS": "Englisch (USA)",
+  "settingsEnglishCA": "Englisch (Kanada)",
+  "settingsEnglishIN": "Englisch (Indien)",
+  "settingsWritingEnglishOnly": "Grammatik, Tippfehlerkorrektur und Großschreibung funktionieren vorerst nur auf Englisch. In allen anderen Sprachen bleiben sie aus."
 }

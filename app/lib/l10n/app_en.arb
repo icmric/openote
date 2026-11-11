@@ -2253,5 +2253,53 @@
   "updateDownload": "Download",
   "@updateDownload": {
     "description": "Opens openote.org, which offers the right file for the visitor’s system. Carries an open-in-new icon."
+  },
+  "settingsGrammarCheck": "Check grammar",
+  "@settingsGrammarCheck": {
+    "description": "Row label. A switch: underline grammar and wording in blue, as well as spelling in red."
+  },
+  "settingsAutoCorrect": "Fix small typos as I type",
+  "@settingsAutoCorrect": {
+    "description": "Row label. A switch: fix small, certain typos when a word is finished, for example teh becomes the."
+  },
+  "settingsAutoCapitalize": "Capitalise sentences",
+  "@settingsAutoCapitalize": {
+    "description": "Row label. A switch: capitalise the first word of a sentence and a lone i."
+  },
+  "settingsSpellLanguage": "Spelling language",
+  "@settingsSpellLanguage": {
+    "description": "Row label. Which language Openote checks spelling in."
+  },
+  "settingsSpellLanguageSystem": "System default",
+  "@settingsSpellLanguageSystem": {
+    "description": "Choice: follow the computer’s language and region. Same words as the theme and interface-language choices."
+  },
+  "settingsSpellLanguageOther": "Other language (not checked)",
+  "@settingsSpellLanguageOther": {
+    "description": "Choice: the person writes in a language Openote cannot check yet, so nothing is checked or changed."
+  },
+  "settingsEnglishAU": "English (Australia)",
+  "@settingsEnglishAU": {
+    "description": "Choice: Australian English."
+  },
+  "settingsEnglishGB": "English (United Kingdom)",
+  "@settingsEnglishGB": {
+    "description": "Choice: British English."
+  },
+  "settingsEnglishUS": "English (United States)",
+  "@settingsEnglishUS": {
+    "description": "Choice: American English."
+  },
+  "settingsEnglishCA": "English (Canada)",
+  "@settingsEnglishCA": {
+    "description": "Choice: Canadian English."
+  },
+  "settingsEnglishIN": "English (India)",
+  "@settingsEnglishIN": {
+    "description": "Choice: Indian English."
+  },
+  "settingsWritingEnglishOnly": "Grammar, typo fixes and capital letters work in English for now. In any other language they stay off.",
+  "@settingsWritingEnglishOnly": {
+    "description": "Supporting line under the writing switches. Says plainly that grammar, typo fixes and capitals only work in English for now."
   }
 }

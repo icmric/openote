@@ -1678,4 +1678,41 @@ class LDe extends L {
 
   @override
   String get updateDownload => 'Herunterladen';
+
+  @override
+  String get settingsGrammarCheck => 'Grammatik prüfen';
+
+  @override
+  String get settingsAutoCorrect => 'Kleine Tippfehler automatisch korrigieren';
+
+  @override
+  String get settingsAutoCapitalize => 'Satzanfänge großschreiben';
+
+  @override
+  String get settingsSpellLanguage => 'Sprache der Rechtschreibung';
+
+  @override
+  String get settingsSpellLanguageSystem => 'Systemstandard';
+
+  @override
+  String get settingsSpellLanguageOther => 'Andere Sprache (nicht geprüft)';
+
+  @override
+  String get settingsEnglishAU => 'Englisch (Australien)';
+
+  @override
+  String get settingsEnglishGB => 'Englisch (Vereinigtes Königreich)';
+
+  @override
+  String get settingsEnglishUS => 'Englisch (USA)';
+
+  @override
+  String get settingsEnglishCA => 'Englisch (Kanada)';
+
+  @override
+  String get settingsEnglishIN => 'Englisch (Indien)';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      'Grammatik, Tippfehlerkorrektur und Großschreibung funktionieren vorerst nur auf Englisch. In allen anderen Sprachen bleiben sie aus.';
 }

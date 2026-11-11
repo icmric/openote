@@ -1661,4 +1661,41 @@ class LEn extends L {
 
   @override
   String get updateDownload => 'Download';
+
+  @override
+  String get settingsGrammarCheck => 'Check grammar';
+
+  @override
+  String get settingsAutoCorrect => 'Fix small typos as I type';
+
+  @override
+  String get settingsAutoCapitalize => 'Capitalise sentences';
+
+  @override
+  String get settingsSpellLanguage => 'Spelling language';
+
+  @override
+  String get settingsSpellLanguageSystem => 'System default';
+
+  @override
+  String get settingsSpellLanguageOther => 'Other language (not checked)';
+
+  @override
+  String get settingsEnglishAU => 'English (Australia)';
+
+  @override
+  String get settingsEnglishGB => 'English (United Kingdom)';
+
+  @override
+  String get settingsEnglishUS => 'English (United States)';
+
+  @override
+  String get settingsEnglishCA => 'English (Canada)';
+
+  @override
+  String get settingsEnglishIN => 'English (India)';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      'Grammar, typo fixes and capital letters work in English for now. In any other language they stay off.';
 }

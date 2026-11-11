@@ -23,7 +23,7 @@
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use harper_core::linting::{LintGroup, LintKind, Linter};
+use harper_core::linting::{LintGroup, LintKind, Linter, Suggestion};
 use harper_core::spell::{Dictionary, FstDictionary};
 use harper_core::{Dialect, Document};
 use serde_json::{json, Value};
@@ -152,11 +152,19 @@ pub fn check(text: &str, dialect: Dialect, want: u32) -> Value {
             continue;
         }
         let word: String = text.chars().skip(s).take(e - s).collect();
+        // What the flagged text should BECOME, not Harper's display sentence
+        // ("Replace with: “x”"): the app puts this straight into the note.
         let fixes: Vec<String> = l
             .suggestions
             .iter()
             .take(5)
-            .map(|sug| sug.to_string())
+            .map(|sug| match sug {
+                Suggestion::ReplaceWith(cs) => cs.iter().collect::<String>(),
+                Suggestion::InsertAfter(cs) => {
+                    format!("{}{}", word, cs.iter().collect::<String>())
+                }
+                Suggestion::Remove => String::new(),
+            })
             .collect();
         out.push(json!({
             "s": offsets[s],
@@ -433,9 +441,10 @@ mod tests {
                 .unwrap_or("")
                 .to_string()
         };
-        assert!(first("recieve").contains("receive"));
-        assert!(first("lecure").contains("lecture"));
-        assert!(first("definately").contains("definitely"));
+        // The replacement text itself, not a sentence about it.
+        assert_eq!(first("recieve"), "receive");
+        assert_eq!(first("lecure"), "lecture");
+        assert_eq!(first("definately"), "definitely");
     }
 
     #[test]

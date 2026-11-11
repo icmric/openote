@@ -1676,4 +1676,42 @@ class LIt extends L {
 
   @override
   String get updateDownload => 'Scarica';
+
+  @override
+  String get settingsGrammarCheck => 'Controlla la grammatica';
+
+  @override
+  String get settingsAutoCorrect =>
+      'Correggi i piccoli errori di battitura mentre scrivo';
+
+  @override
+  String get settingsAutoCapitalize => 'Maiuscola a inizio frase';
+
+  @override
+  String get settingsSpellLanguage => 'Lingua del controllo ortografico';
+
+  @override
+  String get settingsSpellLanguageSystem => 'Predefinito del sistema';
+
+  @override
+  String get settingsSpellLanguageOther => 'Altra lingua (non controllata)';
+
+  @override
+  String get settingsEnglishAU => 'Inglese (Australia)';
+
+  @override
+  String get settingsEnglishGB => 'Inglese (Regno Unito)';
+
+  @override
+  String get settingsEnglishUS => 'Inglese (Stati Uniti)';
+
+  @override
+  String get settingsEnglishCA => 'Inglese (Canada)';
+
+  @override
+  String get settingsEnglishIN => 'Inglese (India)';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      'Per ora grammatica, correzione dei refusi e maiuscole funzionano solo in inglese. Nelle altre lingue restano disattivate.';
 }

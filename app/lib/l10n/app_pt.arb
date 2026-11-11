@@ -467,5 +467,17 @@
   "updateInstallYourself": "Você vai precisar baixar e instalar você mesmo.",
   "updateNotNow": "Agora não",
   "updateNow": "Atualizar agora",
-  "updateDownload": "Baixar"
+  "updateDownload": "Baixar",
+  "settingsGrammarCheck": "Verificar a gramática",
+  "settingsAutoCorrect": "Corrigir pequenos erros de digitação ao escrever",
+  "settingsAutoCapitalize": "Maiúscula no início das frases",
+  "settingsSpellLanguage": "Idioma da ortografia",
+  "settingsSpellLanguageSystem": "Padrão do sistema",
+  "settingsSpellLanguageOther": "Outro idioma (não verificado)",
+  "settingsEnglishAU": "Inglês (Austrália)",
+  "settingsEnglishGB": "Inglês (Reino Unido)",
+  "settingsEnglishUS": "Inglês (Estados Unidos)",
+  "settingsEnglishCA": "Inglês (Canadá)",
+  "settingsEnglishIN": "Inglês (Índia)",
+  "settingsWritingEnglishOnly": "Por enquanto, gramática, correção de erros de digitação e maiúsculas só funcionam em inglês. Em outros idiomas ficam desativadas."
 }

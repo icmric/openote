@@ -1669,4 +1669,41 @@ class LEs extends L {
 
   @override
   String get updateDownload => 'Descargar';
+
+  @override
+  String get settingsGrammarCheck => 'Revisar la gramática';
+
+  @override
+  String get settingsAutoCorrect => 'Corregir erratas pequeñas al escribir';
+
+  @override
+  String get settingsAutoCapitalize => 'Poner mayúscula al empezar frases';
+
+  @override
+  String get settingsSpellLanguage => 'Idioma de la ortografía';
+
+  @override
+  String get settingsSpellLanguageSystem => 'Predeterminado del sistema';
+
+  @override
+  String get settingsSpellLanguageOther => 'Otro idioma (sin revisar)';
+
+  @override
+  String get settingsEnglishAU => 'Inglés (Australia)';
+
+  @override
+  String get settingsEnglishGB => 'Inglés (Reino Unido)';
+
+  @override
+  String get settingsEnglishUS => 'Inglés (Estados Unidos)';
+
+  @override
+  String get settingsEnglishCA => 'Inglés (Canadá)';
+
+  @override
+  String get settingsEnglishIN => 'Inglés (India)';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      'La gramática, la corrección de erratas y las mayúsculas solo funcionan en inglés por ahora. En otros idiomas permanecen desactivadas.';
 }

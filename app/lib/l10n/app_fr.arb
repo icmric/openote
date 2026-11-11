@@ -467,5 +467,17 @@
   "updateInstallYourself": "Vous devrez la télécharger et l’installer vous-même.",
   "updateNotNow": "Pas maintenant",
   "updateNow": "Mettre à jour",
-  "updateDownload": "Télécharger"
+  "updateDownload": "Télécharger",
+  "settingsGrammarCheck": "Vérifier la grammaire",
+  "settingsAutoCorrect": "Corriger les petites fautes de frappe en écrivant",
+  "settingsAutoCapitalize": "Mettre une majuscule en début de phrase",
+  "settingsSpellLanguage": "Langue de l’orthographe",
+  "settingsSpellLanguageSystem": "Par défaut du système",
+  "settingsSpellLanguageOther": "Autre langue (non vérifiée)",
+  "settingsEnglishAU": "Anglais (Australie)",
+  "settingsEnglishGB": "Anglais (Royaume-Uni)",
+  "settingsEnglishUS": "Anglais (États-Unis)",
+  "settingsEnglishCA": "Anglais (Canada)",
+  "settingsEnglishIN": "Anglais (Inde)",
+  "settingsWritingEnglishOnly": "La grammaire, la correction des fautes de frappe et les majuscules ne fonctionnent pour l’instant qu’en anglais. Dans les autres langues, elles restent désactivées."
 }

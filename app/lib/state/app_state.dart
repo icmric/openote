@@ -65,6 +65,8 @@ import '../store/repository.dart';
 import '../math/math_editor.dart';
 import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
+import '../core/onote_text.dart' show EnglishDialect;
+import '../spell/writing_language.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
@@ -5428,6 +5430,63 @@ class AppState extends ChangeNotifier
   /// a half-built option here.
   bool spellCheckEnabled = true;
 
+  // ── Writing help: grammar, autocorrect, capitals, and which English ─────
+  //
+  // All four are about ENGLISH. The checker (`rust/onote_text`) has no other
+  // language, so every one of them is gated on [writingDialect], which is null
+  // whenever the person is not writing English. None of them runs, or changes a
+  // letter, in German, French, Spanish, Italian, Portuguese or Chinese.
+
+  /// Underline grammar and wording as well as spelling. On by default.
+  bool grammarCheckEnabled = true;
+
+  /// Fix small, sure typos as a word is finished (`teh` → `the`). On by default.
+  bool autoCorrectEnabled = true;
+
+  /// Capitalise the first word of a sentence and a lone `i`. On by default.
+  bool autoCapitalizeEnabled = true;
+
+  /// One of [kSpellLanguages]. `system` follows the computer, which is how
+  /// Australian English is found without asking.
+  String spellLanguage = 'system';
+
+  /// The language the computer is set to. A seam for tests; the app reads the
+  /// platform's.
+  Locale Function() systemLocale =
+      () => WidgetsBinding.instance.platformDispatcher.locale;
+
+  /// The English the person writes, or null when it is not English (or they
+  /// said so with *Other language*). Null switches every writing helper off.
+  EnglishDialect? get writingDialect =>
+      resolveWritingDialect(spellLanguage, systemLocale());
+
+  void setGrammarCheck(bool v) {
+    grammarCheckEnabled = v;
+    _repo.setSetting('grammarCheck', v);
+    docRevision++; // re-open the editing session so it shows at once
+    notifyListeners();
+  }
+
+  void setAutoCorrect(bool v) {
+    autoCorrectEnabled = v;
+    _repo.setSetting('autoCorrect', v);
+    notifyListeners();
+  }
+
+  void setAutoCapitalize(bool v) {
+    autoCapitalizeEnabled = v;
+    _repo.setSetting('autoCapitalize', v);
+    notifyListeners();
+  }
+
+  void setSpellLanguage(String v) {
+    if (!kSpellLanguages.contains(v)) return;
+    spellLanguage = v;
+    _repo.setSetting('spellLanguage', v);
+    docRevision++;
+    notifyListeners();
+  }
+
   /// Degrees or radians, for every equation in the app.
   ///
   /// Degrees by default, which is what a school calculator does and what the
@@ -7690,6 +7749,14 @@ class AppState extends ChangeNotifier
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
+    final gc = _repo.getSetting('grammarCheck');
+    if (gc is bool) grammarCheckEnabled = gc;
+    final ac = _repo.getSetting('autoCorrect');
+    if (ac is bool) autoCorrectEnabled = ac;
+    final acap = _repo.getSetting('autoCapitalize');
+    if (acap is bool) autoCapitalizeEnabled = acap;
+    final sl = _repo.getSetting('spellLanguage');
+    if (sl is String && kSpellLanguages.contains(sl)) spellLanguage = sl;
     final am = _repo.getSetting('angleMode');
     mathAngleMode = am == 'rad' ? AngleMode.radians : AngleMode.degrees;
     onboardingSeen = _repo.getSetting('onboardingSeen') == true;

@@ -1676,4 +1676,43 @@ class LFr extends L {
 
   @override
   String get updateDownload => 'Télécharger';
+
+  @override
+  String get settingsGrammarCheck => 'Vérifier la grammaire';
+
+  @override
+  String get settingsAutoCorrect =>
+      'Corriger les petites fautes de frappe en écrivant';
+
+  @override
+  String get settingsAutoCapitalize =>
+      'Mettre une majuscule en début de phrase';
+
+  @override
+  String get settingsSpellLanguage => 'Langue de l’orthographe';
+
+  @override
+  String get settingsSpellLanguageSystem => 'Par défaut du système';
+
+  @override
+  String get settingsSpellLanguageOther => 'Autre langue (non vérifiée)';
+
+  @override
+  String get settingsEnglishAU => 'Anglais (Australie)';
+
+  @override
+  String get settingsEnglishGB => 'Anglais (Royaume-Uni)';
+
+  @override
+  String get settingsEnglishUS => 'Anglais (États-Unis)';
+
+  @override
+  String get settingsEnglishCA => 'Anglais (Canada)';
+
+  @override
+  String get settingsEnglishIN => 'Anglais (Inde)';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      'La grammaire, la correction des fautes de frappe et les majuscules ne fonctionnent pour l’instant qu’en anglais. Dans les autres langues, elles restent désactivées.';
 }

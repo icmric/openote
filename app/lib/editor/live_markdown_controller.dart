@@ -1047,8 +1047,9 @@ class LiveMarkdownController extends TextEditingController {
 
       collect(root);
       if (buf.toString() == full) {
-        final done =
-            misspellings.isEmpty ? root : _underlineMisspellings(root, lo, hi);
+        final done = (misspellings.isEmpty && grammarMarks.isEmpty)
+            ? root
+            : _underlineMisspellings(root, lo, hi);
         return _hangWrappedListLines(done, full, base);
       }
     } catch (_) {/* fall through */}
@@ -1066,10 +1067,28 @@ class LiveMarkdownController extends TextEditingController {
     notifyListeners();
   }
 
+  /// Grammar and wording findings, in raw-text offsets: the blue line, set
+  /// beside the red one for spelling. Where the two overlap, spelling wins —
+  /// a misspelled word is the first thing to fix, and the grammar finding
+  /// around it often disappears once it is.
+  List<TextRange> _grammarMarks = const [];
+  List<TextRange> get grammarMarks => _grammarMarks;
+  set grammarMarks(List<TextRange> v) {
+    if (identical(v, _grammarMarks)) return;
+    _grammarMarks = v;
+    notifyListeners();
+  }
+
   static const _misspellingStyle = TextStyle(
     decoration: TextDecoration.underline,
     decorationStyle: TextDecorationStyle.wavy,
     decorationColor: Color(0xFFD23B3B),
+  );
+
+  static const _grammarStyle = TextStyle(
+    decoration: TextDecoration.underline,
+    decorationStyle: TextDecorationStyle.wavy,
+    decorationColor: Color(0xFF3F7FE0),
   );
 
   /// Re-split the finished span tree at misspelling boundaries and merge the
@@ -1083,10 +1102,15 @@ class LiveMarkdownController extends TextEditingController {
   TextSpan _underlineMisspellings(TextSpan root, int caretLo, int caretHi) {
     // A word being typed must not flash red mid-word, so the range under the
     // caret is left alone until the caret leaves it.
-    final ranges = [
+    final spell = [
       for (final r in _misspellings)
         if (!(caretLo >= r.start && caretHi <= r.end)) r
     ];
+    final gram = [
+      for (final r in _grammarMarks)
+        if (!(caretLo >= r.start && caretHi <= r.end)) r
+    ];
+    final ranges = [...spell, ...gram];
     if (ranges.isEmpty) return root;
 
     var offset = 0;
@@ -1136,12 +1160,19 @@ class LiveMarkdownController extends TextEditingController {
       for (var i = 0; i < points.length - 1; i++) {
         final a = points[i], b = points[i + 1];
         if (a == b) continue;
-        final bad = overlapping
-            .any((r) => r.start <= start + a && r.end >= start + b);
+        bool covers(List<TextRange> rs) => rs.any((r) =>
+            r.start <= start + a &&
+            r.end >= start + b &&
+            overlapping.contains(r));
+        final mark = covers(spell)
+            ? _misspellingStyle
+            : covers(gram)
+                ? _grammarStyle
+                : null;
         pieces.add(TextSpan(
           text: text.substring(a, b),
-          style: bad
-              ? (span.style ?? const TextStyle()).merge(_misspellingStyle)
+          style: mark != null
+              ? (span.style ?? const TextStyle()).merge(mark)
               : span.style,
         ));
       }

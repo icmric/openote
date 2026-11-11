@@ -1606,4 +1606,41 @@ class LZh extends L {
 
   @override
   String get updateDownload => '前往下载';
+
+  @override
+  String get settingsGrammarCheck => '检查语法';
+
+  @override
+  String get settingsAutoCorrect => '输入时自动更正小的拼写错误';
+
+  @override
+  String get settingsAutoCapitalize => '句首自动大写';
+
+  @override
+  String get settingsSpellLanguage => '拼写检查语言';
+
+  @override
+  String get settingsSpellLanguageSystem => '系统默认';
+
+  @override
+  String get settingsSpellLanguageOther => '其他语言（不检查）';
+
+  @override
+  String get settingsEnglishAU => '英语（澳大利亚）';
+
+  @override
+  String get settingsEnglishGB => '英语（英国）';
+
+  @override
+  String get settingsEnglishUS => '英语（美国）';
+
+  @override
+  String get settingsEnglishCA => '英语（加拿大）';
+
+  @override
+  String get settingsEnglishIN => '英语（印度）';
+
+  @override
+  String get settingsWritingEnglishOnly =>
+      '语法、拼写自动更正和大小写目前只适用于英语。其他语言下这些功能保持关闭。';
 }

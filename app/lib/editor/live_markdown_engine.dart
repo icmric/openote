@@ -11,7 +11,9 @@ import '../update/app_update.dart' show kAppVersion;
 import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
+import '../core/onote_text.dart' show EnglishDialect, TextFinding;
 import '../spell/spell_checker.dart';
+import '../spell/writing_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../math/equation_editor.dart';
@@ -1125,18 +1127,55 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// the whole span tree mid-word makes typing feel busy.
   Timer? _spellDebounce;
 
+  /// Grammar findings for the text as last checked, kept for the right-click
+  /// menu (which needs their message and fixes, not just where they are).
+  List<TextFinding> _grammarFindings = const [];
+
   void _scheduleSpellCheck({Duration delay = const Duration(milliseconds: 300)}) {
-    if (!spellCheckEnabled) {
+    final dialect = app.writingDialect;
+    final spelling = spellCheckEnabled;
+    final grammar = app.grammarCheckEnabled;
+    // Nothing to do, or not English: show nothing. A language the checker does
+    // not know must never be underlined with English's rules.
+    if (dialect == null || (!spelling && !grammar)) {
       controller.misspellings = const [];
+      controller.grammarMarks = const [];
+      _grammarFindings = const [];
       return;
     }
     _spellDebounce?.cancel();
     _spellDebounce = Timer(delay, () async {
-      final checker = SpellChecker.loaded ?? await SpellChecker.instance();
-      // The session may have been disposed while the dictionary loaded.
-      if (_disposed) return;
-      controller.misspellings = checker.check(controller.text);
+      final text = controller.text;
+      final result = await WritingChecker.check(text,
+          dialect: dialect, spelling: spelling, grammar: grammar);
+      // The session may have been disposed while the checker ran, and the
+      // person may have kept typing: an answer for text that is gone would
+      // underline the wrong letters.
+      if (_disposed || controller.text != text) return;
+      controller.misspellings = result.spelling;
+      _grammarFindings = result.grammar;
+      controller.grammarMarks = [
+        for (final f in result.grammar) TextRange(start: f.start, end: f.end)
+      ];
+      unawaited(_prefetchSuggestions(text, result.spelling, dialect));
     });
+  }
+
+  /// Suggestions by misspelled word, filled in after each check so the
+  /// right-click menu (which has to answer at once) already has them.
+  final Map<String, List<String>> _suggestionCache = {};
+
+  Future<void> _prefetchSuggestions(
+      String text, List<TextRange> ranges, EnglishDialect dialect) async {
+    // A page of notes rarely has more than a handful at once; the cap stops a
+    // pasted wall of text asking for hundreds.
+    for (final r in ranges.take(12)) {
+      final word = text.substring(r.start, r.end);
+      if (_suggestionCache.containsKey(word)) continue;
+      final s = await WritingChecker.suggest(word, dialect: dialect);
+      if (_disposed) return;
+      _suggestionCache[word] = s;
+    }
   }
 
   /// Check the text a session opens with, without waiting for a keystroke.
@@ -1799,16 +1838,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// Empty when the click didn't land on a misspelling — the menu then looks
   /// exactly as it always did.
   List<ContextMenuButtonItem> _spellMenuItems(EditableTextState editable) {
-    final checker = SpellChecker.loaded;
-    if (checker == null || !spellCheckEnabled) return const [];
     final sel = controller.selection;
     if (!sel.isValid) return const [];
     final text = controller.text;
-    final range = checker.misspelledAt(text, sel.baseOffset.clamp(0, text.length));
-    if (range == null) return const [];
-    final word = text.substring(range.start, range.end);
+    final at = sel.baseOffset.clamp(0, text.length);
 
-    void replaceWith(String replacement) {
+    void replaceRange(TextRange range, String replacement) {
       final next = text.replaceRange(range.start, range.end, replacement);
       controller.value = controller.value.copyWith(
         text: next,
@@ -1821,9 +1856,46 @@ class _LiveMarkdownSession extends OnoteEditSession {
       editable.hideToolbar();
     }
 
+    // A grammar finding under the caret (and no misspelling there): say what is
+    // wrong, offer the fixes, and let the person dismiss it for this word.
+    TextRange? misspelled;
+    for (final r in controller.misspellings) {
+      if (at >= r.start && at <= r.end) misspelled = r;
+    }
+    if (misspelled == null) {
+      for (final f in _grammarFindings) {
+        if (at >= f.start && at <= f.end && f.end <= text.length) {
+          final range = TextRange(start: f.start, end: f.end);
+          return [
+            // The reason, shown as a disabled row so it reads as a label.
+            if (f.message.isNotEmpty)
+              ContextMenuButtonItem(label: f.message, onPressed: null),
+            for (final fix in f.fixes.toSet())
+              ContextMenuButtonItem(
+                  label: fix.isEmpty ? 'Remove' : fix,
+                  onPressed: () => replaceRange(range, fix)),
+          ];
+        }
+      }
+    }
+
+    final checker = SpellChecker.loaded;
+    final range = misspelled ??
+        (checker == null ? null : checker.misspelledAt(text, at));
+    if (range == null || !spellCheckEnabled) return const [];
+    final word = text.substring(range.start, range.end);
+    // The suggestions come from the same checker that underlined the word,
+    // synchronously from what it last computed; see [_suggestionCache].
+    final suggestions = _suggestionCache[word] ?? const <String>[];
+    if (!_suggestionCache.containsKey(word)) {
+      unawaited(WritingChecker.suggest(word, dialect: app.writingDialect)
+          .then((s) => _suggestionCache[word] = s));
+    }
+
     return [
-      for (final s in checker.suggest(word))
-        ContextMenuButtonItem(label: s, onPressed: () => replaceWith(s)),
+      for (final s in suggestions)
+        ContextMenuButtonItem(
+            label: s, onPressed: () => replaceRange(range, s)),
       ContextMenuButtonItem(
         label: 'Add to dictionary',
         onPressed: () {

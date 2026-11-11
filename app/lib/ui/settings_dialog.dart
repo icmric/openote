@@ -6,6 +6,7 @@ import '../core/platform_open.dart';
 import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
+import '../spell/writing_language.dart' show kSpellLanguages;
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
@@ -358,6 +359,59 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         _Group.writing => [
             _row(l.settingsSpellCheck,
                 _toggle(app.spellCheckEnabled, app.setSpellCheck)),
+            // **Four independent switches and a language, in plain words.**
+            // Grammar, small-typo fixing and capitals each have their own
+            // because people differ on which they want (a student who dislikes
+            // being corrected mid-sentence still wants the red underline). On
+            // by default; all of them do nothing outside English, and the line
+            // under them says so rather than leaving a German reader to wonder.
+            // The one sentence that says what all three are for, and that they
+            // are English-only: said here once, under the first of them,
+            // because a line under each would be three copies of it.
+            _row(l.settingsGrammarCheck,
+                _toggle(app.grammarCheckEnabled, app.setGrammarCheck),
+                hint: l.settingsWritingEnglishOnly),
+            _row(l.settingsAutoCorrect,
+                _toggle(app.autoCorrectEnabled, app.setAutoCorrect)),
+            _row(l.settingsAutoCapitalize,
+                _toggle(app.autoCapitalizeEnabled, app.setAutoCapitalize)),
+            _row(
+              l.settingsSpellLanguage,
+              // Capped and ellipsised: the longest name ("English (United
+              // Kingdom)") must not push the label off a narrow window.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 170),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: app.spellLanguage,
+                    isDense: true,
+                    isExpanded: true,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurface),
+                    items: [
+                      for (final v in kSpellLanguages)
+                        DropdownMenuItem(
+                          value: v,
+                          child: Text(
+                            switch (v) {
+                              'system' => l.settingsSpellLanguageSystem,
+                              'en-AU' => l.settingsEnglishAU,
+                              'en-GB' => l.settingsEnglishGB,
+                              'en-US' => l.settingsEnglishUS,
+                              'en-CA' => l.settingsEnglishCA,
+                              'en-IN' => l.settingsEnglishIN,
+                              _ => l.settingsSpellLanguageOther,
+                            },
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) => v == null ? null : app.setSpellLanguage(v),
+                  ),
+                ),
+              ),
+            ),
             // **Moved off the Draw tab, and under a heading of their own.**
             // The owner: *"i think that option should be in settings rather
             // than that bar."* Both are hardware preferences somebody sets
