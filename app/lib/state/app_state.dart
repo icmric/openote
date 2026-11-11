@@ -63,6 +63,7 @@ import '../update/app_update.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
 import '../math/math_editor.dart';
+import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
@@ -9220,14 +9221,9 @@ class AppState extends ChangeNotifier
 
   // ── Tree ops ───────────────────────────────────────────────────────────
 
-  static const _sectionColors = [
-    'ink-500',
-    'brass-400',
-    'green',
-    'blue',
-    'violet',
-    'red'
-  ];
+  /// New sections take these in turn. Sections that already exist are never
+  /// touched: this only decides what a section made from now on starts with.
+  static final _sectionColors = [for (final h in sectionPalette) h.token];
 
   Future<void> addSection({String? groupId}) async {
     final count = nodes.where((n) => n.kind == NodeKind.section).length;
@@ -9516,16 +9512,10 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// The colour tokens a section can be given, in picker order. `null` is the
-  /// unset default, which renders in the app's own ink.
-  static const List<String?> sectionColorTokens = [
-    null,
-    'brass-400',
-    'green',
-    'blue',
-    'violet',
-    'red',
-  ];
+  /// The colour tokens a section can be given, in picker order: the same eight
+  /// new sections cycle through. A section with no token (made before sections
+  /// cycled) renders as `ink`, the app's own colour.
+  static final List<String?> sectionColorTokens = _sectionColors;
 
   /// Recolour a section.
   ///

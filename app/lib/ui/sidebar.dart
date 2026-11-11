@@ -16,18 +16,37 @@ import 'page_history_dialog.dart';
 import 'protect_dialog.dart';
 import 'sync_dot.dart';
 import 'planner_format.dart';
+import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 import 'toast.dart';
 
-Color _sectionColor(String? token, bool dark) => switch (token) {
-      'brass-400' => OnoteColors.brass400,
-      'green' => OnoteColors.success,
-      'blue' => const Color(0xFF2F6FB3),
-      'violet' => const Color(0xFF6A4BC0),
-      'red' => OnoteColors.danger,
-      _ => dark ? OnoteColors.ink400 : OnoteColors.ink500,
-    };
+Color _sectionColor(String? token, bool dark) => sectionColorFor(token, dark);
+
+/// The ring that marks a section, in its colour (see `theme/section_palette`).
+class _SectionRing extends StatelessWidget {
+  const _SectionRing({required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+      width: 16,
+      height: 16,
+      child: CustomPaint(painter: SectionRingPainter(color)));
+}
+
+/// Hover wash for navigator rows: neutral, and quieter than the tinted wash a
+/// selected section gets, so the two never read as the same thing.
+Color _hoverWash(bool dark) =>
+    dark ? const Color(0x12E6E3EC) : const Color(0x0F211F1B);
+
+/// A group's colour, from the first section on its rail.
+Color _groupColor(AppState app, TreeNode group, bool dark) {
+  final first = app.nodes
+      .where((n) => n.kind == NodeKind.section && n.parentId == group.id)
+      .firstOrNull;
+  return groupColorFor(first?.color, dark, hasSections: first != null);
+}
 
 /// The page rows for a section, honouring subpage collapse. Children are
 /// NESTED under a [_Reveal] rather than skipped from a flat list, so
@@ -441,12 +460,7 @@ class _SidebarState extends State<Sidebar> {
           padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
           child: Row(
             children: [
-              Container(
-                width: 3.5,
-                height: 14,
-                decoration: BoxDecoration(
-                    color: color, borderRadius: BorderRadius.circular(4)),
-              ),
+              _SectionRing(color: color),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -539,9 +553,7 @@ class _SidebarState extends State<Sidebar> {
                 decoration: BoxDecoration(
                   border: Border(
                     left: BorderSide(
-                        color: dark
-                            ? OnoteColors.night300
-                            : OnoteColors.paper300),
+                        width: 2, color: _groupColor(app, g, dark)),
                   ),
                 ),
                 child: Column(
@@ -689,10 +701,16 @@ class _GroupHeaderState extends State<_GroupHeader> {
               children: [
                 Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
                     size: 16, color: context.surfaces.textSecondary),
-                const SizedBox(width: 4),
-                const Icon(Icons.topic_outlined,
-                    size: 16, color: OnoteColors.graphite500),
                 const SizedBox(width: 6),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                      color: _groupColor(app, group,
+                          Theme.of(context).brightness == Brightness.dark),
+                      shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: _renaming
                       ? _InlineRename(
@@ -1364,21 +1382,24 @@ class _SectionHeaderState extends State<_SectionHeader> {
     final color = _sectionColor(section.color, dark);
     final scheme = Theme.of(context).colorScheme;
     final active = widget.active;
-    final emphasised = pageTarget || active;
     // Plain 12px rows, not tracked small-caps: a narrow sections column has
     // to fit real course names, and the caps identity now lives on the pages
     // pane's header where there is room for it.
     final labelStyle = TextStyle(
         fontSize: 12,
-        fontWeight: FontWeight.w600,
+        fontWeight:
+            (active || pageTarget) ? FontWeight.w600 : FontWeight.w400,
         fontStyle: pageTarget ? FontStyle.italic : FontStyle.normal,
-        color: emphasised
+        // The selected row is told apart by its tint and weight, not by
+        // recolouring the name: the colour belongs to the section's ring.
+        color: pageTarget
             ? scheme.primary
             : dark
                 ? OnoteColors.moon100
                 : OnoteColors.graphite700);
     return InkWell(
       mouseCursor: WidgetStateMouseCursor.clickable,
+      hoverColor: _hoverWash(dark),
       focusNode: _rowFocus,
       onFocusChange: (has) {
         if (has) _keyboardEnteredRow(app);
@@ -1411,19 +1432,14 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 color: scheme.primary.withValues(alpha: .06))
             : active
                 ? BoxDecoration(
-                    color: scheme.primary.withValues(alpha: .09),
+                    color: color.withValues(alpha: .15),
                     borderRadius: BorderRadius.circular(6))
                 : null,
         padding: const EdgeInsets.fromLTRB(6, 7, 6, 7),
         child: Row(
           children: [
             const SizedBox(width: 4),
-            Container(
-              width: 3.5,
-              height: 16,
-              decoration: BoxDecoration(
-                  color: color, borderRadius: BorderRadius.circular(4)),
-            ),
+            _SectionRing(color: color),
             const SizedBox(width: 8),
             Expanded(
               child: _renaming
@@ -2505,16 +2521,37 @@ class _SectionColorRowState extends State<_SectionColorRow> {
     final l = L.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final scheme = Theme.of(context).colorScheme;
-    final current = widget.app.node(widget.section.id)?.color;
+    final rawCurrent = widget.app.node(widget.section.id)?.color;
+    final current = pickerTokenFor(rawCurrent);
     return Row(children: [
       Text(l.navColour,
           style: TextStyle(fontSize: 13, color: OnoteColors.graphite500)),
       const SizedBox(width: 10),
+      // A colour from an earlier version isn't offered again, but a section
+      // wearing one still shows it here, chosen, so nothing looks unset.
+      if (isLegacySectionColor(rawCurrent))
+        Padding(
+          padding: const EdgeInsets.only(right: 3),
+          child: Container(
+            width: 17,
+            height: 17,
+            decoration: BoxDecoration(
+              color: _sectionColor(rawCurrent, dark),
+              shape: BoxShape.circle,
+              border: Border.all(color: scheme.onSurface, width: 2),
+            ),
+          ),
+        ),
+      // Eight swatches (nine when a section carries an older colour) have to
+      // fit the menu's 256 px beside the label, hence 17 px with 3 px between.
       for (final token in AppState.sectionColorTokens)
         Padding(
-          padding: const EdgeInsets.only(right: 5),
+          padding: const EdgeInsets.only(right: 3),
           child: Tooltip(
-            message: token ?? l.navColourDefault,
+            message: sectionPalette
+                .firstWhere((h) => h.token == token,
+                    orElse: () => sectionPalette.first)
+                .name,
             child: InkWell(
               mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(12),
@@ -2523,8 +2560,8 @@ class _SectionColorRowState extends State<_SectionColorRow> {
                 Navigator.of(context).pop();
               },
               child: Container(
-                width: 19,
-                height: 19,
+                width: 17,
+                height: 17,
                 decoration: BoxDecoration(
                   color: _sectionColor(token, dark),
                   shape: BoxShape.circle,
