@@ -11,7 +11,7 @@ import '../update/app_update.dart' show kAppVersion;
 import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
-import '../core/onote_text.dart' show EnglishDialect, OnoteText, TextFinding;
+import '../core/onote_text.dart' show OnoteText, TextFinding;
 import '../spell/spell_checker.dart';
 import '../spell/writing_checker.dart';
 import '../state/app_state.dart';
@@ -1132,6 +1132,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// menu (which needs their message and fixes, not just where they are).
   List<TextFinding> _grammarFindings = const [];
 
+  /// The misspellings as last checked, with their suggestions (see above).
+  List<TextFinding> _spellingFindings = const [];
+
   void _scheduleSpellCheck({Duration delay = const Duration(milliseconds: 300)}) {
     final dialect = app.writingDialect;
     final spelling = spellCheckEnabled;
@@ -1145,6 +1148,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       controller.misspellings = const [];
       controller.grammarMarks = const [];
       _grammarFindings = const [];
+      _spellingFindings = const [];
       return;
     }
     _spellDebounce?.cancel();
@@ -1157,17 +1161,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // underline the wrong letters.
       if (_disposed || controller.text != text) return;
       controller.misspellings = result.spelling;
+      _spellingFindings = result.spellingFindings;
       _grammarFindings = result.grammar;
       controller.grammarMarks = [
         for (final f in result.grammar) TextRange(start: f.start, end: f.end)
       ];
-      unawaited(_prefetchSuggestions(text, result.spelling, dialect));
     });
   }
-
-  /// Suggestions by misspelled word, filled in after each check so the
-  /// right-click menu (which has to answer at once) already has them.
-  final Map<String, List<String>> _suggestionCache = {};
 
   /// The last automatic fix, while Backspace can still take it back; and the
   /// words the person has put back as typed, which are not fixed again.
@@ -1192,19 +1192,6 @@ class _LiveMarkdownSession extends OnoteEditSession {
     onChanged(controller.text);
     _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
     return true;
-  }
-
-  Future<void> _prefetchSuggestions(
-      String text, List<TextRange> ranges, EnglishDialect dialect) async {
-    // A page of notes rarely has more than a handful at once; the cap stops a
-    // pasted wall of text asking for hundreds.
-    for (final r in ranges.take(12)) {
-      final word = text.substring(r.start, r.end);
-      if (_suggestionCache.containsKey(word)) continue;
-      final s = await WritingChecker.suggest(word, dialect: dialect);
-      if (_disposed) return;
-      _suggestionCache[word] = s;
-    }
   }
 
   /// Check the text a session opens with, without waiting for a keystroke.
@@ -1890,6 +1877,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
     final text = controller.text;
     final at = sel.baseOffset.clamp(0, text.length);
 
+    /// Is this finding still true of the text as it is now? The marks are from
+    /// the last check, which can be a moment behind the keyboard; a fix spliced
+    /// in at stale offsets would damage the note, so a finding that no longer
+    /// matches the characters it points at is not offered.
+    bool current(TextFinding f) =>
+        f.start >= 0 &&
+        f.end <= text.length &&
+        f.start < f.end &&
+        text.substring(f.start, f.end) == f.word;
+
     void replaceRange(TextRange range, String replacement) {
       final next = text.replaceRange(range.start, range.end, replacement);
       controller.value = controller.value.copyWith(
@@ -1903,55 +1900,64 @@ class _LiveMarkdownSession extends OnoteEditSession {
       editable.hideToolbar();
     }
 
-    // A grammar finding under the caret (and no misspelling there): say what is
-    // wrong, offer the fixes, and let the person dismiss it for this word.
-    TextRange? misspelled;
-    for (final r in controller.misspellings) {
-      if (at >= r.start && at <= r.end) misspelled = r;
+    List<ContextMenuButtonItem> spellingItems(
+        TextRange range, String word, List<String> fixes) {
+      return [
+        for (final s in WritingChecker.suggestionsFor(word, fixes: fixes))
+          ContextMenuButtonItem(
+              label: s.isEmpty ? 'Remove' : s,
+              onPressed: () => replaceRange(range, s)),
+        ContextMenuButtonItem(
+          label: 'Add to dictionary',
+          onPressed: () {
+            learnWord(word);
+            _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+            editable.hideToolbar();
+          },
+        ),
+      ];
     }
-    if (misspelled == null) {
-      for (final f in _grammarFindings) {
-        if (at >= f.start && at <= f.end && f.end <= text.length) {
-          final range = TextRange(start: f.start, end: f.end);
-          return [
-            // The reason, shown as a disabled row so it reads as a label.
-            if (f.message.isNotEmpty)
-              ContextMenuButtonItem(label: f.message, onPressed: null),
-            for (final fix in f.fixes.toSet())
-              ContextMenuButtonItem(
-                  label: fix.isEmpty ? 'Remove' : fix,
-                  onPressed: () => replaceRange(range, fix)),
-          ];
+
+    if (spellCheckEnabled) {
+      // A misspelling under the caret (spelling wins over grammar on the same
+      // words, as the underline does).
+      for (final f in _spellingFindings) {
+        if (at >= f.start && at <= f.end && current(f)) {
+          return spellingItems(
+              TextRange(start: f.start, end: f.end), f.word, f.fixes);
         }
       }
     }
 
-    final checker = SpellChecker.loaded;
-    final range = misspelled ??
-        (checker == null ? null : checker.misspelledAt(text, at));
-    if (range == null || !spellCheckEnabled) return const [];
-    final word = text.substring(range.start, range.end);
-    // The suggestions come from the same checker that underlined the word,
-    // synchronously from what it last computed; see [_suggestionCache].
-    final suggestions = _suggestionCache[word] ?? const <String>[];
-    if (!_suggestionCache.containsKey(word)) {
-      unawaited(WritingChecker.suggest(word, dialect: app.writingDialect)
-          .then((s) => _suggestionCache[word] = s));
+    // A grammar finding: say what is wrong, then offer the fixes.
+    for (final f in _grammarFindings) {
+      if (at >= f.start && at <= f.end && current(f)) {
+        final range = TextRange(start: f.start, end: f.end);
+        return [
+          // The reason, shown as a disabled row so it reads as a label.
+          if (f.message.isNotEmpty)
+            ContextMenuButtonItem(label: f.message, onPressed: null),
+          for (final fix in f.fixes.toSet())
+            ContextMenuButtonItem(
+                label: fix.isEmpty ? 'Remove' : fix,
+                onPressed: () => replaceRange(range, fix)),
+        ];
+      }
     }
 
-    return [
-      for (final s in suggestions)
-        ContextMenuButtonItem(
-            label: s, onPressed: () => replaceRange(range, s)),
-      ContextMenuButtonItem(
-        label: 'Add to dictionary',
-        onPressed: () {
-          learnWord(word);
-          _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
-          editable.hideToolbar();
-        },
-      ),
-    ];
+    // The old word list, but ONLY when it is the one doing the checking (no
+    // native checker). When the native one is in charge, a word it accepts
+    // must not get a "misspelled" menu because the old list has never heard of
+    // it.
+    if (!OnoteText.available && spellCheckEnabled) {
+      final checker = SpellChecker.loaded;
+      final range = checker?.misspelledAt(text, at);
+      if (range != null) {
+        return spellingItems(range, text.substring(range.start, range.end),
+            const []);
+      }
+    }
+    return const [];
   }
 
   /// Convert the code point at the caret (or the selection) in place. Returns

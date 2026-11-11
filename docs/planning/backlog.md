@@ -535,8 +535,13 @@ minutes. Not measured: GitHub's runners (slower or faster than this machine), an
 | **Harper as a separate program**, speaking the language-server protocol (`harper-ls`) | No FFI, but ships an extra executable per platform and a process to manage. Keeps the Dart side simple; costs packaging |
 | **Harper as a Rust library behind `dart:ffi`** | One native library the app already knows how to load (same pattern as `onote_core`), fastest, offline. The cost is the build above. **Recommended**, as a small crate beside `onote_core` rather than in it |
 
-**Newer version.** Version 3.0.0 of `harper-core` was available when this was tested (2.13.0 was used).
-Check what changed before pinning, and pin the exact version so a rebuild cannot change what gets underlined.
+**Newer version.** Harper 3.0.0 (27 October) exists; 2.13.0 is what is pinned. Compared on 12 November by
+building the crate against both: **it compiles with no code change and 22 of the 23 tests pass.** The
+difference is exactly what an upgrade should be expected to bring: its release notes list one breaking
+change (case-sensitivity in dictionaries) and a long run of new grammar rules, and one of them, "gonna,
+gotta, wanna", underlines informal words that 2.13 leaves alone, which is the one test that failed. So the
+upgrade is cheap in code and costs a pass through the rules it adds, silencing the ones that are advice
+(see `new_group`). Pin the exact version either way, so a rebuild cannot change what gets underlined.
 
 #### Built on the branch, 11 November (hand test owed)
 
@@ -559,6 +564,23 @@ at a time, and Backspace taking a fix back), the whole suite (4,243 passed), the
 would have rewritten the core's DLL, which is left alone while the app is in use), the macOS script
 (unverified on a Mac like the one it follows), the release and CI workflows (YAML parses, nothing ran),
 and the app on screen. The first build on any machine compiles Harper: **about 13 minutes**.
+
+**Reviewed and hardened, 12 November.** Running real student notes through it found and fixed:
+words with digits and all-capitals acronyms (`H2O`, `CO2`, `UNSW`) were flagged as misspellings; every
+lower-case bullet was marked "not a capital"; heading title-case, "expand `idk`", contraction and
+spelled-out-number advice was underlined as if it were an error; one mistake produced up to three
+overlapping underlines (`that that`); a line that began with a link or code span was silently not checked
+at all (Markdown read the blanked indent as a code block); the right-click menu looked suggestions up for
+only the first twelve misspellings and took them from a list that ignores the person's English (now they
+come from the underline itself); a long check on a worker thread could stall a keystroke on the UI thread
+(autocorrect now never takes the engine's lock); the old word list could still produce a "misspelled"
+menu for a word the new checker accepted; and someone who had switched spell check off would have had
+grammar switched on under them (it now follows that choice until they say otherwise). A fix spliced
+in at a stale underline can no longer damage the note (the finding must still match the characters it
+points at). **Measured:** about **112 MB resident** once the checker has loaded (peak 138 MB), loaded
+in the background about 0.7 s after the first English text is edited; a 1,800-character block checks in
+about 20 ms; an automatic-fix lookup about 0.7 ms. The memory is the real cost, and it is paid only by
+someone who edits English text.
 
 **Still open.** Harper's data provenance (see [LICENSING.md](../../LICENSING.md)); the 3.0 upgrade;
 Hunspell spelling for the other six languages; whether an underline-free *Add to dictionary* for

@@ -13,8 +13,6 @@ import 'onote_text.dart';
 
 typedef _CheckNative = Pointer<Utf8> Function(Pointer<Utf8>, Int32, Uint32);
 typedef _Check = Pointer<Utf8> Function(Pointer<Utf8>, int, int);
-typedef _SuggestNative = Pointer<Utf8> Function(Pointer<Utf8>, Int32, Int32);
-typedef _Suggest = Pointer<Utf8> Function(Pointer<Utf8>, int, int);
 typedef _AutoNative = Pointer<Utf8> Function(Pointer<Utf8>, Int32);
 typedef _Auto = Pointer<Utf8> Function(Pointer<Utf8>, int);
 typedef _FreeNative = Void Function(Pointer<Utf8>);
@@ -26,14 +24,11 @@ typedef _Free = void Function(Pointer<Utf8>);
 class _Fns {
   _Fns(DynamicLibrary lib)
       : check = lib.lookupFunction<_CheckNative, _Check>('onote_text_check'),
-        suggest =
-            lib.lookupFunction<_SuggestNative, _Suggest>('onote_text_suggest'),
         autocorrect =
             lib.lookupFunction<_AutoNative, _Auto>('onote_text_autocorrect'),
         free = lib.lookupFunction<_FreeNative, _Free>('onote_text_free');
 
   final _Check check;
-  final _Suggest suggest;
   final _Auto autocorrect;
   final _Free free;
 
@@ -139,11 +134,23 @@ class OnoteText {
   static bool _warm = false;
   static _Fns? _uiFns;
 
+  static Future<void>? _warming;
+
   /// Load the dictionary and grammar rules in the background so that the first
   /// real use does not stall. The native engine is one per process, so once
   /// this finishes, [autocorrectNow] is a microsecond lookup on any thread.
-  static Future<void> warmUp(EnglishDialect dialect) async {
-    if (_warm) return;
+  ///
+  /// Called on every check, so it remembers: one load in flight, never several
+  /// queued behind each other. A failed load is forgotten, so the next call
+  /// tries again.
+  static Future<void> warmUp(EnglishDialect dialect) {
+    if (_warm) return Future.value();
+    return _warming ??= _warmUp(dialect).whenComplete(() {
+      if (!_warm) _warming = null;
+    });
+  }
+
+  static Future<void> _warmUp(EnglishDialect dialect) async {
     final path = libraryPath;
     if (path == null) return;
     final code = dialect.code;
@@ -151,8 +158,8 @@ class OnoteText {
       await offThread(() {
         final fns = _Fns(DynamicLibrary.open(path));
         fns._str('warm up', (a) => fns.check(a, code, kWantSpelling));
-        // `autocorrect` builds nothing extra, but touching it proves the
-        // symbol resolves before the editor depends on it.
+        // Touching `autocorrect` proves the symbol resolves before the editor
+        // depends on it, and loads the dictionary it uses.
         fns._str('teh', (a) => fns.autocorrect(a, code));
         return 0;
       });
@@ -174,22 +181,6 @@ class OnoteText {
       return r.isEmpty ? null : r;
     } catch (_) {
       return null;
-    }
-  }
-
-  static Future<List<String>> suggest(String word, EnglishDialect dialect,
-      {int max = 5}) async {
-    final path = libraryPath;
-    if (path == null || word.isEmpty) return const [];
-    final code = dialect.code;
-    try {
-      final json = await offThread(() {
-        final fns = _Fns(DynamicLibrary.open(path));
-        return fns._str(word, (a) => fns.suggest(a, code, max));
-      });
-      return [for (final s in jsonDecode(json) as List) s as String];
-    } catch (_) {
-      return const [];
     }
   }
 

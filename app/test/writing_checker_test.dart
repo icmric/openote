@@ -170,11 +170,33 @@ void main() {
       expect(r.isEmpty, isTrue, reason: '${r.spelling} ${r.grammar}');
     }, skip: why);
 
-    test('suggestions match the case of the word', () async {
-      final s = await WritingChecker.suggest('RECIEVE',
-          dialect: EnglishDialect.australian);
-      expect(s, isNotEmpty);
-      expect(s.first, 'RECEIVE');
+    test('suggestions come with the underline, in the person\'s English',
+        () async {
+      final au = await WritingChecker.check('The colur of it.',
+          dialect: EnglishDialect.australian, spelling: true, grammar: false);
+      final us = await WritingChecker.check('The colur of it.',
+          dialect: EnglishDialect.american, spelling: true, grammar: false);
+      expect(au.spellingFindings.single.fixes, contains('colour'));
+      expect(au.spellingFindings.single.fixes, isNot(contains('color')));
+      expect(us.spellingFindings.single.fixes, contains('color'));
+      expect(us.spellingFindings.single.fixes, isNot(contains('colour')));
     }, skip: why);
+
+    test('every misspelling carries its own suggestions, however many there are',
+        () async {
+      // The menu used to look suggestions up for the first twelve only.
+      final t = List.generate(30, (i) => 'recieve').join(' ');
+      final r = await WritingChecker.check(t,
+          dialect: EnglishDialect.australian, spelling: true, grammar: false);
+      expect(r.spellingFindings, hasLength(30));
+      expect(r.spellingFindings.every((f) => f.fixes.contains('receive')), isTrue);
+    }, skip: why);
+
+    test('capitals are kept when a suggestion is shown for an all-caps word', () {
+      final s = WritingChecker.suggestionsFor('RECIEVE', fixes: const ['receive']);
+      expect(s, ['RECEIVE']);
+      expect(WritingChecker.suggestionsFor('Recieve', fixes: const ['receive']),
+          ['receive']);
+    });
   });
 }

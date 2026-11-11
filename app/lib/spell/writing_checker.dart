@@ -22,11 +22,21 @@ import 'spell_checker.dart';
 /// finding in [grammar] as the blue one, with its message and fixes available
 /// from the right-click menu.
 class WritingResult {
-  const WritingResult({this.spelling = const [], this.grammar = const []});
+  const WritingResult({
+    this.spelling = const [],
+    this.spellingFindings = const [],
+    this.grammar = const [],
+  });
 
   static const empty = WritingResult();
 
+  /// Where the misspellings are.
   final List<TextRange> spelling;
+
+  /// The same misspellings with their suggestions, best first and in the
+  /// person's own English. Empty when the old word list answered (it has no
+  /// suggestions to give ahead of time; the menu asks it directly).
+  final List<TextFinding> spellingFindings;
   final List<TextFinding> grammar;
 
   bool get isEmpty => spelling.isEmpty && grammar.isEmpty;
@@ -52,17 +62,20 @@ class WritingChecker {
       final found = await OnoteText.check(
           SpellChecker.proseOnly(text), dialect, want);
       final ranges = <TextRange>[];
+      final spelled = <TextFinding>[];
       final others = <TextFinding>[];
       for (final f in found) {
         if (f.isSpelling) {
           // Words the person taught us stay taught.
           if (learnedWords.contains(f.word.toLowerCase())) continue;
           ranges.add(TextRange(start: f.start, end: f.end));
+          spelled.add(f);
         } else {
           others.add(f);
         }
       }
-      return WritingResult(spelling: ranges, grammar: others);
+      return WritingResult(
+          spelling: ranges, spellingFindings: spelled, grammar: others);
     }
     // No native library: the old list, for spelling only.
     if (!spelling) return WritingResult.empty;
@@ -71,18 +84,19 @@ class WritingChecker {
   }
 
   /// Suggestions for the misspelled [word], best first.
-  static Future<List<String>> suggest(String word,
-      {required EnglishDialect? dialect}) async {
-    if (dialect == null) return const [];
-    if (OnoteText.available) {
-      final s = await OnoteText.suggest(word, dialect);
-      if (s.isNotEmpty) return _matchCase(word, s);
-    }
+  ///
+  /// [fixes] are the ones the checker attached to the underline, which are
+  /// already ranked and in the person's English; they are used when there are
+  /// any. Only when there are none (the old word list, which attaches nothing)
+  /// does this ask the old list directly.
+  static List<String> suggestionsFor(String word,
+      {List<String> fixes = const []}) {
+    if (fixes.isNotEmpty) return _matchCase(word, fixes);
     final checker = SpellChecker.loaded;
     return checker == null ? const [] : checker.suggest(word);
   }
 
-  /// A suggestion for `Teh` should be `The`, and for `TEH` should be `THE`.
+  /// A suggestion for `TEH` should be `THE`, not `the`.
   static List<String> _matchCase(String word, List<String> suggestions) {
     if (word.length > 1 && word == word.toUpperCase()) {
       return [for (final s in suggestions) s.toUpperCase()];

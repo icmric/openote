@@ -14,10 +14,6 @@ class OnoteText {
           String text, EnglishDialect dialect, int want) async =>
       const [];
 
-  static Future<List<String>> suggest(String word, EnglishDialect dialect,
-          {int max = 5}) async =>
-      const [];
-
   static Future<String?> autocorrect(String word, EnglishDialect dialect) async =>
       null;
 

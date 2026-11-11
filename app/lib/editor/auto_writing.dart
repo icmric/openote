@@ -13,11 +13,13 @@
 /// guarantee that German nouns, French accents and Chinese text are never
 /// "fixed" — it is one gate in one place, not a check in each rule.
 ///
-/// **Undo.** A fix is made inside the same keystroke, so the field's own undo
-/// reverts it together with the character that caused it. Backspace straight
-/// after a fix puts the word back as typed and keeps the boundary character
-/// (see `_LiveMarkdownSession._undoAutoFix`), which is how every word processor
-/// does it, and remembers the word so it is not fixed again.
+/// **Undo.** Two ways back. Backspace straight after a fix puts the word back
+/// as typed and keeps the boundary character (see
+/// `_LiveMarkdownSession._undoAutoFix`), which is how every word processor does
+/// it, and remembers the word so it is not fixed again. Ctrl+Z is the app's own
+/// undo (the field's cannot be used here: see `AppShell._blockTextActions`),
+/// which steps back a whole burst of typing, the fix with it, as it does for
+/// anything else typed in that burst.
 library;
 
 import 'package:flutter/services.dart';
@@ -113,10 +115,6 @@ AutoFix? computeAutoFix({
   if (!word.contains(RegExp(r'\p{L}', unicode: true))) return null;
   if (ws > 0 && !_openers.contains(t[ws - 1])) return null;
 
-  // Prose only: inside `code`, a [[link]], a URL or an equation, nothing is
-  // touched. (The same blanking the grammar checker is shown.)
-  if (SpellChecker.proseOnly(t).substring(ws, we) != word) return null;
-
   var fixed = word;
   final lower = word.toLowerCase();
   final first = word[0];
@@ -151,6 +149,12 @@ AutoFix? computeAutoFix({
   }
 
   if (fixed == word) return null;
+
+  // Prose only: inside `code`, a [[link]], a URL or an equation, nothing is
+  // touched. (The same blanking the grammar checker is shown.) Asked last,
+  // because it reads the whole block and almost every word needs no fix.
+  if (SpellChecker.proseOnly(t).substring(ws, we) != word) return null;
+
   final newText = t.replaceRange(ws, we, fixed);
   final newCaret = caret + (fixed.length - word.length);
   return AutoFix(

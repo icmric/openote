@@ -1,5 +1,13 @@
 /// Spell checking (TEXT-11) — a pure-Dart wordlist checker.
 ///
+/// **Since 11 November 2026 this is the FALLBACK**, not the checker. The editor
+/// asks `writing_checker.dart`, which uses the bundled native checker
+/// (`rust/onote_text`, built on Harper: the person's own English, grammar,
+/// suggestions) and drops back to this list only when that library is not
+/// there. It also supplies [SpellChecker.proseOnly], the blanking both use. Its
+/// word list is still American and still has no dialect, which is why it is
+/// the fallback and not the default.
+///
 /// **Why not the platform, as the PRD's wording suggests?** Because on desktop
 /// there is no platform to ask. Flutter's `DefaultSpellCheckService` is
 /// documented and implemented for Android and iOS only, and `EditableText`
@@ -247,18 +255,24 @@ class SpellChecker {
 
     while (i < text.length) {
       var skipTo = _skipRegionEnd(text, i);
-      // `$x^2$`: an inline equation is not words. Same line only, and not the
-      // escaped `\$` that means a dollar sign.
       if (skipTo == i &&
           text.codeUnitAt(i) == 0x24 &&
           (i == 0 || text.codeUnitAt(i - 1) != 0x5C)) {
-        var j = i + 1;
-        while (j < text.length &&
-            text.codeUnitAt(j) != 0x0A &&
-            !(text.codeUnitAt(j) == 0x24 && text.codeUnitAt(j - 1) != 0x5C)) {
-          j++;
+        if (text.startsWith(r'$$', i)) {
+          // `$$ … $$`: a display equation, which may run over several lines.
+          final close = text.indexOf(r'$$', i + 2);
+          skipTo = close < 0 ? text.length : close + 2;
+        } else {
+          // `$x^2$`: an inline equation is not words. Same line only, and not
+          // the escaped `\$` that means a dollar sign.
+          var j = i + 1;
+          while (j < text.length &&
+              text.codeUnitAt(j) != 0x0A &&
+              !(text.codeUnitAt(j) == 0x24 && text.codeUnitAt(j - 1) != 0x5C)) {
+            j++;
+          }
+          if (j < text.length && text.codeUnitAt(j) == 0x24) skipTo = j + 1;
         }
-        if (j < text.length && text.codeUnitAt(j) == 0x24) skipTo = j + 1;
       }
       if (skipTo > i) {
         blank(i, skipTo);

@@ -5425,9 +5425,9 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Spell check (TEXT-11). English-only for v0.2 — the bundled wordlist is
-  /// en-US, and non-English dictionaries are a recorded follow-up rather than
-  /// a half-built option here.
+  /// Spell check (TEXT-11): the red underline. English only — the checker has
+  /// no other language, so [writingDialect] being null switches it off, and
+  /// non-English dictionaries are a recorded follow-up (backlog §1.16).
   bool spellCheckEnabled = true;
 
   // ── Writing help: grammar, autocorrect, capitals, and which English ─────
@@ -7750,7 +7750,14 @@ class AppState extends ChangeNotifier
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
     final gc = _repo.getSetting('grammarCheck');
-    if (gc is bool) grammarCheckEnabled = gc;
+    if (gc is bool) {
+      grammarCheckEnabled = gc;
+    } else if (sc is bool && !sc) {
+      // Someone who switched spell check OFF before grammar existed asked for no
+      // underlines at all. Grammar is new, so it follows that choice until they
+      // say otherwise, rather than arriving switched on under them.
+      grammarCheckEnabled = false;
+    }
     final ac = _repo.getSetting('autoCorrect');
     if (ac is bool) autoCorrectEnabled = ac;
     final acap = _repo.getSetting('autoCapitalize');
