@@ -74,14 +74,15 @@ release**: they were noted to be thought through, not fixed now. Sizes are first
 
 | Note | Size | What was said, and what is already known |
 |---|---|---|
-| **New sections cycle through colours** | S, plus design time | Today every section defaults to the same colour. Cycle through a palette as sections are made. The palette is the real work: it is **the same for everyone unless they change it**, so it has to be good. Needs to hold up in light and dark, tell colours apart by lightness as well as hue, and be a chosen number (about eight) that repeats. Decide before building whether sections that already exist are left alone — they should be, silently recolouring someone's notebook is worse than the sameness |
+| **New sections cycle through colours** | S, plus design time | Today every section defaults to the same colour. **Decided:** cycle through a palette as sections are *made*; **existing sections are never touched**. The palette is the real work — it is the same for everyone unless they change it — and the owner finds today's look generic, too close to OneNote's tabs. **Explored on 11 November** on the design canvas ("Exploration: section colours"): eight colours with a dark and a light value each, warm and cool alternating, and three ways of marking a section — **A** the thin stripe (as today), **B** a chip with the selected row tinted in the section's own colour, **C** an open ring echoing the app icon. Leaning **C with B's tint**: it is the one that is not OneNote, and it makes the app's own mark do some work. *Not yet looked at by the owner, and the colour values are a first pass, not checked for colour-blindness.* **Groups** could carry a colour as a dot on the name and a rail down their sections (drawn in the sketch); how that sits with sections that have their own colours is open. Decide the palette, then build, with a way to change a colour that already exists |
 | **"New section" does not make sense beside a bare "+"** | S | The footer says *Section* with a folder icon while the new-page button, up in the pages header, is a plain plus. Two buttons that make a thing, said two ways. Settle it together with [#43 and #18](v1.0.3.md#43--one-menu-to-create-things): one way of saying "new", used for page, section and group |
 | **Hide the Home tab** | S | Home (favourites and recents) has never earned its place for the owner. At minimum an option to hide it; whether it should exist at all is the larger question |
 | **Drop "· open" and "1 open" from the notebook list** | S | The open notebook is already highlighted, so both say it twice |
 | **More themes, and how to choose one** | M–L | Already [#12 and PR #22](v1.0.3.md#the-theme-catalogue-12). New here: the default stays *follow the computer*, and how a person *picks* one is undecided — a short list, swatches, or a gallery. Settle the picker before the themes |
-| **One phrase for "follow the computer"** | S | Theme says *System*, Language right under it says *Same as my computer*. Use *Same as my computer* for both: it is the plain one |
-| **The Sync dialog does too much** | M | See below |
-| **A popup with a nice animation, from the lab project** | — | To be looked at, **not** implemented. The owner has not yet tested whether the toast fix ([#38](https://github.com/icmric/openote/issues/38)) is in or works. The lab project is a web app (`C:\src\lab`) and no animated dialog was found in it by search: the owner will say which one |
+| **One phrase for "follow the system"** | S | Theme says *System*, Language right under it says *Same as my computer*. **Decided:** *System default* (or *System*) for both, because a mobile version is intended and some people dislike a phone being called a computer. Use the same words wherever the app follows the device — theme, language, and any later setting |
+| **The Sync dialog does too much** | M | See below. **Git stays in it, and stays visible**: it is not how most people would sync, nor the best way, but the owner wants the option, so it is *not* folded behind Advanced |
+| **A popup animation from the lab project** | — | The one meant is the **"voice note uploaded" confirmation in the advent editor**. To be looked at for how it moves, **not** copied in style: that one is informational, and the undo toast has a real job (a button that works). **It was not found** in `C:\src\lab` on `main` (clean tree): the only animations in the source are a pulsing recording dot and a blinking cursor. It may be uncommitted elsewhere or live only on the deployed site; the owner will say where. The toast fix ([#38](https://github.com/icmric/openote/issues/38)) has not yet been tried by hand |
+| **Bring notebooks over from other apps** | M–L, later | Obsidian first, as it is popular. **A Markdown-folder importer already exists** (`export/md_import.dart`, in the notebook list as *Markdown folder*): the chosen folder becomes a section, files become pages, nested folders become pages with subpages, `[[wiki-links]]` render, and YAML front matter is stripped. What it does **not** do is the list that makes an Obsidian vault feel moved: **pictures** (`![[img.png]]` stays literal text — the biggest gap), tags and front matter (dropped), the vault as a *notebook* with its folders as groups rather than one section, and `.canvas` files (Openote *exports* Canvas; it does not read it). It is a very different way of working — links and folders, not a page you place things on — so expect it to need decisions, not just code. Flagged for later. The same importer is the likely base for Notion, Joplin and Evernote exports, which are mostly Markdown or HTML; unchecked |
 
 ### The Sync dialog, backups and restore
 
@@ -118,10 +119,36 @@ The owner's requirements, as stated:
 | Cost | None | A new default folder the person did not choose |
 
 One place wins on the owner's own test. A sensible default is a folder in the person's own documents,
-outside any cloud folder, with *add another place* for the cloud copy. **Two things need measuring first:**
-how big ten dated copies of a real notebook are (the owner's old OneNote one is 184 MB; Openote stores
-pictures by hash, so copies could share them and differ only in the log — unconfirmed), and how often a
-backup should run (on close, daily, both).
+outside any cloud folder, with *add another place* for the cloud copy.
+
+**Size, and how to keep it down.** Settled by the owner: most pages and pictures do not change between
+backups, so storing each backup in full would be wasteful, and they should be stored as little as
+possible. Two ideas were raised — compress, or store only the differences — and they are not the same:
+
+| | What it saves | Where it falls short |
+|---|---|---|
+| **Compress each copy** | Text and the op log shrink well | Pictures, PDFs and video are already compressed and barely move. The bulk of a student's notebook is exactly those |
+| **Store each thing once, and let backups point to it** | Everything that did not change costs nothing, pictures and PDFs included | Needs the bookkeeping below |
+| **Store differences, rebuild on request** | The same saving for text | More machinery, and a restore has to replay a chain; one damaged link spoils everything after it |
+
+**Recommend the middle row, with compression on top.** Openote already stores pictures and files **by
+their hash**, so a backup can be a small list ("this page at this version, these pictures") over one
+shared store, and a restore is just reading the list. If the op log is append-only a backup of it may be
+no more than *how far it had got*, which would make it nearly free; that needs confirming in the store
+format. This is also how deduplicating backup tools work. **The price is the one hazard this
+project already knows:** once backups share files, deleting an old backup means deciding which shared
+files nothing else uses, which is the same unsettled question as [blob collection](#13-blob-garbage-collection--m),
+and a wrong delete costs a backup somebody was counting on. Do that bookkeeping once, and test it hardest.
+
+**When, and how many are kept.** *Set by the user.* The default is **every two days**, with choices from
+about every hour to about every two weeks. Keep the typical thinning: the few latest copies, then one
+from about two weeks ago, one from a month ago, two months, and so on, spacing out as they age. The
+numbers are the owner's to tune; the shape is the standard one. Two cases to decide: a backup that finds
+nothing changed (skip it, and say so), and a computer that was off when one was due (take it at the next
+start, not never).
+
+**Still to measure:** the real size of a stack of backups of a real notebook, once the shape above is
+chosen. The owner's old OneNote one is 184 MB.
 
 **Restore, in two verbs.** *Restore as a new notebook* is always safe: nothing is overwritten, and it is the
 only route for a notebook that no longer exists. *Put this notebook back to then* replaces what is there,
@@ -130,7 +157,7 @@ The list shows dates in plain words, grouped by notebook, with a *Notebooks no l
 
 **The dialog after that.** *Sync* keeps the folder choice and the computer name, and loses its prose.
 *Backups* becomes its own place — a list, a *Back up now* button, a place to add destinations, and
-restore. Git moves behind an *Advanced* fold. Each question has one home, which is the design rule the
+restore. Git stays visible in Sync, as its own labelled choice. Each question has one home, which is the design rule the
 rest of the app follows.
 
 ---

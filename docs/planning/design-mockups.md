@@ -17,6 +17,7 @@ tables below are what it was made from.
 | Settings dialog | The Appearance pane (the only one drawn) | `settings_dialog.dart`, screenshot on #41 |
 | Sync this notebook | The not-yet-synced state, with the 460 px height cap and the scrollbar drawn over the controls — **as it is, faults included** ([#42](https://github.com/icmric/openote/issues/42)) | `sync_dialog.dart`, screenshot on #42 |
 | Context menus | The box menu and the navigator row menu | `context_menus.dart`, `sidebar.dart`, screenshot on [#39](https://github.com/icmric/openote/issues/39) |
+| Section colours (exploration) | **Not the app.** Eight proposed section colours with dark and light values, and three ways of marking a section (stripe, chip, open ring) side by side, for the note on new-section colours in the [backlog](backlog.md#the-owners-ui-notes-11-november) | New; the palette is a first pass |
 
 Colours, type sizes, radii and row heights are the real tokens in `app/lib/theme/tokens.dart` and
 `onote_theme.dart` (Inter; 13 px body; 6/8/12 px radii; the surface and text colours). **The accent is
