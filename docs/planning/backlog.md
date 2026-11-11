@@ -478,6 +478,66 @@ a grammar underline *replace* the word, or only offer a fix on right-click? And 
 only for the sure cases (*teh* → *the*), which is still the escape-hatch question shared with
 auto-capitalisation.
 
+#### Decided 11 November, and the licence and build-cost checks
+
+**Decided by the owner.**
+  * **English-only grammar is acceptable for now, with a plan to widen it.** The plan is the table above:
+    Hunspell spelling for the other six languages first, grammar later and only if a small enough engine
+    exists. The settings must say plainly what a switch covers in the current language.
+  * **Autocorrect is on by default**, for small high-confidence typos only (*teh* → *the*): a word that is
+    not in the dictionary, has exactly one clear candidate one edit away, and is corrected on the word
+    boundary, undoable with one Ctrl+Z (the same escape hatch as everywhere else in the editor).
+  * **Auto-capitalisation is on by default** (the start of a sentence, a lone *i*) with the same undo.
+  * **Each has its own switch in Settings**, next to the spelling one, so spelling, grammar,
+    autocorrect and auto-capitalisation are four independent choices.
+  * **None of it may touch other languages.** Autocorrect and auto-capitalisation run **only when the
+    spelling language is English**. In German, French, Spanish, Italian, Portuguese or Chinese they do
+    nothing, because capitalisation rules differ (German nouns), and a wrong "fix" in someone's
+    language is worse than none. The language comes from the *Spelling language* setting
+    (*System default*, overridable), **not** guessed from each paragraph; a note written in two
+    languages is a known limit, with a per-section language as the later answer. Needs a test that
+    types German and French and expects no change.
+
+**Licence check — Harper (`harper-core` 2.13.0).**
+
+| Part | Finding |
+|---|---|
+| **The code** | `Apache-2.0`, stated in the crate and the repository. Apache-2.0 may be combined into an AGPL-3.0 application (one-way compatible; the combined app stays AGPL). Obligations: ship the Apache licence text and Harper's notices with the app, keep the copyright lines, and mark anything we modify. We would not modify it |
+| **Its dependencies** (268 entries in the real runtime tree) | Overwhelmingly MIT, Apache-2.0, Unlicense, Zlib, Unicode-3.0 and CC0. **Three are MPL-2.0** (`colored`, `cssparser`, `dtoa-short`, all pulled in by Harper's HTML sanitiser): a file-level copyleft that is permitted in an AGPL app (MPL-2.0 names the GPL family as compatible) as long as those files stay under MPL and their source stays available, which crates.io already does. One crate is offered as `MIT OR Apache-2.0 OR LGPL`; we take the permissive option |
+| **The word list and the trained models** | **Not documented.** The crate ships no statement of where `dictionary.dict` (55,000 lines, "original dictionary import" with the dialect spellings) or the two trained grammar models came from, and a comment in the list says some entries were "probably imported from Wiktionary". The repository as a whole is Apache-2.0, so redistributing it on their claim is the normal basis, and individual words are not usually protectable, but **the provenance is a question for upstream**, not something we can establish. Worth asking before the release that ships it. (Not done from here: it is a conversation on their issue tracker, which is the owner's to hold.) |
+| **The 24 MB thesaurus** | A default feature we do not need; turning it off removes it, and its data, from the build |
+| **Where it may live** | **Not `onote_core`.** Its `deny.toml` allows five licences and ADR-0005 promises no copyleft in that graph; Harper's tree would add BSD, ISC and MPL. A separate crate, audited and added to the table in [LICENSING.md](../../LICENSING.md), keeps that promise intact. MPL and AGPL are both outside the permissive tier by design |
+
+**The build cost, measured.**
+
+| | Time | Size |
+|---|---|---|
+| First build, from nothing, as it would be with the defaults and full link-time optimisation | **15 min 29 s** | 15.6 MB test program |
+| First build, with the thesaurus off and no link-time optimisation | **13 min 03 s** | 11.4 MB |
+| Rebuild after changing only our own wrapper code | **4 to 5 min** (4:37 with optimisation, 3:55 without) | |
+
+So it is **not 15 minutes on every build.** The bulk is one-off compilation of about 270 packages, and
+`burn`, a machine-learning library Harper needs for its part-of-speech tagger and cannot be built
+without, is a large share of it. CI already caches Rust dependencies for the core (`Swatinem/rust-cache`
+in `ci.yml` and `release.yml`), so after the first run the dependencies are restored and only our own
+crate rebuilds. **The cache is paid again** when `Cargo.lock` changes (a Harper upgrade), when GitHub
+evicts it after a week unused, and once per operating system and Mac chip, because each builds its own.
+Expect a cold release to take about 15 minutes longer on the slowest runner, then a warm one to add a few
+minutes. Not measured: GitHub's runners (slower or faster than this machine), and the library built as a
+`cdylib` inside the Flutter build. The release workflow would need the same cache line for the new crate.
+
+**Is Rust necessary? No, but it is the best fit.**
+
+| Option | Verdict |
+|---|---|
+| **Pure Dart packages** (`spell_check_on_client`, `simple_spell_checker`, a Norvig-style `spell_checker`) | Spelling only, from a word list, with no dialects and no grammar. They would match or slightly beat what we have now, not what Harper does |
+| **The system checker** (`native_spell_checker`) | Differs per machine, no grammar, no tests in CI. The reasons in the first part of this section still hold |
+| **Harper as a separate program**, speaking the language-server protocol (`harper-ls`) | No FFI, but ships an extra executable per platform and a process to manage. Keeps the Dart side simple; costs packaging |
+| **Harper as a Rust library behind `dart:ffi`** | One native library the app already knows how to load (same pattern as `onote_core`), fastest, offline. The cost is the build above. **Recommended**, as a small crate beside `onote_core` rather than in it |
+
+**Newer version.** Version 3.0.0 of `harper-core` was available when this was tested (2.13.0 was used).
+Check what changed before pinning, and pin the exact version so a rebuild cannot change what gets underlined.
+
 ### 1.17 Two settings the rail was built to hold
 
 Named by the owner while redesigning Settings — *"In time we will include more
