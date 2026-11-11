@@ -136,6 +136,47 @@ class OnoteText {
     }
   }
 
+  static bool _warm = false;
+  static _Fns? _uiFns;
+
+  /// Load the dictionary and grammar rules in the background so that the first
+  /// real use does not stall. The native engine is one per process, so once
+  /// this finishes, [autocorrectNow] is a microsecond lookup on any thread.
+  static Future<void> warmUp(EnglishDialect dialect) async {
+    if (_warm) return;
+    final path = libraryPath;
+    if (path == null) return;
+    final code = dialect.code;
+    try {
+      await offThread(() {
+        final fns = _Fns(DynamicLibrary.open(path));
+        fns._str('warm up', (a) => fns.check(a, code, kWantSpelling));
+        // `autocorrect` builds nothing extra, but touching it proves the
+        // symbol resolves before the editor depends on it.
+        fns._str('teh', (a) => fns.autocorrect(a, code));
+        return 0;
+      });
+      _warm = true;
+    } catch (_) {
+      // Stay cold: autocorrectNow keeps answering null.
+    }
+  }
+
+  /// The sure correction for [word], answered at once on the calling isolate,
+  /// or null. **Only once [warmUp] has finished**: the first call into the
+  /// engine takes about a second, and a keystroke must never wait for that.
+  static String? autocorrectNow(String word, EnglishDialect dialect) {
+    final path = libraryPath;
+    if (!_warm || path == null || word.isEmpty) return null;
+    try {
+      final fns = _uiFns ??= _Fns(DynamicLibrary.open(path));
+      final r = fns._str(word, (a) => fns.autocorrect(a, dialect.code));
+      return r.isEmpty ? null : r;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<List<String>> suggest(String word, EnglishDialect dialect,
       {int max = 5}) async {
     final path = libraryPath;

@@ -20,4 +20,8 @@ class OnoteText {
 
   static Future<String?> autocorrect(String word, EnglishDialect dialect) async =>
       null;
+
+  static Future<void> warmUp(EnglishDialect dialect) async {}
+
+  static String? autocorrectNow(String word, EnglishDialect dialect) => null;
 }

@@ -11,7 +11,7 @@ import '../update/app_update.dart' show kAppVersion;
 import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
-import '../core/onote_text.dart' show EnglishDialect, TextFinding;
+import '../core/onote_text.dart' show EnglishDialect, OnoteText, TextFinding;
 import '../spell/spell_checker.dart';
 import '../spell/writing_checker.dart';
 import '../state/app_state.dart';
@@ -21,6 +21,7 @@ import '../math/evaluate.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import '../canvas/portal_view.dart';
+import 'auto_writing.dart';
 import 'block_atom_host.dart';
 import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
@@ -1135,6 +1136,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
     final dialect = app.writingDialect;
     final spelling = spellCheckEnabled;
     final grammar = app.grammarCheckEnabled;
+    // Load the checker in the background now, so that neither the first
+    // underline nor the first automatic fix has to wait for it.
+    if (dialect != null) unawaited(OnoteText.warmUp(dialect));
     // Nothing to do, or not English: show nothing. A language the checker does
     // not know must never be underlined with English's rules.
     if (dialect == null || (!spelling && !grammar)) {
@@ -1164,6 +1168,31 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// Suggestions by misspelled word, filled in after each check so the
   /// right-click menu (which has to answer at once) already has them.
   final Map<String, List<String>> _suggestionCache = {};
+
+  /// The last automatic fix, while Backspace can still take it back; and the
+  /// words the person has put back as typed, which are not fixed again.
+  AutoFix? _lastFix;
+  final Set<String> _keepAsTyped = {};
+
+  /// Backspace straight after a fix: put the word back as it was typed, keep
+  /// the character that finished it, and remember the word. True when it did.
+  bool _undoAutoFix() {
+    final fix = _lastFix;
+    if (fix == null) return false;
+    _lastFix = null;
+    final v = controller.value;
+    // Only straight after the fix: nothing typed, caret not moved.
+    if (v.text != fix.value.text ||
+        !v.selection.isCollapsed ||
+        v.selection.baseOffset != fix.value.selection.baseOffset) {
+      return false;
+    }
+    _keepAsTyped.add(fix.original.toLowerCase());
+    controller.value = fix.before.copyWith(composing: TextRange.empty);
+    onChanged(controller.text);
+    _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+    return true;
+  }
 
   Future<void> _prefetchSuggestions(
       String text, List<TextRange> ranges, EnglishDialect dialect) async {
@@ -1307,6 +1336,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // exists to remove, reappearing on the one keystroke that declines.
       if (next == null) return KeyEventResult.handled;
     } else if (k == LogicalKeyboardKey.backspace) {
+      // Straight after an automatic fix, Backspace takes the fix back (and only
+      // the fix): the word returns as typed and is not fixed again.
+      if (!hw.isShiftPressed && _undoAutoFix()) return KeyEventResult.handled;
       // Backspace at an equation's right edge steps INSIDE it (v0.20 B.5) -
       // the default would eat the closing dollar nobody can see and revert
       // the whole equation to source, the exact defect class markerAwareDelete
@@ -1643,6 +1675,21 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // and this one is what stops the very next space from taking that
         // apart in front of the student. It needs to see the wrapped text.
         EmphasisGuardFormatter(app, s.block.id),
+        // After everything else, on the text as it will actually be: a
+        // certain typo or a missing capital, fixed as the word is finished.
+        // English only; see auto_writing.dart.
+        AutoWritingFormatter(
+          enabled: () => app.writingDialect != null,
+          autoCorrect: () => app.autoCorrectEnabled,
+          autoCapitalize: () => app.autoCapitalizeEnabled,
+          correct: (w) {
+            final d = app.writingDialect;
+            if (d == null || learnedWords.contains(w.toLowerCase())) return null;
+            return OnoteText.autocorrectNow(w, d);
+          },
+          keep: _keepAsTyped,
+          onFix: (f) => _lastFix = f,
+        ),
       ],
       decoration: InputDecoration(
         isDense: true,
