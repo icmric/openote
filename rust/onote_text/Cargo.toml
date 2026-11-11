@@ -1,0 +1,34 @@
+[package]
+name = "onote_text"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Openote's writing checker: spelling, grammar and small autocorrections, in the English dialect the person writes in. Wraps Harper. Reached from Flutter over hand-written dart:ffi, like onote_core."
+# The APPLICATION tier (AGPL-3.0-or-later), not onote_core's permissive tier.
+# Harper's dependency graph carries MPL-2.0, BSD and ISC code that
+# onote_core's deny.toml deliberately refuses (ADR-0005), which is the whole
+# reason this is a separate crate and not a feature of that one.
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/icmric/openote"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# Pinned EXACTLY: a rebuild must never change what gets underlined. Upgrading is
+# a deliberate act (re-run the tests, re-run the audit in LICENSING.md).
+#
+# default-features = false drops the 24 MB thesaurus and its data, which a
+# checker does not use. `concurrent` is kept (it makes Harper's shared types
+# thread-safe) because Dart may call in from any thread, and the one engine
+# below lives in a global behind a lock.
+harper-core = { version = "=2.13.0", default-features = false, features = ["concurrent"] }
+serde_json = "1"
+
+[profile.release]
+# Not `lto = true` as onote_core has: Harper alone takes ~4 minutes to relink
+# under full LTO and the speed it buys is not what this library is limited by.
+opt-level = 3
+lto = false
+codegen-units = 16
