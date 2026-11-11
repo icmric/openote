@@ -417,6 +417,67 @@ own checker as the default and the only one tested, fix the list — which is
 where the complaint actually comes from — and leave a platform provider as an
 opt-in behind a `SpellService` seam if anyone still wants it afterwards.
 
+#### Investigated 11 November: grammar, dialects and other languages
+
+Asked for by the owner: grammar checking too, and the dialect and language following the system —
+Australian against American English in particular. Today's checker is one American word list
+(`assets/dict/en_us.txt.gz`), distance-1 suggestions, no grammar, and a plain on/off setting.
+
+**Harper** ([Automattic](https://github.com/Automattic/harper), Rust, Apache-2.0, offline) is a spell
+*and* grammar checker, and it has real dialects: `American`, `Canadian`, `Australian`, `British` and
+`Indian`. A throwaway program (built outside the repo) ran it on real sentences:
+
+| | Result |
+|---|---|
+| The words that are all underlined today (Monday, January, Australia, *don't*, email, website, dataset, laptop, mitochondria) | **None flagged** |
+| *colour*, *favourite*, *organisation* | American flags them and offers *color*, *favorite*, *organization*; **Australian and British accept them** |
+| Typos (*recieve*, *lecure*, *definately*, *seperate*, *beleive*, *studnets*, *Teh*, *alot*) | All found, and **the first suggestion was right every time**; *alot* was also reported as "write it as two words" |
+| Grammar (nine deliberate errors) | Caught five: *a orange*, *Its* for *it's*, *could of*, *Their* for *they're*, a missing Oxford comma. **Missed** *Me and him goes*, *This are*, *which was* and the wrong tense in *went yesterday*. Treat it as a good proof-reader of common slips, not a full grammar engine |
+| Speed | First load of its dictionary **about 1 s**; a paragraph then lints in **about 30 ms**. Both must run off the UI thread |
+| Size | The test program is 15.6 MB, dictionary included. Not measured as a library in a Flutter build |
+
+**What it does not do.** **English only**: no German, French, Spanish, Italian, Portuguese or Chinese,
+which are the app's other six languages. Its Markdown handling is its own, and the app's text is its own
+dialect, so the text has to be cut into prose spans first (the current `_wordSpans` already does that)
+and the results mapped back to raw offsets.
+
+**Cost to know about.**
+  * **The first build took 15 minutes** and the dependency tree is large (over 500 packages listed by
+    `cargo metadata`, which overcounts for platforms we will not build; it includes the `burn` machine
+    learning crate). A one-off, but CI time and the three-platform build both pay it.
+  * **It must not go in `onote_core`.** That crate is the permissive tier with an allow-list of five
+    licences ([`deny.toml`](../../rust/onote_core/deny.toml)); Harper's tree adds BSD, ISC, CC0, CDLA and
+    four MPL-2.0 packages. All are fine for the AGPL app, none is fine for that promise. So: **a separate
+    small crate and library** (say `onote_text`), reached the same way over `dart:ffi`.
+  * The Rust, FFI and per-platform library are real work for something the user sees as a squiggle.
+
+**Following the system.** Flutter reports the language and region the operating system is set to, so
+`en-AU` should arrive as `en-AU` (**to confirm on a real machine**; Windows keeps display language and
+regional format apart). The mapping would be: `en-AU` → Australian, `en-GB`, `en-IE`, `en-NZ`, `en-ZA` →
+British (Harper has no New Zealand), `en-CA` → Canadian, `en-IN` → Indian, anything else → American. It
+is the default, with a *Spelling and grammar → Language* setting that says *System default* and can be
+overridden. Changing it must not reload the whole checker; Harper takes the dialect as a plain argument.
+
+**Other languages: spelling is possible, grammar is not (yet).**
+
+| | How | Catch |
+|---|---|---|
+| **Spelling in the other six** | Hunspell dictionaries, read by [`spellbook`](https://github.com/helix-editor/spellbook) (Rust, MPL-2.0, "alpha") or by our own Dart checker once a list is converted | Each dictionary has its **own licence**, several of them copyleft, so each needs checking before it is bundled. Suggestions are Hunspell's, which are good. Chinese has no word spaces and needs no spell check at all |
+| **Grammar in the other six** | LanguageTool is the only mature one | Java, **gigabytes** of memory with its n-gram data (by Harper's own comparison), and LGPL. Not something to embed in a note-taking app. Skipped |
+
+**Recommended order.** (1) The word-list fix already in this section, since it is cheap and needs no
+Rust. (2) **Harper behind a `SpellService` seam**, for English: dialect-aware spelling, better
+suggestions, and grammar underlines in a different colour from spelling, with a *Check grammar* setting
+apart from the spelling one. (3) Hunspell spelling for the other languages when someone asks. The seam
+matters most: the editor reaches the checker at three places (`live_markdown_engine.dart`, the right-click
+menu, and the Settings toggle), so the engine can change without touching them.
+
+**Open questions for the owner.** Is English-only grammar acceptable for a first release (the app is
+used in seven languages, and a *Check grammar* switch that does nothing in German needs to say so)? Should
+a grammar underline *replace* the word, or only offer a fix on right-click? And autocorrect: on, off, or
+only for the sure cases (*teh* → *the*), which is still the escape-hatch question shared with
+auto-capitalisation.
+
 ### 1.17 Two settings the rail was built to hold
 
 Named by the owner while redesigning Settings — *"In time we will include more
