@@ -191,3 +191,10 @@ if ! codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$DEST/$LIB_NAM
 fi
 
 echo "onote_core: $LIB_NAME ($(echo "$built" | tr -s ' ' | sed 's/^ //')) -> $DEST"
+
+# The writing checker (spelling and grammar) is built and bundled the same way,
+# by its sibling script, so the Xcode project needs no second build phase. A
+# compile error there fails the build exactly as one in the core does.
+if [ -f "$SRCROOT/build_onote_text.sh" ]; then
+  /bin/bash "$SRCROOT/build_onote_text.sh"
+fi

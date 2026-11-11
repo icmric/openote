@@ -98,10 +98,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust/onote_core
+          workspaces: |
+            rust/onote_core
+            rust/onote_text
 
       - name: Build Rust core
         working-directory: rust/onote_core
+        run: cargo build --release
+
+      # The writing checker (spelling and grammar, built on Harper). The CMake
+      # hook builds it during `flutter build` as well; building it here first
+      # puts its ~13-minute cold compile in a step of its own, where the cache
+      # and the log both show it, and a failure names it.
+      - name: Build the writing checker
+        working-directory: rust/onote_text
         run: cargo build --release
 
       # Pinned to the version CI tests — see the comment in ci.yml. A tag
@@ -186,6 +196,7 @@ jobs:
           $stage = "openote-$env:VERSION-windows-x64"
           Copy-Item -Recurse app/build/windows/x64/runner/Release $stage
           Copy-Item rust/onote_core/target/release/onote_core.dll $stage/ -Force
+          Copy-Item rust/onote_text/target/release/onote_text.dll $stage/ -Force
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
 
       # The setup .exe — what a non-technical user should be downloading.
@@ -439,10 +450,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust/onote_core
+          workspaces: |
+            rust/onote_core
+            rust/onote_text
 
       - name: Build Rust core
         working-directory: rust/onote_core
+        run: cargo build --release
+
+      # The writing checker (spelling and grammar, built on Harper). The CMake
+      # hook builds it during `flutter build` as well; building it here first
+      # puts its ~13-minute cold compile in a step of its own, where the cache
+      # and the log both show it, and a failure names it.
+      - name: Build the writing checker
+        working-directory: rust/onote_text
         run: cargo build --release
 
       # Pinned to the version CI tests — see the comment in ci.yml. A tag
@@ -463,8 +484,10 @@ jobs:
 
       # Loader contract: libonote_core.so next to the 'openote' binary. The
       # CMake hook installs it; this is belt-and-braces.
-      - name: Stage native library into the bundle
-        run: cp rust/onote_core/target/release/libonote_core.so app/build/linux/x64/release/bundle/
+      - name: Stage native libraries into the bundle
+        run: |
+          cp rust/onote_core/target/release/libonote_core.so app/build/linux/x64/release/bundle/
+          cp rust/onote_text/target/release/libonote_text.so app/build/linux/x64/release/bundle/
 
       # The check that would have caught shipping a jammy-linked binary to
       # Fedora. libmpv is a LINK-time dependency of media_kit_video's plugin,
@@ -504,13 +527,13 @@ jobs:
           # Per-file breakdown FIRST, so a failure below names its culprit —
           # the aggregate alone says "GLIBC_2.38" without saying which library
           # demanded it, and the prebuilt ones (pdfium) are the likely suspects.
-          for f in "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so; do
+          for f in "$bundle/openote" "$bundle/libonote_core.so" "$bundle/libonote_text.so" "$bundle"/lib/*.so; do
             m="$({ objdump -T "$f" 2>/dev/null || true; } \
               | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true)"
             echo "  ${m:-none}  ${f##*/}"
           done | sort -V
           floor="$(
-            { objdump -T "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so 2>/dev/null || true; } \
+            { objdump -T "$bundle/openote" "$bundle/libonote_core.so" "$bundle/libonote_text.so" "$bundle"/lib/*.so 2>/dev/null || true; } \
               | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true
           )"
           echo "highest glibc symbol version required by this bundle: ${floor:-none found}"
@@ -573,7 +596,7 @@ jobs:
           echo "--- deb ---"
           dpkg-deb -c "$deb" | sed 's/ -> .*$//' | awk '{print $NF}' > deb.list
           echo "--- rpm ---"; rpm -qlp "$rpm" > rpm.list
-          for want in /opt/openote/openote                       /opt/openote/libonote_core.so                       /opt/openote/data/flutter_assets                       /usr/bin/openote                       /usr/share/applications/org.openote.openote.desktop                       /usr/share/icons/hicolor/512x512/apps/openote.png; do
+          for want in /opt/openote/openote                       /opt/openote/libonote_core.so                       /opt/openote/libonote_text.so                       /opt/openote/data/flutter_assets                       /usr/bin/openote                       /usr/share/applications/org.openote.openote.desktop                       /usr/share/icons/hicolor/512x512/apps/openote.png; do
             grep -q -- "$want" deb.list || { echo "::error::deb is missing $want"; exit 1; }
             grep -q -- "$want" rpm.list || { echo "::error::rpm is missing $want"; exit 1; }
           done
@@ -602,7 +625,9 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust/onote_core
+          workspaces: |
+            rust/onote_core
+            rust/onote_text
 
       # Flutter's macOS release build is universal by default; the dylib must
       # match or Intel Macs silently lose the Rust core through a Rosetta
@@ -626,6 +651,16 @@ jobs:
           lipo -create -output libonote_core.dylib \
             target/aarch64-apple-darwin/release/libonote_core.dylib \
             target/x86_64-apple-darwin/release/libonote_core.dylib
+
+      # The writing checker, the same way: both Apple targets, joined.
+      - name: Build the writing checker (universal)
+        working-directory: rust/onote_text
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          lipo -create -output libonote_text.dylib \
+            target/aarch64-apple-darwin/release/libonote_text.dylib \
+            target/x86_64-apple-darwin/release/libonote_text.dylib
 
       # Pinned to the version CI tests — see the comment in ci.yml. A tag
       # must never build with a toolchain no push has been verified against.
@@ -660,6 +695,8 @@ jobs:
           APP=app/build/macos/Build/Products/Release/openote.app
           cp rust/onote_core/libonote_core.dylib "$APP/Contents/MacOS/"
           codesign --force --sign - "$APP/Contents/MacOS/libonote_core.dylib"
+          cp rust/onote_text/libonote_text.dylib "$APP/Contents/MacOS/"
+          codesign --force --sign - "$APP/Contents/MacOS/libonote_text.dylib"
           codesign --force --sign - \
             --entitlements app/macos/Runner/Release.entitlements "$APP"
           codesign --verify --strict --verbose=2 "$APP"

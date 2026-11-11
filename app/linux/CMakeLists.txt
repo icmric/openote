@@ -107,6 +107,35 @@ else()
     VERBATIM)
 endif()
 
+# === onote_text (Rust): the writing checker, bundled the same way ============
+# Spelling and grammar in the person's own English (rust/onote_text, built on
+# Harper). A separate crate and library from onote_core on purpose — its
+# dependencies carry licences the core's permissive tier refuses (ADR-0005) —
+# but built and shipped by the same hook, so it is simply part of the app, not
+# a download. The FIRST build compiles Harper and takes about 13 minutes; after
+# that cargo is incremental. Without cargo the app still runs: the editor falls
+# back to its old word list (app/lib/spell/writing_checker.dart).
+set(ONOTE_TEXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../rust/onote_text")
+set(ONOTE_TEXT_LIB "${ONOTE_TEXT_DIR}/target/release/libonote_text.so")
+
+if(CARGO_EXECUTABLE)
+  add_custom_target(onote_text ALL
+    COMMAND "${CARGO_EXECUTABLE}" build --release
+            --manifest-path "${ONOTE_TEXT_DIR}/Cargo.toml"
+    BYPRODUCTS "${ONOTE_TEXT_LIB}"
+    COMMENT "Building onote_text (Rust, release) - first build takes ~13 minutes"
+    VERBATIM)
+else()
+  message(WARNING
+    "cargo not found — skipping the writing checker (libonote_text.so). The "
+    "editor will use its older word list, with no grammar checking.")
+  add_custom_target(onote_text ALL
+    COMMAND ${CMAKE_COMMAND} -E echo
+      "WARNING: cargo not on PATH — onote_text (Rust) NOT built; no grammar checking."
+    COMMENT "onote_text skipped (cargo not found)"
+    VERBATIM)
+endif()
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
@@ -168,4 +197,7 @@ endif()
 # including the POST_BUILD variant INTEGRATION.md used to sketch — would be
 # wiped. OPTIONAL covers the no-cargo build (see the guard above).
 install(FILES "${ONOTE_CORE_LIB}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime OPTIONAL)
+# …and the writing checker beside it, for the same reasons.
+install(FILES "${ONOTE_TEXT_LIB}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime OPTIONAL)

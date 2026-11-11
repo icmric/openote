@@ -104,6 +104,12 @@ flutter:
     # Spell-check wordlist (TEXT-11). Loaded lazily on a background isolate the
     # first time text is edited — never at startup.
     - assets/dict/en_us.txt.gz
+    # The licence and notices for Harper, the grammar and spelling checker that
+    # ships inside the app as rust/onote_text. Apache-2.0 asks that its text
+    # travel with the code; three MPL-2.0 dependencies ask that we say where
+    # their source is. See LICENSING.md.
+    - assets/licenses/harper/LICENSE
+    - assets/licenses/harper/NOTICES.txt
     # The browser demo's notebook — a real container, authored in Openote
     # itself. Read only when there is no disk to open a workspace on, so a
     # desktop build bundles 94 KB it never touches. See assets/demo/README.md.

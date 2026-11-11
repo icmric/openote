@@ -48,6 +48,14 @@ ICON="$REPO/app/assets/icon/openote_icon.png"
   exit 1
 }
 
+# The writing checker (spelling and grammar) is part of the app, not an option:
+# without it the editor drops back to the older word list and loses grammar.
+[ -f "$BUNDLE/libonote_text.so" ] || {
+  echo "libonote_text.so is missing from the bundle — the packaged app would" >&2
+  echo "start but have no grammar checking and only the old spell-check list." >&2
+  exit 1
+}
+
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 ROOT="$STAGE/root"

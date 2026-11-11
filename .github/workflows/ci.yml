@@ -66,7 +66,11 @@ jobs:
       # app build pays a cold lto/codegen-units=1 compile.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust/onote_core
+          # The writing checker (rust/onote_text) is built by the same hook, and
+          # compiling Harper cold takes ~13 minutes, so it is cached too.
+          workspaces: |
+            rust/onote_core
+            rust/onote_text
 
       # macOS needs BOTH Apple targets installed, and this job is the only
       # automated exercise the macOS build hook
@@ -101,6 +105,16 @@ jobs:
       - name: Build Rust core for the tests (host-native)
         if: runner.os == 'macOS'
         working-directory: rust/onote_core
+        run: cargo build --release
+
+      # The same for the writing checker: `flutter test` loads it from
+      # `../rust/onote_text/target/release/` (OnoteText._find), and the tests
+      # that need it SKIP rather than fail when it is absent — so without this
+      # they would skip on macOS and pass everywhere else, and nobody would
+      # see the difference.
+      - name: Build the writing checker for the tests (host-native)
+        if: runner.os == 'macOS'
+        working-directory: rust/onote_text
         run: cargo build --release
 
       # PINNED for determinism: `channel: stable` resolves whatever is
@@ -272,6 +286,27 @@ jobs:
       - name: Clippy
         run: cargo clippy -p onote_core --all-targets -- -D warnings
 
+  # The writing checker (AGPL tier, built on Harper). Tested on its own, with no
+  # Flutter anywhere: release mode, because Harper's dictionary and grammar
+  # rules in a debug build are slow enough to time a job out.
+  text:
+    name: writing checker (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: rust/onote_text
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/onote_text
+      - run: cargo test --release
+
   # Guards the licensing invariant recorded in ADR-0005: onote_core is the
   # permissive tier, and a single copyleft crate in its dependency graph would
   # silently void the promise that anyone can read and write .onote files.
@@ -287,4 +322,10 @@ jobs:
           tool: cargo-deny
       - name: Check dependency licences
         working-directory: rust/onote_core
+        run: cargo deny check licenses
+      # The writing checker is allowed more licences than the core (its tree
+      # has MPL-2.0 and BSD), but the list is closed: a Harper upgrade that
+      # brings in anything else fails here and gets read, not shipped.
+      - name: Check the writing checker's dependency licences
+        working-directory: rust/onote_text
         run: cargo deny check licenses

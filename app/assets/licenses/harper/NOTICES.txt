@@ -1,0 +1,31 @@
+Openote's writing checker (spelling, grammar and small typo fixes) is built on
+Harper, and ships inside the app as the library onote_text (onote_text.dll,
+libonote_text.so or libonote_text.dylib) beside the program.
+
+HARPER
+  harper-core, harper-brill and harper-pos-utils, version 2.13.0
+  Copyright 2024 Automattic Inc.
+  Licensed under the Apache License, Version 2.0 (the file LICENSE beside this
+  one). Source: https://github.com/Automattic/harper
+  Used unmodified.
+
+MOZILLA PUBLIC LICENSE 2.0 COMPONENTS
+  Three of Harper's dependencies are licensed under the Mozilla Public License,
+  Version 2.0 (https://www.mozilla.org/MPL/2.0/). They are used unmodified, and
+  their complete source is available from the addresses below, which is where
+  this notice satisfies the licence's requirement to say so.
+
+    colored 3.1.1      https://github.com/mackwic/colored
+    cssparser 0.38.0   https://github.com/servo/rust-cssparser
+    dtoa-short 0.3.5   https://github.com/upsuper/dtoa-short
+
+  These came in through Harper's HTML sanitiser. The MPL-2.0 permits them to be
+  combined with, and distributed inside, a program under the GNU Affero General
+  Public License, which is what Openote is. The rest of Harper's dependencies
+  are under MIT, Apache-2.0, Zlib, Unlicense, Unicode-3.0, BSD-2-Clause, CC0-1.0
+  and 0BSD, each of which asks only that its notice travel with the code; they
+  are listed, with their licences, by `cargo tree` in rust/onote_text and
+  checked by `cargo deny check licenses` in CI.
+
+Openote itself is licensed under the GNU Affero General Public License 3.0 or
+later; see the LICENSE file at the top of the Openote source.

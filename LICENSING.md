@@ -9,6 +9,7 @@ format must spread with zero friction.*
 |---|---|---|
 | `app/` — the Flutter application | **AGPL-3.0-or-later** (`LICENSE`) | Copyleft including network use. Anyone may fork or self-host, but improvements stay open — including hosted forks. A closed fork of a project that exists to end lock-in would be a betrayal of the premise. |
 | `rust/onote_core/` — the core library: `.onote` reader/writer, content hashing, mirror merge, OneNote importers | **Apache-2.0** (`rust/onote_core/LICENSE`) | Permissive, with an explicit patent grant, so *any* tool — including proprietary ones users depend on — can read and write `.onote` files. Lock-in dies fastest when reading our format is legally frictionless. |
+| `rust/onote_text/` — the writing checker (spelling, grammar, small typo fixes), built on Harper | **AGPL-3.0-or-later** (the application's tier), with its own `deny.toml` | A separate crate from `onote_core` **because of its dependencies**, not its purpose: Harper's tree carries MPL-2.0, BSD and ISC code, which the core's permissive tier refuses (see below). Part of the app and shipped in it, not an add-on. |
 | `docs/specs/` — the file-format, data-model, math and ink specifications | **CC0-1.0** (`docs/specs/LICENSE`) | The spec is a public contract. Nothing should impede implementing it, including attribution requirements. |
 | `rust/onote_core/vendor/cab/` | **MIT** (upstream licence retained) | Third-party code, vendored with a documented two-method patch. Not ours to relicense. |
 | `app/assets/fonts/` | **OFL-1.1** (upstream licences retained beside the assets) | Bundled typefaces: Inter (The Inter Project Authors) and JetBrains Mono (JetBrains). The OFL permits bundling and redistribution with the licence text attached, which is why `OFL.txt` ships in each directory. |
@@ -63,7 +64,18 @@ an Apache-2.0 core:
 | `flutter_math_fork`, `pdf`, `printing`, `desktop_drop`, `rxdart` | Apache-2.0 |
 | `serde`, `serde_json` | MIT OR Apache-2.0 |
 | `cab` (vendored) | MIT |
+| **Harper** — `harper-core`, `harper-brill`, `harper-pos-utils` 2.13.0, pinned exactly (added and audited 2026-11-11 — the spelling and grammar checker in `rust/onote_text`) | Apache-2.0 (Copyright 2024 Automattic Inc.). Compatible with an AGPL-3.0 application; its licence text ships in `app/assets/licenses/harper/`. **Not in `onote_core`**, whose allow-list refuses most of its dependencies |
+| Harper's own dependencies (268 in the runtime tree) | MIT, Apache-2.0, Zlib, Unlicense, Unicode-3.0, BSD-2-Clause, CC0-1.0, 0BSD, and **three under MPL-2.0** (`colored`, `cssparser`, `dtoa-short`): file-level copyleft, used unmodified, source linked from `app/assets/licenses/harper/NOTICES.txt`. Checked mechanically by `rust/onote_text/deny.toml` in CI |
 
-Nothing in the tree is copyleft except Openote's own application code. Re-run
+**What is not established.** Harper's package does not say where its word list
+(`dictionary.dict`) or its two trained grammar models came from, and the list
+itself notes that some entries were "probably imported from Wiktionary". The
+repository is licensed Apache-2.0 as a whole and that is the basis on which it
+is redistributed here; the provenance of the data is a question for the Harper
+project, not something this audit can settle. Its 24 MB thesaurus, a default
+feature whose origin is equally undocumented, is **switched off** and not built.
+
+Nothing in the tree is strong copyleft except Openote's own application code.
+(MPL-2.0 is weak, file-level copyleft: it covers only its own files.) Re-run
 this audit when adding a dependency — particularly to `onote_core`, where a
 copyleft crate would silently break the permissive tier.
