@@ -116,23 +116,6 @@
     .try a:hover, .try a:focus-visible { color:var(--night-0); }
   }
 
-  /* The same shape as .note below it: the brass left border is this site's
-     mark for "the honest bit".
-
-     It sits UNDER the downloads, which is a change from having led with it.
-     Above them it was the tallest thing on the page and pushed every
-     download button off a laptop screen — so the first impression was a
-     paragraph of caveats and a demo link, and the app itself read as
-     unreleased. Honesty that hides the thing it is being honest about is
-     not doing its job. */
-  .status {
-    margin:18px 0 0; text-align:left;
-    background:var(--surface); border:1px solid var(--border);
-    border-left:3px solid var(--brass-400); border-radius:8px;
-    padding:12px 16px; font-size:15px; color:var(--text-2);
-  }
-  .status b { color:var(--text); }
-
   /* ── Downloads ────────────────────────────────────────────────────── */
   section { padding:24px 0 40px; }
   h2 { font-size:22px; margin:0 0 6px; }
@@ -242,23 +225,17 @@
       </div>
     </div>
 
-    <p class="status">
-      <b>Young, and under active development.</b> Updates land often and one
-      can break a feature until the next fixes it. Developed on Windows,
-      tested on Linux occasionally, barely on macOS. What none of that can do
-      is lose your notes: they are files on your disk in a documented format.
-    </p>
-
     <div class="note">
-      <h3>Your operating system will warn you. Here's the honest reason.</h3>
+      <h3>Your system may ask you to confirm the first time</h3>
       <p>
-        Openote isn't code-signed. Certificates cost a few hundred dollars a
-        year per platform, and while the project is this young that money buys
-        nothing you'd notice. The warnings don't mean the software is unsafe —
-        only that we haven't paid to tell your OS who we are. Every download
-        here is built by a
+        Openote is new and its downloads aren't code-signed yet, so Windows
+        and macOS may show a warning before opening it. That means the system
+        hasn't seen it before, not that it is unsafe. Every download is built
+        by a
         <a href="https://github.com/icmric/openote/blob/master/.github/workflows/release.yml">public workflow</a>
-        from a tagged commit, and you can read both.
+        from a tagged commit, and you can read both. The project is young and an
+        update can occasionally break a feature, but your notes are plain files
+        in a documented format on your own disk, so they are not at risk.
       </p>
 
       <details>
@@ -295,16 +272,15 @@ sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></
 <section>
   <div class="wrap">
     <h2>What it does</h2>
-    <p class="sub">Early, but real — and honest about which parts are which.</p>
     <ul class="feat">
-      <li><b>A genuine freeform canvas.</b> Click anywhere, put anything there, pan and zoom in every direction.</li>
-      <li><b>The hierarchy you know.</b> Notebooks, section groups, sections, pages, subpages.</li>
-      <li><b>Pen and handwriting</b> with pressure, plus maths that builds into real notation as you type.</li>
-      <li><b>An open file format.</b> Documented, versioned, and readable without us.</li>
-      <li><b>Imports your OneNote notebooks</b> — pages, images, ink, tables and tags, from real <code>.one</code> files.</li>
-      <li><b>Sync through a folder you already have.</b> Dropbox, OneDrive, Drive, Syncthing, a NAS. No account, no server of ours.</li>
-      <li><b>Flashcards from your own notes</b> — tag a line and it becomes a card, on a spaced-repetition schedule.</li>
-      <li><b>A planner</b> for exam dates, deadlines, reminders and your university timetable.</li>
+      <li><b>Write anywhere on the page.</b> A freeform canvas: put text, pictures or ink wherever you like, and pan and zoom as far as you need.</li>
+      <li><b>Organised the way OneNote is.</b> Notebooks, section groups, sections, pages and subpages.</li>
+      <li><b>Handwriting and maths.</b> Pen input with pressure, and equations that turn into proper notation as you type.</li>
+      <li><b>Bring your OneNote notebooks.</b> Pages, images, ink, tables and tags come across.</li>
+      <li><b>Your notes are plain files.</b> They sit on your disk in a documented format that other programs can read.</li>
+      <li><b>Sync with what you already use.</b> Keep a notebook in Dropbox, OneDrive, Google Drive or Syncthing. No account needed.</li>
+      <li><b>Flashcards from your notes.</b> Tag a line and it becomes a card, reviewed on a spaced-repetition schedule.</li>
+      <li><b>A planner.</b> Exam dates, deadlines, reminders and your timetable, beside your notes.</li>
     </ul>
   </div>
 </section>
@@ -421,13 +397,11 @@ sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></
 
       var when = rel.published_at ? new Date(rel.published_at)
         .toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-      // The tag is the version. `rel.name` is free text — the first release
-      // was called "first release", which told a visitor nothing about which
-      // build they were getting.
-      var label = rel.tag_name
-        ? (rel.name && rel.name !== rel.tag_name
-            ? rel.tag_name + ' · ' + rel.name : rel.tag_name)
-        : (rel.name || 'Latest release');
+      // The tag is the version, and the line reads "Openote v1.0.2". The
+      // release's own name is free text that usually repeats it ("Openote
+      // 1.0.2"), so it is not shown; the release notes link carries the rest.
+      var label = rel.tag_name ? 'Openote ' + rel.tag_name
+                               : (rel.name || 'Latest release');
       document.getElementById('release-line').innerHTML =
         '<b>' + label + '</b>' + (when ? ' · released ' + when : '') +
         ' · <a href="' + rel.html_url + '">release notes</a>';
