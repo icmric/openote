@@ -862,6 +862,35 @@ class LZh extends L {
   String get nbConfirmBin => '移到回收站？之后可以从这里还原。';
 
   @override
+  String get nbConfirmBinShared =>
+      '这个笔记本在共享文件夹里。从这台电脑上移除它，它仍会留在文件夹和你的其他设备上——随时可以用“打开”再添加回来。';
+
+  @override
+  String get nbRemoveFromComputer => '从这台电脑移除';
+
+  @override
+  String get nbDeleteEverywhere => '到处删除…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return '到处删除“$title”？';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody => '这会把它从共享文件夹里删掉，所有使用该文件夹的设备都会失去它。无法撤销。';
+
+  @override
+  String get nbDeleteEverywhereConfirm => '到处删除';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return '从这台电脑移除“$title”？';
+  }
+
+  @override
+  String get nbRemoveSharedBody => '它仍留在共享文件夹和你的其他设备上。随时可以用“打开”再添加回来。';
+
+  @override
   String get nbCoreMissing =>
       'OneNote 导入需要 Rust 内核 — 请编译 onote_core.dll（见 rust/onote_core/INTEGRATION.md）。';
 

@@ -1210,6 +1210,50 @@
   "@nbConfirmBin": {
     "description": "Confirmation question before deleting a notebook."
   },
+  "nbConfirmBinShared": "This notebook is in a shared folder. Removing it from this computer leaves it in the folder and on your other devices — add it back any time with Open.",
+  "@nbConfirmBinShared": {
+    "description": "Inline question when deleting a notebook that lives in a shared (cloud) folder."
+  },
+  "nbRemoveFromComputer": "Remove from this computer",
+  "@nbRemoveFromComputer": {
+    "description": "Button: take a shared notebook off this computer only."
+  },
+  "nbDeleteEverywhere": "Delete everywhere…",
+  "@nbDeleteEverywhere": {
+    "description": "Button: start deleting a shared notebook from the folder and every device."
+  },
+  "nbDeleteEverywhereTitle": "Delete “{title}” everywhere?",
+  "@nbDeleteEverywhereTitle": {
+    "description": "Title of the second, are-you-sure dialog.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Biology"
+      }
+    }
+  },
+  "nbDeleteEverywhereBody": "This deletes it from the shared folder, so it is gone from every device that uses it. This can't be undone.",
+  "@nbDeleteEverywhereBody": {
+    "description": "Body of that dialog."
+  },
+  "nbDeleteEverywhereConfirm": "Delete everywhere",
+  "@nbDeleteEverywhereConfirm": {
+    "description": "The red button that does it."
+  },
+  "nbRemoveSharedTitle": "Remove “{title}” from this computer?",
+  "@nbRemoveSharedTitle": {
+    "description": "Title of the dialog when permanently removing a shared notebook from the recycle bin.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Biology"
+      }
+    }
+  },
+  "nbRemoveSharedBody": "It stays in the shared folder and on your other devices. Add it back any time with Open.",
+  "@nbRemoveSharedBody": {
+    "description": "Body of that dialog."
+  },
   "nbCoreMissing": "OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).",
   "@nbCoreMissing": {
     "description": "Error for a build without the native library. The file name and the path are literal and must not be translated."

@@ -890,6 +890,37 @@ class LFr extends L {
       'Mettre à la corbeille ? Vous pourrez le restaurer d\'ici.';
 
   @override
+  String get nbConfirmBinShared =>
+      'Ce carnet est dans un dossier partagé. Le retirer de cet ordinateur le laisse dans le dossier et sur vos autres appareils : vous pouvez le rajouter à tout moment avec Ouvrir.';
+
+  @override
+  String get nbRemoveFromComputer => 'Retirer de cet ordinateur';
+
+  @override
+  String get nbDeleteEverywhere => 'Supprimer partout…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return 'Supprimer « $title » partout ?';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody =>
+      'Il sera supprimé du dossier partagé et disparaîtra de tous les appareils qui l\'utilisent. C\'est irréversible.';
+
+  @override
+  String get nbDeleteEverywhereConfirm => 'Supprimer partout';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return 'Retirer « $title » de cet ordinateur ?';
+  }
+
+  @override
+  String get nbRemoveSharedBody =>
+      'Il reste dans le dossier partagé et sur vos autres appareils. Vous pouvez le rajouter à tout moment avec Ouvrir.';
+
+  @override
   String get nbCoreMissing =>
       'L\'import OneNote a besoin du cœur Rust — compilez onote_core.dll (voir rust/onote_core/INTEGRATION.md).';
 

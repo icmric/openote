@@ -891,6 +891,37 @@ class LDe extends L {
       'In den Papierkorb legen? Von hier aus kannst du es wiederherstellen.';
 
   @override
+  String get nbConfirmBinShared =>
+      'Dieses Notizbuch liegt in einem geteilten Ordner. Wenn du es von diesem Computer entfernst, bleibt es im Ordner und auf deinen anderen Geräten — mit „Öffnen“ holst du es jederzeit zurück.';
+
+  @override
+  String get nbRemoveFromComputer => 'Von diesem Computer entfernen';
+
+  @override
+  String get nbDeleteEverywhere => 'Überall löschen…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return '„$title“ überall löschen?';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody =>
+      'Das löscht es aus dem geteilten Ordner und damit von jedem Gerät, das ihn nutzt. Das lässt sich nicht rückgängig machen.';
+
+  @override
+  String get nbDeleteEverywhereConfirm => 'Überall löschen';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return '„$title“ von diesem Computer entfernen?';
+  }
+
+  @override
+  String get nbRemoveSharedBody =>
+      'Es bleibt im geteilten Ordner und auf deinen anderen Geräten. Mit „Öffnen“ holst du es jederzeit zurück.';
+
+  @override
   String get nbCoreMissing =>
       'Der OneNote-Import braucht den Rust-Kern — baue onote_core.dll (siehe rust/onote_core/INTEGRATION.md).';
 

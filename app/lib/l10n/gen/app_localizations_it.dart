@@ -890,6 +890,37 @@ class LIt extends L {
       'Spostare nel cestino? Potrai ripristinarlo da qui.';
 
   @override
+  String get nbConfirmBinShared =>
+      'Questo quaderno è in una cartella condivisa. Rimuoverlo da questo computer lo lascia nella cartella e sugli altri tuoi dispositivi: puoi riaggiungerlo quando vuoi con Apri.';
+
+  @override
+  String get nbRemoveFromComputer => 'Rimuovi da questo computer';
+
+  @override
+  String get nbDeleteEverywhere => 'Elimina ovunque…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return 'Eliminare «$title» ovunque?';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody =>
+      'Verrà eliminato dalla cartella condivisa e sparirà da ogni dispositivo che la usa. Non si può annullare.';
+
+  @override
+  String get nbDeleteEverywhereConfirm => 'Elimina ovunque';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return 'Rimuovere «$title» da questo computer?';
+  }
+
+  @override
+  String get nbRemoveSharedBody =>
+      'Resta nella cartella condivisa e sugli altri tuoi dispositivi. Puoi riaggiungerlo quando vuoi con Apri.';
+
+  @override
   String get nbCoreMissing =>
       'L\'importazione da OneNote richiede il nucleo Rust — compila onote_core.dll (vedi rust/onote_core/INTEGRATION.md).';
 

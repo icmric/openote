@@ -888,6 +888,37 @@ class LEs extends L {
       '¿Mover a la papelera? Podrás restaurarlo desde aquí.';
 
   @override
+  String get nbConfirmBinShared =>
+      'Este cuaderno está en una carpeta compartida. Quitarlo de este ordenador lo deja en la carpeta y en tus otros dispositivos; puedes volver a añadirlo cuando quieras con Abrir.';
+
+  @override
+  String get nbRemoveFromComputer => 'Quitar de este ordenador';
+
+  @override
+  String get nbDeleteEverywhere => 'Borrar en todas partes…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return '¿Borrar «$title» en todas partes?';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody =>
+      'Se borrará de la carpeta compartida y desaparecerá de todos los dispositivos que la usan. Esto no se puede deshacer.';
+
+  @override
+  String get nbDeleteEverywhereConfirm => 'Borrar en todas partes';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return '¿Quitar «$title» de este ordenador?';
+  }
+
+  @override
+  String get nbRemoveSharedBody =>
+      'Sigue en la carpeta compartida y en tus otros dispositivos. Puedes volver a añadirlo con Abrir.';
+
+  @override
   String get nbCoreMissing =>
       'Importar de OneNote necesita el núcleo Rust — compila onote_core.dll (mira rust/onote_core/INTEGRATION.md).';
 

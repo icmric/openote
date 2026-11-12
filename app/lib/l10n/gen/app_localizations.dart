@@ -1517,6 +1517,54 @@ abstract class L {
   /// **'Move to the recycle bin? You can restore it from here.'**
   String get nbConfirmBin;
 
+  /// Inline question when deleting a notebook that lives in a shared (cloud) folder.
+  ///
+  /// In en, this message translates to:
+  /// **'This notebook is in a shared folder. Removing it from this computer leaves it in the folder and on your other devices — add it back any time with Open.'**
+  String get nbConfirmBinShared;
+
+  /// Button: take a shared notebook off this computer only.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from this computer'**
+  String get nbRemoveFromComputer;
+
+  /// Button: start deleting a shared notebook from the folder and every device.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete everywhere…'**
+  String get nbDeleteEverywhere;
+
+  /// Title of the second, are-you-sure dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete “{title}” everywhere?'**
+  String nbDeleteEverywhereTitle(String title);
+
+  /// Body of that dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes it from the shared folder, so it is gone from every device that uses it. This can\'t be undone.'**
+  String get nbDeleteEverywhereBody;
+
+  /// The red button that does it.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete everywhere'**
+  String get nbDeleteEverywhereConfirm;
+
+  /// Title of the dialog when permanently removing a shared notebook from the recycle bin.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove “{title}” from this computer?'**
+  String nbRemoveSharedTitle(String title);
+
+  /// Body of that dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'It stays in the shared folder and on your other devices. Add it back any time with Open.'**
+  String get nbRemoveSharedBody;
+
   /// Error for a build without the native library. The file name and the path are literal and must not be translated.
   ///
   /// In en, this message translates to:

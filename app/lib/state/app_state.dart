@@ -7913,7 +7913,7 @@ class AppState extends ChangeNotifier
     // rule here, and it applies far more obviously to a chore nobody asked
     // for.
     try {
-      await _repo.purgeExpiredNotebooks();
+      await _repo.purgeExpiredNotebooks(scopeFor: _scopeForRemoval);
     } catch (e) {
       debugPrint('[openote/store] could not purge expired notebooks: $e');
     }
@@ -8455,9 +8455,34 @@ class AppState extends ChangeNotifier
   /// Sweep expired recycle-bin entries (notebooks + the current notebook's
   /// nodes). Runs at startup and whenever the recycle bin is opened.
   Future<void> purgeExpiredTrash() async {
-    await _repo.purgeExpiredNotebooks();
+    await _repo.purgeExpiredNotebooks(scopeFor: _scopeForRemoval);
     if (notebookId != null) _repo.purgeExpiredNodes(notebookId!);
     notifyListeners();
+  }
+
+  /// How far removing [ref] for good reaches when the person did not say.
+  ///
+  /// A notebook in a shared folder is only ever taken off this computer unless
+  /// they explicitly chose "Delete everywhere": the clock running out on the
+  /// recycle bin, or a plain "delete permanently", must not remove what other
+  /// devices are using.
+  PurgeScope _scopeForRemoval(NotebookRef ref) => livesInSharedFolder(ref.id)
+      ? PurgeScope.thisComputerOnly
+      : PurgeScope.auto;
+
+  /// Whether [id] lives in a shared folder — a cloud folder (Drive, OneDrive,
+  /// Dropbox, iCloud…) or any folder another device has written its own log
+  /// into — as opposed to this computer's own workspace.
+  ///
+  /// Asked of live and recycled notebooks alike, and before the click: it
+  /// decides whether "delete" is one question or two.
+  bool livesInSharedFolder(String id) {
+    final ref = [..._repo.notebooks, ..._repo.trashedNotebooks]
+        .where((n) => n.id == id)
+        .firstOrNull;
+    if (ref == null) return false;
+    return cloudFolderContaining(ref.logDirPath, also: _syncRoots) != null ||
+        _repo.purgeKeepsSharedFolder(id);
   }
 
   Future<void> restoreNotebook(String id) async {
@@ -8465,8 +8490,52 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Delete a recycled notebook for good.
+  ///
+  /// For a notebook in a shared folder this takes it off THIS computer and
+  /// leaves the folder alone; only [deleteNotebookEverywhere] removes it from
+  /// the folder.
   Future<void> purgeNotebook(String id) async {
-    await _repo.purgeNotebook(id);
+    final scope = livesInSharedFolder(id)
+        ? PurgeScope.thisComputerOnly
+        : PurgeScope.auto;
+    await _repo.purgeNotebook(id, scope: scope);
+    _invalidateSyncStatus();
+    notifyListeners();
+  }
+
+  /// Delete a notebook from the shared folder as well as from this computer,
+  /// so no device is left with it. The caller has asked twice.
+  ///
+  /// Straight past the recycle bin: the files in the folder cannot come back
+  /// from this machine's bin, and a bin entry that pretended otherwise would
+  /// be the same false promise this change exists to remove. Returns false
+  /// only for the last notebook (there is always somewhere to be).
+  Future<bool> deleteNotebookEverywhere(String id) async {
+    // Already in the recycle bin (deleting from there): nothing to move.
+    if (!_repo.trashedNotebooks.any((n) => n.id == id) &&
+        !await deleteNotebook(id)) {
+      return false;
+    }
+    await purgeNotebookEverywhere(id);
+    return true;
+  }
+
+  /// The second half of [deleteNotebookEverywhere], for a notebook that is
+  /// already in the recycle bin.
+  Future<void> purgeNotebookEverywhere(String id) async {
+    // Same care as [discardImportedNotebook]: a background replay still
+    // running writes into the folder on its way through and would recreate
+    // what is about to be removed.
+    final warm = _recorderWarms[id];
+    if (warm != null) {
+      try {
+        await warm;
+      } catch (_) {/* a failed warm is not this operation's problem */}
+    }
+    _recorders.remove(id);
+    await _repo.purgeNotebook(id, scope: PurgeScope.everywhere);
+    _invalidateSyncStatus();
     notifyListeners();
   }
 

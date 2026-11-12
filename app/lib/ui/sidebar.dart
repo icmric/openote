@@ -1541,6 +1541,21 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                         size: 16, color: OnoteColors.danger),
                                     tooltip: l.navDeletePermanently,
                                     onPressed: () async {
+                                      if (app.livesInSharedFolder(nb.id)) {
+                                        final choice =
+                                            await askSharedRemoval(ctx, nb);
+                                        if (choice == SharedRemoval.cancel) {
+                                          return;
+                                        }
+                                        if (choice == SharedRemoval.everywhere) {
+                                          await app
+                                              .purgeNotebookEverywhere(nb.id);
+                                        } else {
+                                          await app.purgeNotebook(nb.id);
+                                        }
+                                        setLocal(() {});
+                                        return;
+                                      }
                                       final ok = await _confirmPurgeNotebook(
                                           ctx, nb,
                                           caveat: app.purgeCaveat(nb.id));

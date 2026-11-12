@@ -887,6 +887,37 @@ class LEn extends L {
       'Move to the recycle bin? You can restore it from here.';
 
   @override
+  String get nbConfirmBinShared =>
+      'This notebook is in a shared folder. Removing it from this computer leaves it in the folder and on your other devices — add it back any time with Open.';
+
+  @override
+  String get nbRemoveFromComputer => 'Remove from this computer';
+
+  @override
+  String get nbDeleteEverywhere => 'Delete everywhere…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return 'Delete “$title” everywhere?';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody =>
+      'This deletes it from the shared folder, so it is gone from every device that uses it. This can\'t be undone.';
+
+  @override
+  String get nbDeleteEverywhereConfirm => 'Delete everywhere';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return 'Remove “$title” from this computer?';
+  }
+
+  @override
+  String get nbRemoveSharedBody =>
+      'It stays in the shared folder and on your other devices. Add it back any time with Open.';
+
+  @override
   String get nbCoreMissing =>
       'OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).';
 

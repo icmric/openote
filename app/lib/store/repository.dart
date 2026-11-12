@@ -58,6 +58,25 @@ import 'notebook_writer.dart';
 /// read-only, and never rewrites it.
 const int workspaceFormat = 2;
 
+/// How far deleting a notebook for good reaches.
+///
+/// A notebook in a shared folder (Drive, OneDrive, Dropbox…) can be "deleted"
+/// in two ways that look alike and are not: taken off THIS computer while it
+/// stays in the folder and on every other device, or removed from the folder
+/// itself so nobody has it. Which one happens is the person's decision, never
+/// the code's.
+enum PurgeScope {
+  /// The rule before the choice existed: remove what only this computer owns,
+  /// and the logs too when nobody else's are in there.
+  auto,
+
+  /// Take it off this computer and leave the shared folder exactly as it was.
+  thisComputerOnly,
+
+  /// Remove it from the shared folder as well, so every device loses it.
+  everywhere,
+}
+
 /// What a `VACUUM` did — **and whether it happened at all**.
 ///
 /// A plain `int` could not say the second thing, which is v0.17 Step 7 item 5:
@@ -3226,13 +3245,26 @@ class Repository {
   /// dialog's leftovers panel already reasoned this way — it refuses to delete
   /// anything outside the workspace because "a leftover in a SHARED folder may
   /// be another device's notebook". Purge simply did not agree with it.
-  Future<void> purgeNotebook(String id) async {
+  ///
+  /// **[scope] says how far the deletion reaches** — see [PurgeScope]. The
+  /// default is the rule this method has always followed; the other two exist
+  /// for a notebook that lives in a shared folder, where "delete" can mean
+  /// either of two very different things and the person has to be the one who
+  /// picks.
+  Future<void> purgeNotebook(String id,
+      {PurgeScope scope = PurgeScope.auto}) async {
     final i = trashedNotebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
     final ref = trashedNotebooks.removeAt(i);
     _open.remove(id)?.dispose();
     _decodedPages.remove(id);
-    _deleteContainerFiles(ref.file);
+    // "This computer only" must not reach a container that sits in the shared
+    // folder (the layout of a notebook moved into Drive before v0.17): that
+    // file is the notebook, not this machine's working copy of it.
+    if (scope != PurgeScope.thisComputerOnly ||
+        p.isWithin(workspaceDir.path, ref.file)) {
+      _deleteContainerFiles(ref.file);
+    }
     // The cache directory too, and unconditionally: it is named by THIS
     // notebook's id and nothing else can ever be in it, so a purge that left it
     // would strand a whole container the way purge used to strand `.onotebook`
@@ -3242,13 +3274,39 @@ class Repository {
       final cache = cacheDirFor(id);
       if (cache.existsSync()) cache.deleteSync(recursive: true);
     } catch (_) {/* a lock or a permission must not fail the purge */}
-    if (_mayDeleteLogDir(ref)) {
+    final deleteLogs = switch (scope) {
+      PurgeScope.auto => _mayDeleteLogDir(ref),
+      PurgeScope.thisComputerOnly => false,
+      // The person said "everywhere", so other devices' logs in the folder do
+      // not stop it. Another entry in THIS workspace using the same logs still
+      // does: that is a second notebook of the user's own, not a copy of this.
+      PurgeScope.everywhere => !_logDirIsShared(ref),
+    };
+    if (deleteLogs) {
       try {
         final logs = Directory(ref.logDirPath);
         if (logs.existsSync()) logs.deleteSync(recursive: true);
       } catch (_) {/* a lock or a permission must not fail the purge */}
+      if (scope == PurgeScope.everywhere) _deleteSharedContainerBeside(ref);
     }
     await _saveNow();
+  }
+
+  /// The `.onote` that sits beside a shared `.onotebook` — the notebook's
+  /// container as it was left in the folder — removed together with its
+  /// `-wal` and `-shm`.
+  ///
+  /// Only on "delete everywhere", and only the pair's own file: leaving it
+  /// would be the dead container that setup then offers to join (see
+  /// [purgeNotebook]'s history). Skipped when it is this entry's own container,
+  /// which has already gone.
+  void _deleteSharedContainerBeside(NotebookRef ref) {
+    const ext = '.onotebook';
+    final logs = ref.logDirPath;
+    if (!logs.endsWith(ext)) return;
+    final beside = '${logs.substring(0, logs.length - ext.length)}.onote';
+    if (p.equals(beside, ref.file)) return;
+    _deleteContainerFiles(beside);
   }
 
   /// A container and the two files SQLite keeps beside it.
@@ -3376,14 +3434,18 @@ class Repository {
       nowMs() - const Duration(days: recycleRetentionDays).inMilliseconds;
 
   /// Purge trashed notebooks past their retention window. Returns how many.
-  Future<int> purgeExpiredNotebooks() async {
+  ///
+  /// [scopeFor] lets the caller decide how far each deletion reaches. Nobody
+  /// is at the keyboard when the thirty days run out, so a notebook in a
+  /// shared folder must never lose its files from the folder by the clock.
+  Future<int> purgeExpiredNotebooks(
+      {PurgeScope Function(NotebookRef)? scopeFor}) async {
     final cutoff = _retentionCutoff();
     final expired = trashedNotebooks
         .where((n) => (n.deletedAt ?? 0) < cutoff)
-        .map((n) => n.id)
         .toList();
-    for (final id in expired) {
-      await purgeNotebook(id);
+    for (final n in expired) {
+      await purgeNotebook(n.id, scope: scopeFor?.call(n) ?? PurgeScope.auto);
     }
     return expired.length;
   }

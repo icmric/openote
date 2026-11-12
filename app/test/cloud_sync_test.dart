@@ -816,23 +816,99 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       expect(caveat, contains('other devices'));
     });
 
-    test('purging the notebook this device OWNS removes both halves', () async {
-      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
-      // The complement, and the reason the rule is about ownership rather
-      // than about the folder: device A put the pair in Drive itself, so
-      // leaving either half behind is the leftover being fixed.
+    /// Device A with a second notebook open, so deleting the shared one is
+    /// allowed (the last notebook is never deleted).
+    Future<({Repository repo, AppState app, String id, String path})>
+        deviceAWithSpare() async {
       final a = await deviceA();
       addTearDown(a.repo.dispose);
       await a.repo.createNotebook('Somewhere else');
       a.app.notebookId =
           a.repo.notebooks.firstWhere((n) => n.title == 'Somewhere else').id;
-      expect(a.app.purgeKeepsSharedFolder(a.id), isFalse);
-      expect(a.app.purgeCaveat(a.id), isNull);
+      return a;
+    }
+
+    List<String> sharedNames() => [
+          for (final f in shared.listSync(recursive: true))
+            p.relative(f.path, from: shared.path)
+        ];
+
+    test('deleting a notebook in a shared folder only takes it off THIS '
+        'computer, even for the device that owns it', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // Reported: "deleting one in a drive just removes it from the machine
+      // rather than deleting it". True for a joined notebook, and for the
+      // owner it used to be worse — the same click removed it from the Drive
+      // for every device, with no warning. The default is now the same for
+      // both: the folder is left exactly as it was.
+      final a = await deviceAWithSpare();
+      final before = sharedNames();
+      expect(before, isNotEmpty);
+      expect(a.app.livesInSharedFolder(a.id), isTrue);
+
       await a.app.deleteNotebook(a.id);
+      expect(a.app.livesInSharedFolder(a.id), isTrue,
+          reason: 'still true from the recycle bin, where the dialog asks');
       await a.app.purgeNotebook(a.id);
 
+      expect(sharedNames(), before,
+          reason: 'not one file of the shared folder may be touched');
+      expect(a.repo.trashedNotebooks, isEmpty);
+      // …and "add it back with Open" is true: the notebook comes back from
+      // the folder.
+      // (`a.path` names the log directory: since Step 4 the folder holds the
+      // logs, and Open on that folder is what adopts it.)
+      final again = await a.repo.adoptLogDirectory(a.path, title: 'Shared');
+      expect(again.title, 'Shared');
+      expect(a.repo.notebooks.map((n) => n.id), contains(again.id));
+    });
+
+    test('the thirty days running out never deletes from a shared folder',
+        () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final a = await deviceAWithSpare();
+      final before = sharedNames();
+      await a.app.deleteNotebook(a.id);
+      a.repo.trashedNotebooks.single.deletedAt = 1; // long ago
+      await a.app.purgeExpiredTrash();
+
+      expect(a.repo.trashedNotebooks, isEmpty, reason: 'it did expire');
+      expect(sharedNames(), before,
+          reason: 'nobody was at the keyboard to choose "everywhere"');
+    });
+
+    test('"Delete everywhere" removes both halves, and other devices\' logs',
+        () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final a = await deviceAWithSpare();
+      // Another computer has written to the folder: the old rule refused to
+      // delete the logs at all because of it. "Everywhere" is the person
+      // saying that is what they want.
+      final ops = Directory(
+          p.join('${p.withoutExtension(a.path)}.onotebook', 'ops'));
+      File(p.join(ops.path, 'zz-other-device.oplog')).writeAsStringSync('x');
+      expect(a.app.purgeKeepsSharedFolder(a.id), isTrue);
+
+      expect(await a.app.deleteNotebookEverywhere(a.id), isTrue);
+
       expect(shared.listSync(), isEmpty,
-          reason: 'container, its -wal and -shm, and the logs all go together');
+          reason: 'container, its -wal and -shm, and every log go together');
+      expect(a.repo.trashedNotebooks, isEmpty);
+      expect(a.repo.notebooks.any((n) => n.id == a.id), isFalse);
+    });
+
+    test('a notebook that is not in a shared folder keeps today\'s single '
+        'question', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final dir = Directory(p.join(root.path, 'wsPlain'))..createSync();
+      final repo = await Repository.openAt(dir);
+      addTearDown(repo.dispose);
+      final nb = await repo.createNotebook('Private');
+      await repo.createNotebook('Spare');
+      final app = AppState(repo)..notebookId = nb.id;
+      addTearDown(app.dispose);
+      expect(app.livesInSharedFolder(nb.id), isFalse);
+      expect(app.purgeCaveat(nb.id), isNull);
     });
 
     test('SETUP DOES NOT OFFER A LEFTOVER AS A NOTEBOOK TO JOIN', () {

@@ -95,6 +95,23 @@ class _NotebookManagerState extends State<_NotebookManager> {
     }
   }
 
+  /// "Delete everywhere": asks a second time, then removes the notebook from
+  /// its shared folder as well as from this computer.
+  Future<void> _deleteEverywhere(NotebookRef nb) async {
+    final sure = await confirmDeleteEverywhere(context, nb.title);
+    if (!sure || !mounted) return;
+    setState(() {
+      _confirmDeleteId = null;
+      _busyId = nb.id;
+    });
+    final ok = await app.deleteNotebookEverywhere(nb.id);
+    if (!mounted) return;
+    setState(() => _busyId = null);
+    if (!ok) {
+      _toast("That's your only notebook — create another one first.");
+    }
+  }
+
   Future<void> _duplicate(NotebookRef nb) async {
     setState(() => _busyId = nb.id);
     try {
@@ -512,7 +529,45 @@ class _NotebookManagerState extends State<_NotebookManager> {
           ),
           // Inline confirm — no second dialog, and the list stays put so you can
           // change your mind or delete another one straight after.
-          if (confirming)
+          if (confirming && app.livesInSharedFolder(nb.id))
+            // A notebook in a shared folder: "delete" is two different things,
+            // so say which one the default is and offer the other by name.
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l.nbConfirmBinShared,
+                      style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        TextButton(
+                            onPressed: () =>
+                                setState(() => _confirmDeleteId = null),
+                            child: Text(l.commonCancel)),
+                        TextButton(
+                            style: TextButton.styleFrom(
+                                foregroundColor: OnoteColors.danger),
+                            onPressed: () => _deleteEverywhere(nb),
+                            child: Text(l.nbDeleteEverywhere)),
+                        FilledButton(
+                            style: FilledButton.styleFrom(
+                                visualDensity: VisualDensity.compact),
+                            onPressed: () => _delete(nb),
+                            child: Text(l.nbRemoveFromComputer)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (confirming)
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 28),
               child: Row(children: [
@@ -571,6 +626,17 @@ class _NotebookManagerState extends State<_NotebookManager> {
           child: Text(l.navRestore),
         ),
         _act(Icons.delete_forever, l.navDeletePermanently, () async {
+          if (app.livesInSharedFolder(nb.id)) {
+            final choice = await askSharedRemoval(context, nb);
+            if (choice == SharedRemoval.cancel || !mounted) return;
+            if (choice == SharedRemoval.everywhere) {
+              await app.purgeNotebookEverywhere(nb.id);
+            } else {
+              await app.purgeNotebook(nb.id);
+            }
+            if (mounted) setState(() {});
+            return;
+          }
           final ok =
               await _confirmPurge(context, nb, caveat: app.purgeCaveat(nb.id));
           if (!ok || !mounted) return;
@@ -598,6 +664,73 @@ String _daysLeft(int deletedAt, int retentionDays) {
       DateTime.now().millisecondsSinceEpoch;
   final days = (remaining / const Duration(days: 1).inMilliseconds).ceil();
   return days <= 0 ? 'Deletes soon' : 'Deletes in $days day${days == 1 ? '' : 's'}';
+}
+
+/// What someone chose when asked to remove, for good, a notebook that lives in
+/// a shared folder.
+enum SharedRemoval { cancel, thisComputer, everywhere }
+
+/// The question for a notebook in a shared folder that is being deleted from
+/// the recycle bin: it can leave this computer only (the usual meaning) or be
+/// deleted from the folder, and the person has to pick.
+///
+/// "Delete everywhere" is never one click: it asks a second time, in its own
+/// dialog, because nothing brings those files back.
+Future<SharedRemoval> askSharedRemoval(
+    BuildContext context, NotebookRef nb) async {
+  final r = await showOnoteDialog<SharedRemoval>(
+    context: context,
+    builder: (ctx) {
+      final l = L.of(ctx);
+      return AlertDialog(
+        title: Text(l.nbRemoveSharedTitle(nb.title)),
+        content: Text(l.nbRemoveSharedBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, SharedRemoval.cancel),
+              child: Text(l.commonCancel)),
+          TextButton(
+              style: TextButton.styleFrom(foregroundColor: OnoteColors.danger),
+              onPressed: () => Navigator.pop(ctx, SharedRemoval.everywhere),
+              child: Text(l.nbDeleteEverywhere)),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, SharedRemoval.thisComputer),
+              child: Text(l.nbRemoveFromComputer)),
+        ],
+      );
+    },
+  );
+  if (r != SharedRemoval.everywhere) return r ?? SharedRemoval.cancel;
+  if (!context.mounted) return SharedRemoval.cancel;
+  return await confirmDeleteEverywhere(context, nb.title)
+      ? SharedRemoval.everywhere
+      : SharedRemoval.cancel;
+}
+
+/// The second, separate "are you sure" before a notebook is deleted from its
+/// shared folder.
+Future<bool> confirmDeleteEverywhere(BuildContext context, String title) async {
+  final ok = await showOnoteDialog<bool>(
+    context: context,
+    builder: (ctx) {
+      final l = L.of(ctx);
+      return AlertDialog(
+        title: Text(l.nbDeleteEverywhereTitle(title)),
+        content: Text(l.nbDeleteEverywhereBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l.commonCancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.nbDeleteEverywhereConfirm),
+          ),
+        ],
+      );
+    },
+  );
+  return ok == true;
 }
 
 Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,

@@ -886,6 +886,37 @@ class LPt extends L {
       'Mover para a lixeira? Dá para restaurar por aqui.';
 
   @override
+  String get nbConfirmBinShared =>
+      'Este caderno está numa pasta partilhada. Removê-lo deste computador deixa-o na pasta e nos teus outros dispositivos — podes voltar a adicioná-lo quando quiseres com Abrir.';
+
+  @override
+  String get nbRemoveFromComputer => 'Remover deste computador';
+
+  @override
+  String get nbDeleteEverywhere => 'Apagar em todo o lado…';
+
+  @override
+  String nbDeleteEverywhereTitle(String title) {
+    return 'Apagar “$title” em todo o lado?';
+  }
+
+  @override
+  String get nbDeleteEverywhereBody =>
+      'Isto apaga-o da pasta partilhada, por isso desaparece de todos os dispositivos que a usam. Não dá para desfazer.';
+
+  @override
+  String get nbDeleteEverywhereConfirm => 'Apagar em todo o lado';
+
+  @override
+  String nbRemoveSharedTitle(String title) {
+    return 'Remover “$title” deste computador?';
+  }
+
+  @override
+  String get nbRemoveSharedBody =>
+      'Fica na pasta partilhada e nos teus outros dispositivos. Podes voltar a adicioná-lo quando quiseres com Abrir.';
+
+  @override
   String get nbCoreMissing =>
       'A importação do OneNote precisa do núcleo Rust — compile onote_core.dll (veja rust/onote_core/INTEGRATION.md).';
 
