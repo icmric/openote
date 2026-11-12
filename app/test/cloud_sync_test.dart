@@ -751,6 +751,24 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       Future<Map<String, List<int>>> whenQuiet() async {
         var last = photograph();
         for (var round = 0; round < 40; round++) {
+          // **The autosave is the writer `settleBackgroundWork` does not wait
+          // for.** An edit schedules its save behind a short debounce; a timer
+          // that has not fired is in none of the lists that call drains, so a
+          // device whose page is still dirty looks quiet while its save is on
+          // its way. Traced (every append logged with its stack, beside the
+          // moments of the two photographs): device A's second save,
+          // `block.set #6`, arrives a few hundred milliseconds late from
+          // `AppState._flushSaveOnce` and lands after the "before" photograph
+          // on a loaded machine in about two runs in five — the exact
+          // `1489 → 1936 B` this test reported on windows-latest. The purge
+          // wrote nothing in any run. Flushing runs the save NOW and cancels
+          // the timer, so the baseline is taken after the last writer has
+          // finished, not while it is still on its way. (It is done here, and
+          // not inside `settleBackgroundWork`, because several other tests
+          // call that at the end and rely on it NOT saving a page that has
+          // just been re-opened.)
+          await a.app.flushSave();
+          await appB.flushSave();
           await a.app.settleBackgroundWork();
           await appB.settleBackgroundWork();
           await Future<void>.delayed(const Duration(milliseconds: 50));
