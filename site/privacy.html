@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Openote</title>
+<meta name="description" content="What the Openote app and openote.org do and do not collect. The app has no accounts, analytics or tracking.">
+<link rel="canonical" href="https://openote.org/privacy">
+<meta name="color-scheme" content="light dark">
+<!--
+  The same text as PRIVACY.md in the repository — change both together.
+
+  Same rules as index.html: one file, no build step, no third-party requests.
+  The icon is the one on the home page, linked rather than inlined because this
+  page is a second file and the touch icon is already a separate asset.
+-->
+<link rel="icon" href="/apple-touch-icon.png">
+<style>
+  :root {
+    --ink-400:#7B7FEE; --ink-500:#5B5BE6;
+    --paper-0:#FFFFFF; --paper-50:#FAF9F7; --paper-200:#E7E5DF;
+    --graphite-500:#6E6B63; --graphite-900:#211F1B;
+    --night-0:#17161C; --night-50:#1E1D24; --night-200:#33313C;
+    --moon-0:#F6F4FA; --moon-300:#B8B4C2;
+    --bg:var(--paper-50); --surface:var(--paper-0); --border:var(--paper-200);
+    --text:var(--graphite-900); --text-2:var(--graphite-500); --primary:var(--ink-500);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:var(--night-0); --surface:var(--night-50); --border:var(--night-200);
+      --text:var(--moon-0); --text-2:var(--moon-300); --primary:var(--ink-400);
+    }
+  }
+  *,*::before,*::after { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:760px; margin:0 auto; padding:0 24px; }
+  a { color:var(--primary); }
+  code {
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.87em;
+    background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:.12em .4em;
+  }
+  h1,h2,h3 { line-height:1.25; letter-spacing:-.01em; }
+  h1 { font-size:34px; margin:36px 0 4px; }
+  h2 { font-size:23px; margin:36px 0 8px; }
+  h3 { font-size:18px; margin:26px 0 6px; }
+  .updated { color:var(--text-2); font-size:15px; margin:0 0 20px; }
+  .back { display:inline-block; margin-top:28px; font-size:15px; text-decoration:none; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:15px; }
+  th, td { text-align:left; vertical-align:top; padding:10px 12px; border:1px solid var(--border); }
+  th { background:var(--surface); }
+  @media (max-width:720px) { table, thead, tbody, tr, th, td { display:block; }
+    thead { display:none; } tr { margin-bottom:12px; border:1px solid var(--border); border-radius:8px; }
+    td { border:0; border-bottom:1px solid var(--border); } td:last-child { border-bottom:0; } }
+  footer { border-top:1px solid var(--border); margin-top:40px; padding:24px 0 56px;
+           color:var(--text-2); font-size:14.5px; text-align:center; }
+  footer a { margin:0 10px; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <a class="back" href="/">← Openote</a>
+  <h1>Privacy</h1>
+  <p class="updated">Last updated 13 November 2026.</p>
+
+  <h2>The app</h2>
+  <p>The Openote desktop app does not collect, store or sell personal data. The
+  project runs no servers that receive information from the app, and the app
+  contains no analytics, advertising, crash reporting or account system.</p>
+  <p>Your notes are files on your own disk. They leave your computer only if you
+  set up a sync or backup location yourself, and then only to the place you
+  chose.</p>
+
+  <h3>Connections the app makes</h3>
+  <table>
+    <thead><tr><th>When</th><th>Where to</th><th>What is sent</th></tr></thead>
+    <tbody>
+      <tr><td>Each time the app starts</td><td>GitHub (<code>api.github.com</code>)</td>
+          <td>A request for the latest release, to see whether an update exists. GitHub receives your IP address and the app version, as with any web request.</td></tr>
+      <tr><td>You choose to install an update, or add the video player</td><td>GitHub (<code>github.com</code>)</td>
+          <td>A download request for the installer or player, checked against its published checksum before use.</td></tr>
+      <tr><td>You subscribe to a calendar</td><td>The address you enter</td>
+          <td>A request for that calendar.</td></tr>
+      <tr><td>You import from OneNote online</td><td>Microsoft (<code>login.microsoftonline.com</code>, Microsoft Graph)</td>
+          <td>The requests needed to read your notebooks. You sign in through your web browser, so your password is never entered into Openote.</td></tr>
+      <tr><td>You set up Git sync</td><td>The Git server you choose</td>
+          <td>Your notebook's change history, as Git normally does.</td></tr>
+    </tbody>
+  </table>
+  <p>The app makes no other connections. If you use a cloud folder such as Google
+  Drive, OneDrive or Dropbox for sync, that provider's own software moves the
+  files and its privacy policy applies.</p>
+  <p>The optional integration server for AI tools listens only on your own
+  computer (<code>127.0.0.1</code>) and is off unless you turn it on.</p>
+
+  <h2>This website</h2>
+  <p>openote.org is hosted on Cloudflare. It sets no cookies and loads no
+  third-party scripts, fonts or trackers. Like any web host, Cloudflare handles
+  each request, including the visitor's IP address.</p>
+  <p>The download page normally learns the latest release through openote.org
+  itself, so your address is not passed on to GitHub for that. If that route is
+  unavailable it asks GitHub directly from your browser.</p>
+  <p>The in-browser demo at openote.org/demo counts page loads so that we can see
+  roughly how many people try it. Each load records the date, the visitor's
+  country, the referring site's name, the page requested, and a one-way code
+  made from the date, IP address and browser details. The code changes every day
+  and cannot be reversed, and the IP address itself is not stored. Nothing you
+  type into the demo is sent to us.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this statement can be raised as an issue at
+  <a href="https://github.com/icmric/openote/issues">github.com/icmric/openote/issues</a>.
+  Changes to it are recorded in the
+  <a href="https://github.com/icmric/openote/commits/master/PRIVACY.md">repository's history</a>.</p>
+</main>
+<footer>
+  <div class="wrap">
+    <a href="/">Home</a>
+    <a href="https://github.com/icmric/openote">Source on GitHub</a>
+  </div>
+</footer>
+</body>
+</html>
