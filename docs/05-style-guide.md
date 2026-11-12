@@ -46,8 +46,8 @@ The brand concept is **ink** — the fountain-pen line, the mathematician's marg
 
 ### 2.3 Tagline options
 
-Primary: **"Your notes. Your format. Every platform."**
-Alternates: *"The open notebook."* · *"OneNote's freedom, without the lock-in."* · *"Ink, math, and ideas — openly yours."*
+Primary: **"Notes that stay yours."**
+Alternates: *"Your notes. Your format. Every platform."* (the earlier primary) · *"The open notebook."* · *"OneNote's freedom, without the lock-in."* · *"Ink, math, and ideas — openly yours."*
 
 ### 2.4 Brand personality
 
