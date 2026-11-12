@@ -232,7 +232,8 @@ class SaveProblem {
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier
     implements StudyDocument, PlannerDocument {
-  AppState(this._repo) : engine = _selectEngine(_repo) {
+  AppState(this._repo, {DocumentEngine? engine})
+      : engine = engine ?? _selectEngine(_repo) {
     // Forwarded, not replaced. Every surface listens to `AppState`, so the
     // extraction must not change who wakes up when a card is graded — the
     // point of E3 is to give state an owner, not to renegotiate rebuilds in
@@ -1464,8 +1465,9 @@ class AppState extends ChangeNotifier
         short: "Couldn't save — changes kept in memory",
         message: 'Openote could not save this page to your computer.\n\n'
             'Your changes are still on screen and Openote will try again the '
-            'next time you type, so nothing is lost yet — but close the app '
-            'now and they would be.\n\n'
+            'next time you type or close the window. The first time you close '
+            'the window it stays open so you can fix this; if you close the '
+            'window again, Openote leaves without these changes.\n\n'
             'Check that the disk is not full and that the notebook is not '
             'open in another program.',
         details: '$e',
@@ -7699,6 +7701,8 @@ class AppState extends ChangeNotifier
   // Save & undo
   Timer? _saveDebounce;
   bool _dirty = false;
+  int _saveRevision = 0;
+  Future<void>? _saveInFlight;
   bool get hasUnsavedChanges => _dirty;
   final List<String> _undo = [];
   final List<String> _redo = [];
@@ -11288,6 +11292,7 @@ class AppState extends ChangeNotifier
   /// SAMPLE on the one path that calls this in a loop, [moveSelectedBy].
   void markDirty() {
     _dirty = true;
+    _saveRevision++;
     // Cheap counter, not a rebuild: it lets the open page's flashcards be
     // rederived once per edit, so tagging a line produces a card immediately
     // instead of only after you navigate away.
@@ -11325,6 +11330,7 @@ class AppState extends ChangeNotifier
     final nb = notebookId;
     return (nb == null ? null : _logAhead[nb]) ??
         _pageSaveError ??
+        _workspaceSaveError ??
         // A paste or drop whose bytes never landed anywhere. As costly as a
         // failed page save — the thing the user just added is simply not in
         // the notebook — and nothing else on screen would ever mention it.
@@ -11344,6 +11350,7 @@ class AppState extends ChangeNotifier
   }
 
   SaveProblem? _pageSaveError;
+  SaveProblem? _workspaceSaveError;
   SaveProblem? _logError;
 
   /// Notebooks whose history has moved past what this build can read, with the
@@ -11405,7 +11412,28 @@ class AppState extends ChangeNotifier
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> flushSave() async {
+  /// Join a save already in flight, including edits made while it awaited I/O.
+  Future<void> flushSave() {
+    _saveDebounce?.cancel();
+    return _saveInFlight ??= _drainSaves();
+  }
+
+  Future<void> _drainSaves() async {
+    try {
+      do {
+        await _flushSaveOnce();
+      } while (_dirty &&
+          _pageSaveError == null &&
+          pageId != null &&
+          notebookId != null &&
+          !notebookIsReadOnly(notebookId!));
+    } finally {
+      _saveDebounce?.cancel();
+      _saveInFlight = null;
+    }
+  }
+
+  Future<void> _flushSaveOnce() async {
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
     // Wait out a pull that is mid-write rather than racing it. See
@@ -11444,13 +11472,23 @@ class AppState extends ChangeNotifier
       // container's `blobs` table and emits no `blob.put`, which would leave
       // the log holding refs it cannot resolve. That is invisible locally and
       // total on another device.
-      final toSave = InkStorage.persistAll(
+      final revision = _saveRevision;
+      final persisted = InkStorage.persistAll(
           blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
+      // The engine and recorder must see the same revision even if the user
+      // edits mutable blocks while the engine's future is pending.
+      final snapshot = jsonDecode(pageMirrorJson(id, persisted, pageProps))
+          as Map<String, dynamic>;
+      final props = PageProps.fromJson(snapshot['page'] as Map<String, dynamic>);
+      final toSave = [
+        for (final b in snapshot['blocks'] as List)
+          Block.fromJson(b as Map<String, dynamic>)
+      ];
       // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
       // mirror write, plus content-hash change-detection on the Rust engine (a
       // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
-      await engine.savePage(nb, id, toSave, pageProps);
-      _dirty = false;
+      await engine.savePage(nb, id, toSave, props);
+      _dirty = _saveRevision != revision;
       _pageSaveError = null;
       // Record AFTER the container write succeeds, so the log never claims a
       // change the notebook doesn't have. The reverse order would be worse than
@@ -11482,7 +11520,7 @@ class AppState extends ChangeNotifier
       // saved) and must not leave the page dirty for a retry that would rewrite
       // a container that is already correct.
       try {
-        rec?.page(id, toSave, pageProps);
+        rec?.page(id, toSave, props);
         // The recording landed, so whatever stopped the last one has cleared.
         // Without this the message is sticky: a cloud client holding the file
         // for one second would keep saying "not recorded" all session.
@@ -11512,14 +11550,86 @@ class AppState extends ChangeNotifier
   /// Persist everything before the process goes away (window close, logout).
   /// Awaited by the app's [AppLifecycleListener]; without it, up to one debounce
   /// interval of edits was silently lost on every close.
-  Future<void> shutdown() async {
+  ///
+  /// **Throws if what is on screen could not be written** (unless [force]),
+  /// and the caller then keeps the window open so the person hears about it;
+  /// see [requestExit], which is what the window's close button uses, and which
+  /// also gives a way out when the disk will not recover.
+  Future<void> shutdown({bool force = false}) async {
+    do {
+      await _shutdownOnce(force: force);
+      // Workspace I/O and the final sync yield too. An edit made during them
+      // must receive the same save check before the caller can close us.
+    } while (_saveInFlight != null || (!force && _hasUnsavedWork));
+  }
+
+  /// Is there an edit on screen that a save WOULD keep, if it worked?
+  ///
+  /// Not simply `_dirty`. A page in a notebook Openote is only showing (its log
+  /// is from a newer build, see [notebookIsReadOnly]) is dirty for good, by
+  /// design, and so is an edit made with no page open to receive it. Treating
+  /// those as "unsaved work" made closing the window impossible for ever: the
+  /// close was refused, and nothing the person could do would ever satisfy it.
+  bool get _hasUnsavedWork {
+    final nb = notebookId;
+    return _dirty && pageId != null && nb != null && !notebookIsReadOnly(nb);
+  }
+
+  /// When a close was last refused for a failed save, for [requestExit].
+  DateTime? _exitRefusedAt;
+
+  /// The clock [requestExit] uses; a test sets it.
+  @visibleForTesting
+  DateTime Function() clockForTest = DateTime.now;
+
+  /// The window's close request: true when Openote may exit.
+  ///
+  /// A close first tries to save. If that fails (the disk is full, the file is
+  /// locked) it is **refused once**, with the reason in the status bar and the
+  /// way out in it ("close the window again"), because closing silently would
+  /// throw away the person's last edit. A second, deliberate close then leaves
+  /// without it: the only other way out of a disk that will not recover is to
+  /// kill the process, which loses the same edit with less warning.
+  ///
+  /// "Deliberate" means at least 1.5 s after the refusal (a double-click on the
+  /// close button must not count as both) and within a minute of it (a refusal
+  /// from long ago is not consent to leave now). If the disk comes back in
+  /// between, the retry simply saves and leaves, and nothing is lost.
+  Future<bool> requestExit() async {
+    try {
+      await shutdown();
+      _exitRefusedAt = null;
+      return true;
+    } catch (_) {
+      final now = clockForTest();
+      final before = _exitRefusedAt;
+      final deliberate = before != null &&
+          now.difference(before) >= const Duration(milliseconds: 1500) &&
+          now.difference(before) <= const Duration(minutes: 1);
+      if (deliberate) {
+        _exitRefusedAt = null;
+        try {
+          await shutdown(force: true);
+        } catch (_) {
+          // Leaving is the point; whatever else failed has been reported.
+        }
+        return true;
+      }
+      _exitRefusedAt = now;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> _shutdownOnce({required bool force}) async {
     _saveDebounce?.cancel();
     _gitDebounce?.cancel();
     _housekeepingTimer?.cancel();
-    try {
-      await flushSave();
-    } catch (_) {
-      // Never block exit on a save failure — flushSave already recorded it.
+    await flushSave();
+    // Keep the live document available for retry. The exit listener cancels
+    // the close request, leaving the existing save-error surface visible.
+    if (!force && _hasUnsavedWork) {
+      throw StateError('Cannot exit with unsaved changes');
     }
     // The VACUUMs unattended housekeeping owed. A container the ink migration
     // shrank keeps its high-water mark until one runs, and a full VACUUM is
@@ -11536,7 +11646,20 @@ class AppState extends ChangeNotifier
     }
     _rememberView();
     _persistSession();
-    await _repo.flushWorkspace(); // settle the debounced registry write
+    try {
+      await _repo.flushWorkspace(); // settle the debounced registry write
+      _workspaceSaveError = null;
+    } catch (e) {
+      _workspaceSaveError = SaveProblem(
+        short: "Couldn't save the notebook list",
+        message: 'Openote could not save your notebook list and settings. '
+            'The window will stay open the first time you close it. Check the '
+            'disk and try again, or close the window again to leave anyway.',
+        details: '$e',
+      );
+      notifyListeners();
+      if (!force) rethrow;
+    }
     // One last cycle on the way out, so closing the lid is not a lost push.
     // Guarded like the save above: exit must never be blocked by a network.
     if (_gitEnabled) {

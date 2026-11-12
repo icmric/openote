@@ -169,7 +169,10 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       // SQLite handles never got a clean close (no WAL checkpoint).
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
-          await app.shutdown();
+          // Saves first. If that fails, the window stays open ONCE, with the
+          // reason in the status bar; a second, deliberate close leaves.
+          // See AppState.requestExit for why it is not simply "refuse".
+          if (!await app.requestExit()) return AppExitResponse.cancel;
           await widget.instance?.dispose();
           return AppExitResponse.exit;
         },
