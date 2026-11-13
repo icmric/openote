@@ -33,9 +33,10 @@ import 'toast.dart';
 /// knows how — the parts worth sharing are the ones you can see.
 ///
 /// [suggestions] are the rows that are corrections to a word or a sentence. They
-/// are drawn as a block of their own at the top (bold, tinted, no icon) with a
-/// rule beneath, so a menu that is mostly spelling does not read as one long
-/// list of equal commands.
+/// keep the ordinary row and its small spell-check icon, and a rule is drawn
+/// beneath the last of them, so a menu that is mostly spelling does not read as
+/// one long list of equal commands. (A tinted, bold treatment was tried and
+/// dropped: the rule does the separating on its own.)
 Widget onoteTextContextMenu(
     BuildContext context, EditableTextState editable,
     List<ContextMenuButtonItem> items,
@@ -64,11 +65,6 @@ Widget onoteTextContextMenu(
     anchor: editable.contextMenuAnchors.primaryAnchor,
     children: [
       for (final (index, item) in rows.indexed) ...[
-        if (suggestions.contains(item))
-          _SuggestionRow(
-              label: AdaptiveTextSelectionToolbar.getButtonLabel(context, item),
-              onPressed: item.onPressed)
-        else
         _ToolbarRow(
           icon: _iconFor(item),
           // **Not `item.label`**, which is null for every one of Flutter's own
@@ -90,34 +86,6 @@ Widget onoteTextContextMenu(
       ],
     ],
   );
-}
-
-/// A correction: the word that would replace the one under the pointer, set
-/// apart from the ordinary commands below it.
-class _SuggestionRow extends StatelessWidget {
-  const _SuggestionRow({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return TextButton(
-      style: TextButton.styleFrom(
-        alignment: AlignmentDirectional.centerStart,
-        minimumSize: const Size.fromHeight(34),
-        padding: const EdgeInsets.fromLTRB(14, 0, 12, 0),
-        shape: const RoundedRectangleBorder(),
-        foregroundColor: scheme.primary,
-        backgroundColor: scheme.primary.withValues(alpha: .07),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-      ),
-      onPressed: onPressed,
-      child: Text(label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-    );
-  }
 }
 
 /// The icon for one toolbar row.

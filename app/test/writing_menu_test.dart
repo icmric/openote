@@ -181,7 +181,7 @@ void main() {
   }, skip: !have);
 
   testWidgets('a right-click on a misspelling needs no left-click first, and its '
-      'fixes stand apart from Cut and Paste', (t) async {
+      'fixes are parted from Cut and Paste', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await newApp(t);
     final c = await open(t, app, 'I recieve it');
@@ -199,9 +199,11 @@ void main() {
     expect(find.text('receive'), findsOneWidget,
         reason: 'the word under the pointer, not the caret');
     expect(find.text('Add to dictionary'), findsOneWidget);
-    final style = t.widget<Text>(find.text('receive')).style;
-    expect(style?.fontWeight, FontWeight.w600,
-        reason: 'a correction reads as a correction, not as one more command');
+    // The corrections keep their small icon and are parted from the commands
+    // (Add to dictionary, Paste...) by a rule.
+    expect(find.byIcon(Icons.spellcheck), findsWidgets);
+    expect(find.byType(Divider), findsOneWidget,
+        reason: 'one rule, under the last correction');
     expect(find.text('Paste'), findsOneWidget, reason: 'and Paste is still there');
     await done(t);
   }, skip: !have);

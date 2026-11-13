@@ -1884,7 +1884,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
 
   /// How many corrections one menu offers. More than this is a list to read
   /// rather than a quick fix, and the best are first.
-  static const int _kMenuSuggestions = 4;
+  static const int _kMenuSuggestions = 5;
 
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks
