@@ -322,4 +322,60 @@ void main() {
       expect(OnoteText.autocorrectNow('', EnglishDialect.australian), isNull);
     }, skip: why);
   });
+
+  group('the word before is put right once the next one shows what was meant',
+      () {
+    test('its a, its not, its been', () {
+      expect(fixed('i think its a', ' '), "i think it's a ");
+      expect(fixed('well its not', ' '), "well it's not ");
+      expect(fixed('so its been', ','), "so it's been,");
+      expect(fixed('Its a', ' '), "It's a ");
+    });
+
+    test('your a, their is', () {
+      expect(fixed('i hope your a', ' '), "i hope you're a ");
+      expect(fixed('your not', ' '), "you're not ");
+      expect(fixed('their is', ' '), 'there is ');
+    });
+
+    test('the caret stays after what was typed', () {
+      final b = at('i think its a');
+      final r = computeAutoFix(
+          old: b,
+          next: typed(b, ' '),
+          autoCorrect: true,
+          autoCapitalize: false,
+          correct: _fake)!;
+      expect(r.value.text, "i think it's a ");
+      expect(r.value.selection.baseOffset, r.value.text.length);
+    });
+
+    test('never when the pair could be right', () {
+      // "its going rate", "your welcome pack", "its very existence".
+      expect(fixed('the its going', ' '), isNull);
+      expect(fixed('your welcome', ' '), isNull);
+      expect(fixed('its very', ' '), isNull);
+      // A possessive in front of an ordinary noun is just English.
+      expect(fixed('the dog and its bone', ' '), isNull);
+      expect(fixed('check your answer', ' '), isNull);
+      expect(fixed('their house', ' '), isNull);
+    });
+
+    test('not across a sentence, a line or other punctuation', () {
+      // (Capitals off: a new sentence's "a" would otherwise be capitalised.)
+      expect(fixed('what its. a', ' ', capitalize: false), isNull);
+      expect(fixed('what its\na', ' ', capitalize: false), isNull);
+      expect(fixed('ITS a', ' '), isNull);
+      expect(fixed('https://its a', ' '), isNull);
+    });
+
+    test('off with autocorrect, and not in code', () {
+      expect(fixed('its a', ' ', correct: false), isNull);
+      expect(fixed('use `its a', ' '), isNull);
+    });
+
+    test('put back as typed once, it is not done again', () {
+      expect(fixed('its a', ' ', keep: {'its a'}), isNull);
+    });
+  });
 }

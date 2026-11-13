@@ -8,6 +8,7 @@ import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
 import '../spell/writing_language.dart' show kSpellLanguages;
 import '../state/app_state.dart';
+import '../state/ui_scale.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../update/app_update.dart';
@@ -323,6 +324,33 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 selected: {app.themeMode},
                 onSelectionChanged: (s) => app.setThemeMode(s.first),
               ),
+            ),
+            // **Interface size: one dropdown, and a line when the window says no.**
+            // Zooms the whole window. Never more than the window can hold, so
+            // this dialog can always be reached to put it back; when the size
+            // chosen is more than that, the line says what is shown instead.
+            _row(
+              l.settingsUiScale,
+              DropdownButtonHideUnderline(
+                child: DropdownButton<double>(
+                  value: app.uiScale,
+                  isDense: true,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface),
+                  items: [
+                    for (final v in kUiScales)
+                      DropdownMenuItem(
+                          value: v,
+                          child: Text(uiScalePercent(v),
+                              style: const TextStyle(fontSize: 12))),
+                  ],
+                  onChanged: (v) => v == null ? null : app.setUiScale(v),
+                ),
+              ),
+              hint: app.effectiveUiScale + 0.001 < app.uiScale
+                  ? l.settingsUiScaleLimited(uiScalePercent(app.effectiveUiScale))
+                  : l.settingsUiScaleHint,
             ),
             // **Language sits under Appearance, not behind a "Region" page
             // nobody opens.** It is the first thing somebody whose computer

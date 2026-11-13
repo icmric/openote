@@ -1394,6 +1394,17 @@ class LPt extends L {
   String get settingsHelp => 'Ajuda';
 
   @override
+  String get settingsUiScale => 'Tamanho da interface';
+
+  @override
+  String get settingsUiScaleHint => 'Torna a janela inteira maior ou menor.';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return 'A mostrar a $size: esta janela é demasiado pequena para mais.';
+  }
+
+  @override
   String get settingsLanguage => 'Idioma';
 
   @override

@@ -275,4 +275,17 @@ void main() {
         reason: 'the fix is not quietly reverted from under later typing');
     await settle(t);
   });
+
+  testWidgets("its a becomes it's a, and Ctrl+Z takes back just that",
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'I think its a');
+    await type(t, c, ' ');
+    expect(c.text, "I think it's a ");
+    app.undo();
+    await t.pump();
+    expect(c.text, 'I think its a ', reason: 'as typed, with the space kept');
+    await settle(t);
+  });
 }

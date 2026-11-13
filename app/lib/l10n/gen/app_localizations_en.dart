@@ -1388,6 +1388,17 @@ class LEn extends L {
   String get settingsHelp => 'Help';
 
   @override
+  String get settingsUiScale => 'Interface size';
+
+  @override
+  String get settingsUiScaleHint => 'Makes the whole window bigger or smaller.';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return 'Showing $size: this window is too small for more.';
+  }
+
+  @override
   String get settingsLanguage => 'Language';
 
   @override

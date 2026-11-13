@@ -1399,6 +1399,17 @@ class LFr extends L {
   String get settingsHelp => 'Aide';
 
   @override
+  String get settingsUiScale => 'Taille de l\'interface';
+
+  @override
+  String get settingsUiScaleHint => 'Agrandit ou réduit toute la fenêtre.';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return 'Affichage à $size : cette fenêtre est trop petite pour plus.';
+  }
+
+  @override
   String get settingsLanguage => 'Langue';
 
   @override

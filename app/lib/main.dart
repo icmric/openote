@@ -18,6 +18,7 @@ import 'store/repository.dart';
 import 'store/sqlite_backend.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
+import 'ui/ui_scale_host.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -478,6 +479,10 @@ class _OpenoteAppState extends State<OpenoteApp> {
           theme: onoteTheme(Brightness.light),
           darkTheme: onoteTheme(Brightness.dark),
           themeMode: widget.app.themeMode, // Settings: Auto / Light / Dark
+          // The interface size (Settings ▸ Appearance). Under the navigator, so
+          // dialogs and menus grow with the window.
+          builder: (context, child) => UiScaleHost(
+              app: widget.app, child: child ?? const SizedBox.shrink()),
           home: AppShell(app: widget.app),
         );
       },

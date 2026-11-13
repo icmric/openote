@@ -1400,6 +1400,18 @@ class LDe extends L {
   String get settingsHelp => 'Hilfe';
 
   @override
+  String get settingsUiScale => 'Größe der Oberfläche';
+
+  @override
+  String get settingsUiScaleHint =>
+      'Macht das ganze Fenster größer oder kleiner.';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return 'Angezeigt mit $size: Dieses Fenster ist für mehr zu klein.';
+  }
+
+  @override
   String get settingsLanguage => 'Sprache';
 
   @override

@@ -1890,6 +1890,24 @@
   "@settingsHelp": {
     "description": "Section heading."
   },
+  "settingsUiScale": "Interface size",
+  "@settingsUiScale": {
+    "description": "Settings, Appearance: how big the whole window is drawn."
+  },
+  "settingsUiScaleHint": "Makes the whole window bigger or smaller.",
+  "@settingsUiScaleHint": {
+    "description": "The line under that setting."
+  },
+  "settingsUiScaleLimited": "Showing {size}: this window is too small for more.",
+  "@settingsUiScaleLimited": {
+    "description": "Shown instead of the hint when the window is too small for the size chosen. {size} is a percentage such as 150%.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "150%"
+      }
+    }
+  },
   "settingsLanguage": "Language",
   "@settingsLanguage": {
     "description": "Row label in Settings for choosing the interface language."

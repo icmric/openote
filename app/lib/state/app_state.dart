@@ -8,7 +8,7 @@ import '../store/fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/material.dart'; // ThemeMode + widgets
 import 'package:path/path.dart' as p;
 import 'package:super_clipboard/super_clipboard.dart'
@@ -67,6 +67,7 @@ import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
 import '../core/onote_text.dart' show EnglishDialect;
 import '../spell/writing_language.dart';
+import 'ui_scale.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
@@ -5489,6 +5490,31 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  // ── Interface size ───────────────────────────────────────────────────────
+
+  /// How much the whole window is zoomed: one of [kUiScales], 1.0 by default.
+  ///
+  /// Remembered across launches. It is a preference about the screen, so it is
+  /// a setting like the theme, not a property of any notebook.
+  double uiScale = 1.0;
+
+  /// What [uiScale] currently comes to in this window. Smaller than [uiScale]
+  /// when the window is too small for the chosen size (see `effectiveUiScale`),
+  /// which is what lets Settings say so. Written by the zoom host; not state.
+  double effectiveUiScale = 1.0;
+
+  /// The zoom host listens to this, so a change repaints the window without
+  /// rebuilding the app (which would throw away every page and dialog).
+  final ValueNotifier<double> uiScaleNotifier = ValueNotifier(1.0);
+
+  void setUiScale(double v) {
+    if (!kUiScales.contains(v)) return;
+    uiScale = v;
+    uiScaleNotifier.value = v;
+    _repo.setSetting('uiScale', v);
+    notifyListeners();
+  }
+
   /// Degrees or radians, for every equation in the app.
   ///
   /// Degrees by default, which is what a school calculator does and what the
@@ -7768,6 +7794,11 @@ class AppState extends ChangeNotifier
     if (acap is bool) autoCapitalizeEnabled = acap;
     final sl = _repo.getSetting('spellLanguage');
     if (sl is String && kSpellLanguages.contains(sl)) spellLanguage = sl;
+    final us = _repo.getSetting('uiScale');
+    if (us is num && kUiScales.contains(us.toDouble())) {
+      uiScale = us.toDouble();
+      uiScaleNotifier.value = uiScale;
+    }
     final am = _repo.getSetting('angleMode');
     mathAngleMode = am == 'rad' ? AngleMode.radians : AngleMode.degrees;
     onboardingSeen = _repo.getSetting('onboardingSeen') == true;

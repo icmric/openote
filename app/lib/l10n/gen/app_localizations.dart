@@ -2309,6 +2309,24 @@ abstract class L {
   /// **'Help'**
   String get settingsHelp;
 
+  /// Settings, Appearance: how big the whole window is drawn.
+  ///
+  /// In en, this message translates to:
+  /// **'Interface size'**
+  String get settingsUiScale;
+
+  /// The line under that setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Makes the whole window bigger or smaller.'**
+  String get settingsUiScaleHint;
+
+  /// Shown instead of the hint when the window is too small for the size chosen. {size} is a percentage such as 150%.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing {size}: this window is too small for more.'**
+  String settingsUiScaleLimited(String size);
+
   /// Row label in Settings for choosing the interface language.
   ///
   /// In en, this message translates to:

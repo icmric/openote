@@ -1393,6 +1393,18 @@ class LEs extends L {
   String get settingsHelp => 'Ayuda';
 
   @override
+  String get settingsUiScale => 'Tamaño de la interfaz';
+
+  @override
+  String get settingsUiScaleHint =>
+      'Hace toda la ventana más grande o más pequeña.';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return 'Se muestra al $size: esta ventana es demasiado pequeña para más.';
+  }
+
+  @override
   String get settingsLanguage => 'Idioma';
 
   @override

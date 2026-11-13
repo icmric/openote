@@ -1341,6 +1341,17 @@ class LZh extends L {
   String get settingsHelp => '帮助';
 
   @override
+  String get settingsUiScale => '界面大小';
+
+  @override
+  String get settingsUiScaleHint => '放大或缩小整个窗口。';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return '当前显示为 $size：此窗口太小，无法再放大。';
+  }
+
+  @override
   String get settingsLanguage => '语言';
 
   @override

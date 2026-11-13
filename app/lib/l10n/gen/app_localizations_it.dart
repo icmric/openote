@@ -1399,6 +1399,17 @@ class LIt extends L {
   String get settingsHelp => 'Aiuto';
 
   @override
+  String get settingsUiScale => 'Dimensione dell\'interfaccia';
+
+  @override
+  String get settingsUiScaleHint => 'Ingrandisce o riduce l\'intera finestra.';
+
+  @override
+  String settingsUiScaleLimited(String size) {
+    return 'Mostrata al $size: questa finestra è troppo piccola per di più.';
+  }
+
+  @override
   String get settingsLanguage => 'Lingua';
 
   @override

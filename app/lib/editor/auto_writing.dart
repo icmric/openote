@@ -151,7 +151,13 @@ AutoFix? computeAutoFix({
     }
   }
 
-  if (fixed == word) return null;
+  if (fixed == word) {
+    // Nothing wrong with this word itself, but it may show the one before it
+    // was meant differently (`its a` is `it's a`).
+    return autoCorrect
+        ? _fixPrevious(t, next, ws, we, caret, word, keep)
+        : null;
+  }
 
   // Prose only: inside `code`, a [[link]], a URL or an equation, nothing is
   // touched. (The same blanking the grammar checker is shown.) Asked last,
@@ -168,6 +174,65 @@ AutoFix? computeAutoFix({
     original: word,
     replacement: fixed,
     start: ws,
+    before: next,
+  );
+}
+
+/// A word whose spelling is fine on its own and wrong in front of certain
+/// others: `its` before `a`, `your` before `not`, `their` before `is`.
+///
+/// Each pair is one where the usual reading is a slip and the other reading
+/// cannot exist: "its a" has no possessive meaning (no one owns an *a*), so it
+/// is "it's a" every time. The pairs are few on purpose. `its going` is left
+/// alone because "its going rate" is real English, and `your welcome` because of
+/// "your welcome pack"; a pair is only here when nothing legitimate follows it.
+/// The keys and the following words are lower case.
+const Map<String, ({String fix, Set<String> before})> _afterThought = {
+  'its': (fix: "it's", before: {'a', 'an', 'the', 'not', 'been', 'got'}),
+  'your': (fix: "you're", before: {'a', 'an', 'not'}),
+  'their': (fix: 'there', before: {'is', 'are', 'was', 'were'}),
+};
+
+/// Put right the word BEFORE the one just finished, when the one just finished
+/// shows what was meant. Only the earlier word is changed.
+AutoFix? _fixPrevious(String t, TextEditingValue next, int ws, int we,
+    int caret, String word, Set<String> keep) {
+  final follower = word.toLowerCase();
+  // The word before, with only spaces or tabs between: across a line break or
+  // a full stop it is another sentence.
+  final m = RegExp(r"([\p{L}'’]+)[ \t]+$", unicode: true)
+      .firstMatch(t.substring(0, ws));
+  if (m == null) return null;
+  final prev = m.group(1)!;
+  final ps = m.start;
+  final rule = _afterThought[prev.toLowerCase()];
+  if (rule == null || !rule.before.contains(follower)) return null;
+  // Only an ordinary lower-case word or one with an initial capital; `ITS` and
+  // `iTs` are not slips.
+  final rest = prev.substring(1);
+  if (rest != rest.toLowerCase()) return null;
+  if (ps > 0 && !_openers.contains(t[ps - 1])) return null;
+  final key = '${prev.toLowerCase()} $follower';
+  if (keep.contains(key)) return null;
+  // Prose only, as for any fix.
+  final prose = SpellChecker.proseOnly(t);
+  if (prose.substring(ps, we) != t.substring(ps, we)) return null;
+
+  final fixed = prev[0] != prev[0].toLowerCase()
+      ? '${rule.fix[0].toUpperCase()}${rule.fix.substring(1)}'
+      : rule.fix;
+  final newText = t.replaceRange(ps, ps + prev.length, fixed);
+  final newCaret = caret + (fixed.length - prev.length);
+  return AutoFix(
+    value: TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCaret),
+    ),
+    // The pair, so that putting it back as typed remembers the pair and not
+    // the single word.
+    original: key,
+    replacement: '${fixed.toLowerCase()} $follower',
+    start: ps,
     before: next,
   );
 }
