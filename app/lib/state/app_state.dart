@@ -10222,7 +10222,23 @@ class AppState extends ChangeNotifier
   /// page". A page snapshot has no such key, so the two never collide.
   static const _kRestoreNode = 'restoreNode';
 
+  /// Takes back the automatic fix the person has just been given, when there
+  /// is one still to take back (see `_LiveMarkdownSession._undoAutoFix`).
+  ///
+  /// Registered by the box that made the fix and used ONCE: the first Ctrl+Z
+  /// after a fix undoes the fix and nothing else, which is what every word
+  /// processor does and what the stack's burst-sized steps could not. If the
+  /// person has typed or moved since, the callback reports false and Ctrl+Z is
+  /// the ordinary undo.
+  bool Function()? autoFixUndo;
+
   void undo() {
+    final fixUndo = autoFixUndo;
+    autoFixUndo = null;
+    if (fixUndo != null && fixUndo()) {
+      notifyListeners();
+      return;
+    }
     if (_undo.isEmpty) return;
     final entry = _undo.removeLast();
     final node = _nodeOf(entry);

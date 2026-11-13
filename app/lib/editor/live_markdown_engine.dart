@@ -12,6 +12,7 @@ import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../core/onote_text.dart' show OnoteText, TextFinding;
+import '../spell/autocorrect_table.dart';
 import '../spell/spell_checker.dart';
 import '../spell/writing_checker.dart';
 import '../state/app_state.dart';
@@ -1178,7 +1179,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// the character that finished it, and remember the word. True when it did.
   bool _undoAutoFix() {
     final fix = _lastFix;
-    if (fix == null) return false;
+    if (fix == null || _disposed) return false;
     _lastFix = null;
     final v = controller.value;
     // Only straight after the fix: nothing typed, caret not moved.
@@ -1670,12 +1671,20 @@ class _LiveMarkdownSession extends OnoteEditSession {
           autoCorrect: () => app.autoCorrectEnabled,
           autoCapitalize: () => app.autoCapitalizeEnabled,
           correct: (w) {
-            final d = app.writingDialect;
-            if (d == null || learnedWords.contains(w.toLowerCase())) return null;
-            return OnoteText.autocorrectNow(w, d);
+            // A list of spellings that are wrong in every context, not the
+            // checker's nearest word: see autocorrect_table.dart.
+            if (app.writingDialect == null ||
+                learnedWords.contains(w.toLowerCase())) {
+              return null;
+            }
+            return autocorrectFor(w);
           },
           keep: _keepAsTyped,
-          onFix: (f) => _lastFix = f,
+          onFix: (f) {
+            _lastFix = f;
+            // Ctrl+Z straight after this takes back just this fix.
+            app.autoFixUndo = _undoAutoFix;
+          },
         ),
       ],
       decoration: InputDecoration(
@@ -1716,7 +1725,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // produce are one object with two contents — see
         // [onoteTextContextMenu].
         return onoteTextContextMenu(
-            context, editable, [...picture, ...link, ...extra, ...items]);
+            context, editable, [...picture, ...link, ...extra, ...items],
+            suggestions: _suggestionItems);
       },
       onChanged: (v) {
         onChanged(v);
@@ -1868,14 +1878,39 @@ class _LiveMarkdownSession extends OnoteEditSession {
     app.select(made.id);
   }
 
+  /// The rows of the last spelling or grammar menu that are corrections, so the
+  /// menu can set them apart from Cut, Copy and Paste.
+  final Set<ContextMenuButtonItem> _suggestionItems = {};
+
+  /// How many corrections one menu offers. More than this is a list to read
+  /// rather than a quick fix, and the best are first.
+  static const int _kMenuSuggestions = 4;
+
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks
   /// exactly as it always did.
   List<ContextMenuButtonItem> _spellMenuItems(EditableTextState editable) {
-    final sel = controller.selection;
-    if (!sel.isValid) return const [];
+    _suggestionItems.clear();
     final text = controller.text;
-    final at = sel.baseOffset.clamp(0, text.length);
+    // **The word the pointer is on, not the one the caret was last left in.**
+    // A right-click does not always move the caret before the menu is built
+    // (the field may not even have focus yet), so asking the caret meant the
+    // first right-click on a misspelling offered nothing but Paste and Select
+    // all until the word had been left-clicked. The menu's own anchor is where
+    // the press happened; the caret is only the answer for a menu opened from
+    // the keyboard, where the two are the same place.
+    int at;
+    try {
+      final anchor = editable.contextMenuAnchors.primaryAnchor;
+      at = editable.renderEditable
+          .getPositionForPoint(anchor)
+          .offset
+          .clamp(0, text.length);
+    } catch (_) {
+      final sel = controller.selection;
+      if (!sel.isValid) return const [];
+      at = sel.baseOffset.clamp(0, text.length);
+    }
 
     /// Is this finding still true of the text as it is now? The marks are from
     /// the last check, which can be a moment behind the keyboard; a fix spliced
@@ -1902,11 +1937,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
 
     List<ContextMenuButtonItem> spellingItems(
         TextRange range, String word, List<String> fixes) {
-      return [
-        for (final s in WritingChecker.suggestionsFor(word, fixes: fixes))
+      final picks = [
+        for (final s in WritingChecker.suggestionsFor(word, fixes: fixes)
+            .take(_kMenuSuggestions))
           ContextMenuButtonItem(
               label: s.isEmpty ? 'Remove' : s,
               onPressed: () => replaceRange(range, s)),
+      ];
+      _suggestionItems.addAll(picks);
+      return [
+        ...picks,
         ContextMenuButtonItem(
           label: 'Add to dictionary',
           onPressed: () {
@@ -1937,11 +1977,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
           // The reason, shown as a disabled row so it reads as a label.
           if (f.message.isNotEmpty)
             ContextMenuButtonItem(label: f.message, onPressed: null),
-          for (final fix in f.fixes.toSet())
+          for (final fix in f.fixes.toSet().take(_kMenuSuggestions))
             ContextMenuButtonItem(
                 label: fix.isEmpty ? 'Remove' : fix,
                 onPressed: () => replaceRange(range, fix)),
-        ];
+        ]..forEach((i) {
+            if (i.onPressed != null) _suggestionItems.add(i);
+          });
       }
     }
 

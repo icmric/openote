@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -176,6 +177,32 @@ void main() {
     expect(app.activeEditor!.controller.text, isNotEmpty);
     await menuOn(t, c, 'Hundd');
     expect(find.text('Add to dictionary'), findsNothing);
+    await done(t);
+  }, skip: !have);
+
+  testWidgets('a right-click on a misspelling needs no left-click first, and its '
+      'fixes stand apart from Cut and Paste', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t);
+    final c = await open(t, app, 'I recieve it');
+    // The caret is at the far end, nowhere near the word: the situation that
+    // offered only Paste and Select all.
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+    await t.pump();
+    final state = t.state<EditableTextState>(find.byType(EditableText));
+    final rect = state.renderEditable
+        .getLocalRectForCaret(TextPosition(offset: c.text.indexOf('recieve') + 3));
+    final at = state.renderEditable.localToGlobal(rect.center);
+    await t.tapAt(at, buttons: kSecondaryMouseButton);
+    await t.pump();
+
+    expect(find.text('receive'), findsOneWidget,
+        reason: 'the word under the pointer, not the caret');
+    expect(find.text('Add to dictionary'), findsOneWidget);
+    final style = t.widget<Text>(find.text('receive')).style;
+    expect(style?.fontWeight, FontWeight.w600,
+        reason: 'a correction reads as a correction, not as one more command');
+    expect(find.text('Paste'), findsOneWidget, reason: 'and Paste is still there');
     await done(t);
   }, skip: !have);
 }

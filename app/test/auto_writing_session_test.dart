@@ -197,4 +197,82 @@ void main() {
     expect(c.text, 'hello ', reason: 'capitals are off');
     await settle(t);
   }, skip: !have);
+
+  // ── Missing apostrophes, and Ctrl+Z (reported on the first real try) ──────
+  //
+  // These need no native library: the answer comes from a list, so they run
+  // everywhere the editor does.
+
+  testWidgets('a missing apostrophe is put in as the word is finished',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'I think we dont');
+    await type(t, c, ' ');
+    expect(c.text, "I think we don't ");
+    for (final ch in 'and im sure'.split('')) {
+      await type(t, c, ch);
+    }
+    expect(c.text, "I think we don't and I'm sure");
+    await settle(t);
+  });
+
+  testWidgets('and its capital, at the start of a sentence', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'dont');
+    await type(t, c, ' ');
+    expect(c.text, "Don't ");
+    await settle(t);
+  });
+
+  testWidgets('a word that could be wrong is left exactly as typed',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    // `its`, `well` and `ill` are words; `alot`'s nearest dictionary word was
+    // once "alto". None of them is changed behind the person's back.
+    final c = await edit(t, app, 'its well ill');
+    await type(t, c, ' ');
+    expect(c.text, 'its well ill ');
+    await settle(t);
+  });
+
+  testWidgets('Ctrl+Z straight after a fix takes back just the fix',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    expect(c.text, "we don't ");
+
+    // The app's own undo, which is what Ctrl+Z calls in a box.
+    app.undo();
+    await t.pump();
+    expect(c.text, 'we dont ',
+        reason: 'the word is back as typed, not the whole burst gone');
+    expect(c.selection.baseOffset, 8, reason: 'with the caret where it was');
+
+    // And it is not fixed again when the person carries on.
+    await type(t, c, 'x');
+    expect(c.text, 'we dont x');
+    await settle(t);
+  });
+
+  testWidgets('Ctrl+Z after more typing is the ordinary undo', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    await type(t, c, 'x');
+    expect(c.text, "we don't x");
+    expect(app.autoFixUndo, isNotNull);
+    // The hook declines (the text has moved on) and is spent; the stack
+    // carries on as it always did.
+    app.undo();
+    expect(app.autoFixUndo, isNull);
+    expect(c.text, isNot('we dont x'),
+        reason: 'the fix is not quietly reverted from under later typing');
+    await settle(t);
+  });
 }

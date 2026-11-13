@@ -13,13 +13,14 @@
 /// guarantee that German nouns, French accents and Chinese text are never
 /// "fixed" — it is one gate in one place, not a check in each rule.
 ///
-/// **Undo.** Two ways back. Backspace straight after a fix puts the word back
-/// as typed and keeps the boundary character (see
-/// `_LiveMarkdownSession._undoAutoFix`), which is how every word processor does
-/// it, and remembers the word so it is not fixed again. Ctrl+Z is the app's own
-/// undo (the field's cannot be used here: see `AppShell._blockTextActions`),
-/// which steps back a whole burst of typing, the fix with it, as it does for
-/// anything else typed in that burst.
+/// **Undo.** Two ways back, and they do the same thing. Backspace straight
+/// after a fix puts the word back as typed and keeps the boundary character
+/// (see `_LiveMarkdownSession._undoAutoFix`), which is how every word processor
+/// does it, and remembers the word so it is not fixed again. **Ctrl+Z straight
+/// after a fix does exactly that** (`AppState.undo` asks for it first): without
+/// it, the app's own undo steps back a whole burst of typing, so the first
+/// Ctrl+Z took the entire word away instead of the one change the person
+/// objected to. Once anything else has been typed, Ctrl+Z is the ordinary undo.
 library;
 
 import 'package:flutter/services.dart';
@@ -122,7 +123,9 @@ AutoFix? computeAutoFix({
 
   if (autoCorrect &&
       correct != null &&
-      word.length >= 3 &&
+      // Two letters is enough now that the answer comes from a list: `im` is
+      // a slip for I'm, and nothing else.
+      word.length >= 2 &&
       !keep.contains(lower) &&
       // A capital in the middle of a sentence is a name or an acronym; names
       // the dictionary lacks must not be "corrected" into other words.

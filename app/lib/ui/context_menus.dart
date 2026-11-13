@@ -31,9 +31,15 @@ import 'toast.dart';
 /// `DesktopTextSelectionToolbar` for the SURFACE and the positioning, because
 /// a selection menu has to sit against the selection and that widget already
 /// knows how — the parts worth sharing are the ones you can see.
+///
+/// [suggestions] are the rows that are corrections to a word or a sentence. They
+/// are drawn as a block of their own at the top (bold, tinted, no icon) with a
+/// rule beneath, so a menu that is mostly spelling does not read as one long
+/// list of equal commands.
 Widget onoteTextContextMenu(
     BuildContext context, EditableTextState editable,
-    List<ContextMenuButtonItem> items) {
+    List<ContextMenuButtonItem> items,
+    {Set<ContextMenuButtonItem> suggestions = const {}}) {
   // **Paste is always offered, greyed when there is nothing to paste.**
   //
   // Flutter leaves the row out altogether unless the clipboard reports
@@ -52,10 +58,17 @@ Widget onoteTextContextMenu(
     rows.add(const ContextMenuButtonItem(
         onPressed: null, type: ContextMenuButtonType.paste));
   }
+  final lastSuggestion =
+      rows.lastIndexWhere((i) => suggestions.contains(i));
   return DesktopTextSelectionToolbar(
     anchor: editable.contextMenuAnchors.primaryAnchor,
     children: [
-      for (final item in rows)
+      for (final (index, item) in rows.indexed) ...[
+        if (suggestions.contains(item))
+          _SuggestionRow(
+              label: AdaptiveTextSelectionToolbar.getButtonLabel(context, item),
+              onPressed: item.onPressed)
+        else
         _ToolbarRow(
           icon: _iconFor(item),
           // **Not `item.label`**, which is null for every one of Flutter's own
@@ -69,8 +82,42 @@ Widget onoteTextContextMenu(
           shortcut: _shortcutFor(item),
           onPressed: item.onPressed,
         ),
+        if (index == lastSuggestion && index < rows.length - 1)
+          Divider(
+              height: 9,
+              thickness: 1,
+              color: Theme.of(context).colorScheme.outline),
+      ],
     ],
   );
+}
+
+/// A correction: the word that would replace the one under the pointer, set
+/// apart from the ordinary commands below it.
+class _SuggestionRow extends StatelessWidget {
+  const _SuggestionRow({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton(
+      style: TextButton.styleFrom(
+        alignment: AlignmentDirectional.centerStart,
+        minimumSize: const Size.fromHeight(34),
+        padding: const EdgeInsets.fromLTRB(14, 0, 12, 0),
+        shape: const RoundedRectangleBorder(),
+        foregroundColor: scheme.primary,
+        backgroundColor: scheme.primary.withValues(alpha: .07),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+      onPressed: onPressed,
+      child: Text(label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+    );
+  }
 }
 
 /// The icon for one toolbar row.
