@@ -1429,6 +1429,13 @@ class LEn extends L {
   String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
+  String get settingsReportProblem => 'Report a problem or share an idea';
+
+  @override
+  String get settingsReportProblemHint =>
+      'Opens GitHub. You need a free GitHub account.';
+
+  @override
   String get settingsSpellCheck => 'Spell check';
 
   @override

@@ -401,6 +401,8 @@
   "settingsPenTestHint": "Ce que votre stylet et ses boutons signalent.",
   "settingsShortcuts": "Raccourcis clavier",
   "settingsShortcutsHint": "Ctrl+/",
+  "settingsReportProblem": "Signaler un problème ou proposer une idée",
+  "settingsReportProblemHint": "Ouvre GitHub. Un compte GitHub gratuit est nécessaire.",
   "settingsSpellCheck": "Correcteur orthographique",
   "settingsSync": "Synchronisation",
   "settingsSyncHint": "Sauvegardez ce carnet sur GitHub ou dans un dossier.",

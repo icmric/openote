@@ -1948,6 +1948,14 @@
   "@settingsShortcutsHint": {
     "description": "Supporting line. Keep the shortcut in brackets as typed."
   },
+  "settingsReportProblem": "Report a problem or share an idea",
+  "@settingsReportProblem": {
+    "description": "Row in Settings, Help. Opens the project's issues page on GitHub in the browser."
+  },
+  "settingsReportProblemHint": "Opens GitHub. You need a free GitHub account.",
+  "@settingsReportProblemHint": {
+    "description": "Supporting line under the row above. Say plainly that an account is needed."
+  },
   "settingsSpellCheck": "Spell check",
   "@settingsSpellCheck": {
     "description": "Row label."

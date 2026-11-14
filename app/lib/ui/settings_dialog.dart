@@ -485,6 +485,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 l.settingsWelcomeTourHint, () => showOnboarding(context, app)),
             _door(Icons.keyboard_outlined, l.settingsShortcuts,
                 l.settingsShortcutsHint, () => showShortcutOverlay(context)),
+            // The project's issues page. No email address on purpose: a
+            // public page gets a reply anyone can read and build on, and
+            // does not make one person's inbox the support desk.
+            _door(Icons.forum_outlined, l.settingsReportProblem,
+                l.settingsReportProblemHint, () => PlatformOpen.url(
+                    'https://github.com/icmric/openote/issues')),
             // **The instrument for the pen-buttons report.** It has come back
             // three times from two people on hardware nobody here owns, and
             // each answer has been a guess about what Windows sends. In

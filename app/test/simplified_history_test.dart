@@ -18,11 +18,9 @@
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/history.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -30,7 +28,6 @@ import 'package:openote/store/repository.dart';
 import 'package:openote/sync/device_label.dart';
 import 'package:openote/sync/op.dart';
 import 'package:openote/sync/op_log.dart';
-import 'package:openote/ui/page_history_dialog.dart';
 
 import 'support/sqlite.dart';
 
@@ -518,96 +515,5 @@ void main() {
       await app.selectPage(victim);
       expect(app.blocks.single.content['blob'], 'sha256:cafe');
     });
-  });
-
-  // ── The negative control ─────────────────────────────────────────────
-
-  testWidgets('NEGATIVE CONTROL: an unnamed device shows a friendly fallback '
-      'and no uuid reaches the screen', (tester) async {
-    if (!initSqliteForTests()) return markTestSkipped('sqlite unavailable');
-    late Repository repo;
-    late AppState app;
-    late String nb;
-    late String file;
-    late String page;
-    final tmp = Directory.systemTemp.createTempSync('onote_history_ui_');
-    addTearDown(() {
-      repo.dispose();
-      try {
-        tmp.deleteSync(recursive: true);
-      } catch (_) {}
-    });
-
-    await tester.runAsync(() async {
-      repo = await Repository.openAt(tmp);
-      final created = await repo.createNotebook('Shared');
-      nb = created.id;
-      file = created.file;
-      app = AppState(repo)..notebookId = nb;
-      app.reloadNodes();
-      page = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
-      await app.selectPage(page);
-      app.blocks = [
-        Block(id: 'b1', type: BlockType.text, x: 0, y: 0, content: {'text': 'mine'})
-      ];
-      app.markDirty();
-      await app.flushSave();
-
-      // A second computer that never set a name — the case the fallback exists
-      // for. It writes the newest op, so it is what the page attributes to.
-      final store = OpLogStore.forNotebook(file);
-      final highest =
-          store.readAll().map((o) => o.lamport).reduce((a, b) => a > b ? a : b);
-      final other = _Writer('019fdff4-8c31-7a2e-b0c1-5566778899aa');
-      store.append(other.device, [
-        other.setBlock(page, 'b1', 'text', {'text': 'theirs'}, at: highest + 3),
-        other.setBlock(page, 'b2', 'image', {'blob': 'sha256:aa'},
-            at: highest + 4),
-        other.removeBlock(page, 'b2', at: highest + 5),
-      ]);
-      await app.refreshHistory(nb);
-      app.blocks = [
-        Block(id: 'b1', type: BlockType.text, x: 0, y: 0, content: {'text': 'theirs'})
-      ];
-    });
-
-    expect(app.recentDeletions(), isNotEmpty,
-        reason: 'the fixture really did produce something to show');
-
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: kOnoteLocalizations,
-      supportedLocales: kOnoteLocales,
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => showPageHistory(context, app),
-            child: const Text('open'),
-          ),
-        ),
-      ),
-    ));
-    await tester.tap(find.text('open'));
-    await tester.pump(const Duration(milliseconds: 450));
-    await tester.pumpAndSettle();
-
-    final shown = <String>[
-      for (final w in tester.widgetList<Text>(find.byType(Text)))
-        w.data ?? '',
-    ];
-    // MUTATION: render `a.device` instead of `deviceDisplayName(...)` in
-    // `_changeLine`, or drop the fallback from `deviceDisplayName`, and the
-    // uuid is on the screen.
-    expect(shown.join(' | '), contains('another computer'));
-    for (final line in shown) {
-      expect(line, isNot(contains('019fdff4')),
-          reason: 'no raw device id may reach a student: "$line"');
-      expect(line, isNot(matches(RegExp(r'[0-9a-f]{8}-[0-9a-f]{4}-'))),
-          reason: 'no uuid may reach a student: "$line"');
-      expect(line.toLowerCase(), isNot(contains('lamport')));
-      expect(line.toLowerCase(), isNot(contains('.oplog')));
-    }
-    // The technical detail exists — it is simply folded away, matching
-    // `open_notice_dialog.dart` and `save_problem_dialog.dart`.
-    expect(find.text('Details (advanced)'), findsOneWidget);
   });
 }

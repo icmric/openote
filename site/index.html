@@ -460,10 +460,15 @@ sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></
     .catch(function () {
       // No release yet, or the API is unreachable. Say which is likelier
       // rather than showing a broken page.
-      document.getElementById('release-line').innerHTML =
-        'Builds are published on the <a href="' + RELEASES + '">releases page</a>. ' +
-        'If it is empty, no version has been tagged yet — you can still ' +
-        '<a href="https://github.com/' + REPO + '/blob/master/app/README.md">build it yourself</a>.';
+      var fail = document.getElementById('release-line');
+      fail.textContent = 'Builds are published on the ';
+      fail.appendChild(link(RELEASES, 'releases page'));
+      fail.appendChild(document.createTextNode(
+        '. If it is empty, no version has been tagged yet — you can still '));
+      fail.appendChild(link(
+        'https://github.com/' + REPO + '/blob/master/app/README.md',
+        'build it yourself'));
+      fail.appendChild(document.createTextNode('.'));
       // And the buttons must stop claiming otherwise.
       wire('windows', null, null, null);
       wire('macos', null, null, null);

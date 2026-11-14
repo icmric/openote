@@ -401,6 +401,8 @@
   "settingsPenTestHint": "Che cosa riportano la penna e i suoi pulsanti.",
   "settingsShortcuts": "Scorciatoie da tastiera",
   "settingsShortcutsHint": "Ctrl+/",
+  "settingsReportProblem": "Segnala un problema o proponi un'idea",
+  "settingsReportProblemHint": "Apre GitHub. Serve un account GitHub gratuito.",
   "settingsSpellCheck": "Controllo ortografico",
   "settingsSync": "Sincronizzazione",
   "settingsSyncHint": "Salva questo quaderno su GitHub o in una cartella.",

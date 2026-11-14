@@ -401,6 +401,8 @@
   "settingsPenTestHint": "O que a caneta e seus botões informam.",
   "settingsShortcuts": "Atalhos de teclado",
   "settingsShortcutsHint": "Ctrl+/",
+  "settingsReportProblem": "Comunicar um problema ou sugerir uma ideia",
+  "settingsReportProblemHint": "Abre o GitHub. É preciso uma conta gratuita do GitHub.",
   "settingsSpellCheck": "Corretor ortográfico",
   "settingsSync": "Sincronização",
   "settingsSyncHint": "Faça backup deste caderno no GitHub ou numa pasta.",

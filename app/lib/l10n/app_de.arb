@@ -401,6 +401,8 @@
   "settingsPenTestHint": "Was dein Stift und seine Tasten melden.",
   "settingsShortcuts": "Tastenkürzel",
   "settingsShortcutsHint": "Strg+/",
+  "settingsReportProblem": "Problem melden oder Idee teilen",
+  "settingsReportProblemHint": "Öffnet GitHub. Ein kostenloses GitHub-Konto ist nötig.",
   "settingsSpellCheck": "Rechtschreibprüfung",
   "settingsSync": "Synchronisierung",
   "settingsSyncHint": "Dieses Notizbuch auf GitHub oder in einen Ordner sichern.",

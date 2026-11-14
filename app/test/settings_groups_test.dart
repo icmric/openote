@@ -195,6 +195,19 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
+  testWidgets('HELP HAS A WAY TO REPORT A PROBLEM, IN PLAIN WORDS', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await open(t, await newApp(t));
+    await t.tap(find.text('Help'));
+    await t.pumpAndSettle();
+
+    expect(find.text('Report a problem or share an idea'), findsOneWidget);
+    // Says what clicking does and what it asks of the person, so nobody
+    // arrives at a sign-in page they were not expecting.
+    expect(find.textContaining('free GitHub account'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
   testWidgets('and it fits a small window, every group of it', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     // Smaller than the dialog asks for, which is the case a fixed width gets

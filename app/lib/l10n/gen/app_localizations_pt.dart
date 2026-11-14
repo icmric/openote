@@ -1437,6 +1437,14 @@ class LPt extends L {
   String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
+  String get settingsReportProblem =>
+      'Comunicar um problema ou sugerir uma ideia';
+
+  @override
+  String get settingsReportProblemHint =>
+      'Abre o GitHub. É preciso uma conta gratuita do GitHub.';
+
+  @override
   String get settingsSpellCheck => 'Corretor ortográfico';
 
   @override

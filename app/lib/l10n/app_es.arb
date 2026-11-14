@@ -401,6 +401,8 @@
   "settingsPenTestHint": "Lo que informan tu lápiz y sus botones.",
   "settingsShortcuts": "Atajos de teclado",
   "settingsShortcutsHint": "Ctrl+/",
+  "settingsReportProblem": "Informar de un problema o proponer una idea",
+  "settingsReportProblemHint": "Abre GitHub. Hace falta una cuenta gratuita de GitHub.",
   "settingsSpellCheck": "Corrector ortográfico",
   "settingsSync": "Sincronización",
   "settingsSyncHint": "Copia este cuaderno en GitHub o en una carpeta.",

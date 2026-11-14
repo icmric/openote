@@ -1382,6 +1382,12 @@ class LZh extends L {
   String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
+  String get settingsReportProblem => '报告问题或提出想法';
+
+  @override
+  String get settingsReportProblemHint => '打开 GitHub，需要一个免费的 GitHub 账号。';
+
+  @override
   String get settingsSpellCheck => '拼写检查';
 
   @override

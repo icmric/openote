@@ -1444,6 +1444,13 @@ class LDe extends L {
   String get settingsShortcutsHint => 'Strg+/';
 
   @override
+  String get settingsReportProblem => 'Problem melden oder Idee teilen';
+
+  @override
+  String get settingsReportProblemHint =>
+      'Öffnet GitHub. Ein kostenloses GitHub-Konto ist nötig.';
+
+  @override
   String get settingsSpellCheck => 'Rechtschreibprüfung';
 
   @override

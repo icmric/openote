@@ -259,6 +259,9 @@ void main() {
       app.undo();
       await tester.pumpAndSettle();
       expect(app.node(term2.id), isNotNull);
+      expect(find.text('Moved section “Term 2” to the bin'), findsNothing,
+          reason: 'the notice must not keep offering Undo for a delete that '
+              'has already been undone');
 
       // And redo takes it away again, so the pair stays symmetric — then
       // undo AGAIN, because deleting switches page and switching page used to

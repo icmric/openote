@@ -1443,6 +1443,13 @@ class LIt extends L {
   String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
+  String get settingsReportProblem => 'Segnala un problema o proponi un\'idea';
+
+  @override
+  String get settingsReportProblemHint =>
+      'Apre GitHub. Serve un account GitHub gratuito.';
+
+  @override
   String get settingsSpellCheck => 'Controllo ortografico';
 
   @override

@@ -12,7 +12,6 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
-import 'page_history_dialog.dart';
 import 'protect_dialog.dart';
 import 'sync_dot.dart';
 import 'planner_format.dart';
@@ -2211,11 +2210,27 @@ void showDeletedSnackBar(
     NodeKind.sectionGroup => l.navDeletedGroup(title),
   };
   messenger.hideCurrentSnackBar();
-  messenger.showToast(SnackBar(
+  final toast = messenger.showToast(SnackBar(
     content: Text(text),
     action: SnackBarAction(
         label: l.navUndo, onPressed: () => app.undoNodeDelete(node.id)),
   ));
+  // Ctrl+Z (or anything else that brings the thing back) leaves a button on
+  // screen offering to do what has already been done. Close the notice the
+  // moment the node is in the tree again. Armed only once it has been seen
+  // gone, so a caller that shows this a beat before the delete lands is safe.
+  var wasGone = app.node(node.id) == null;
+  void watch() {
+    final back = app.node(node.id) != null;
+    if (!back) {
+      wasGone = true;
+    } else if (wasGone) {
+      toast.close();
+    }
+  }
+
+  app.addListener(watch);
+  toast.closed.whenComplete(() => app.removeListener(watch));
 }
 
 Future<void> _deleteNodeFromKey(BuildContext context, AppState app,
@@ -2373,7 +2388,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, l.navMenuSharePdf),
         _nodeItem('print', Icons.print_outlined, l.navMenuPrint),
         _nodeItem('copylink', Icons.link, l.navMenuCopyLink),
-        _nodeItem('history', Icons.history, l.navMenuRecentChanges),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
@@ -2487,10 +2501,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.indentPage(node.id, 1);
     case 'outdent':
       app.indentPage(node.id, -1);
-    case 'history':
-      await _onPage(app, node.id, () async {
-        if (context.mounted) await showVersionHistory(context, app);
-      });
     case 'delete':
       final messenger = ScaffoldMessenger.of(context);
       final l = L.of(context);
@@ -2502,18 +2512,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       }
   }
 }
-
-/// The page's change history.
-///
-/// **One door, three answers.** It used to be `page_versions` alone — up to
-/// thirty automatic snapshots of this page, and nothing at all about who made
-/// a change or what was deleted. Step 8a of the v0.17 plan adds the two things
-/// the owner actually asked for (*"keeping track of who made what edits (that
-/// are currently visible and maybe recent deletions, like the last 10 noteable
-/// deletions)"*) and they belong behind the same button, so the whole of
-/// "what happened to this page" is in one place rather than two.
-Future<void> showVersionHistory(BuildContext context, AppState app) =>
-    showPageHistory(context, app);
 
 /// The colour swatches inside a section's context menu.
 ///

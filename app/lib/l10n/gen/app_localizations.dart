@@ -2387,6 +2387,18 @@ abstract class L {
   /// **'Ctrl+/'**
   String get settingsShortcutsHint;
 
+  /// Row in Settings, Help. Opens the project's issues page on GitHub in the browser.
+  ///
+  /// In en, this message translates to:
+  /// **'Report a problem or share an idea'**
+  String get settingsReportProblem;
+
+  /// Supporting line under the row above. Say plainly that an account is needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Opens GitHub. You need a free GitHub account.'**
+  String get settingsReportProblemHint;
+
   /// Row label.
   ///
   /// In en, this message translates to:

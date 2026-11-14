@@ -401,6 +401,8 @@
   "settingsPenTestHint": "你的触控笔及其按键汇报的内容。",
   "settingsShortcuts": "键盘快捷键",
   "settingsShortcutsHint": "Ctrl+/",
+  "settingsReportProblem": "报告问题或提出想法",
+  "settingsReportProblemHint": "打开 GitHub，需要一个免费的 GitHub 账号。",
   "settingsSpellCheck": "拼写检查",
   "settingsSync": "同步",
   "settingsSyncHint": "将此笔记本备份到 GitHub 或文件夹。",

@@ -1436,6 +1436,14 @@ class LEs extends L {
   String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
+  String get settingsReportProblem =>
+      'Informar de un problema o proponer una idea';
+
+  @override
+  String get settingsReportProblemHint =>
+      'Abre GitHub. Hace falta una cuenta gratuita de GitHub.';
+
+  @override
   String get settingsSpellCheck => 'Corrector ortográfico';
 
   @override

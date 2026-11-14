@@ -1442,6 +1442,14 @@ class LFr extends L {
   String get settingsShortcutsHint => 'Ctrl+/';
 
   @override
+  String get settingsReportProblem =>
+      'Signaler un problème ou proposer une idée';
+
+  @override
+  String get settingsReportProblemHint =>
+      'Ouvre GitHub. Un compte GitHub gratuit est nécessaire.';
+
+  @override
   String get settingsSpellCheck => 'Correcteur orthographique';
 
   @override
