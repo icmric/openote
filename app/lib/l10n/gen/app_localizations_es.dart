@@ -709,17 +709,88 @@ class LEs extends L {
   String get navExpand => 'Desplegar el navegador  (Ctrl+\\)';
 
   @override
+  String get navSectionsHeader => 'Secciones';
+
+  @override
+  String get navNewSectionOrGroup => 'Nueva sección o grupo';
+
+  @override
+  String get dropMoveAbove => 'Mover arriba';
+
+  @override
+  String get dropMoveBelow => 'Mover abajo';
+
+  @override
+  String get dropMakeSubpage => 'Hacer subpágina';
+
+  @override
+  String get dropGroupTogether => 'Agrupar';
+
+  @override
+  String get dropMoveIntoGroup => 'Mover al grupo';
+
+  @override
+  String get dropMoveToSection => 'Mover a esta sección';
+
+  @override
+  String get navBinEmptyAction => 'Vaciar';
+
+  @override
+  String get navBinEmptyTitle => '¿Vaciar la papelera?';
+
+  @override
+  String get navBinEmptyBody =>
+      'Todo lo que contiene se borrará definitivamente. No se puede deshacer.';
+
+  @override
+  String get navBinEmptySharedNote =>
+      'Los cuadernos de una carpeta compartida solo se quitan de este ordenador.';
+
+  @override
+  String navBinDeleteOneBody(String title) {
+    return '«$title» se borrará definitivamente. No se puede deshacer.';
+  }
+
+  @override
+  String get navBinKindPage => 'Página';
+
+  @override
+  String get navBinKindSection => 'Sección';
+
+  @override
+  String get navBinKindGroup => 'Grupo de secciones';
+
+  @override
+  String get navBinKindNotebook => 'Cuaderno';
+
+  @override
+  String navBinItemLine(String kind, String when) {
+    return '$kind · $when';
+  }
+
+  @override
+  String get navBinWhenToday => 'hoy';
+
+  @override
+  String get navBinWhenYesterday => 'ayer';
+
+  @override
+  String navBinWhenDaysAgo(int days) {
+    return 'hace $days días';
+  }
+
+  @override
   String get navHideSections => 'Ocultar la lista de secciones';
 
   @override
-  String get navHome => 'Inicio';
+  String get navRecent => 'Recientes';
 
   @override
   String get navHomeEmpty =>
       'Aquí no hay nada todavía.\n\nHaz clic derecho en una página y elige Favorita para fijarla; las páginas que visites aparecen en Recientes.';
 
   @override
-  String get navHomeTip => 'Inicio — favoritos y recientes';
+  String get navRecentTip => 'Páginas recientes y favoritas';
 
   @override
   String get navInPageContent => 'En el contenido de las páginas';

@@ -324,4 +324,115 @@ void main() {
       app.cancelPendingSave();
     });
   }
+
+  // ── The navigator (S7): groups, the plus menu, the bin, a drag in flight ──
+  //
+  // Drawn at a small window so the navigator is most of the picture, and with
+  // the boundary ABOVE the navigator's overlay, so menus, the bin's panel and
+  // the drag pill are in the image.
+  Future<GlobalKey> mountNav(WidgetTester t, AppState app, Brightness b,
+      {Size size = const Size(900, 640)}) async {
+    t.view.physicalSize = size;
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final key = GlobalKey();
+    await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      theme: onoteTheme(b),
+      darkTheme: onoteTheme(Brightness.dark),
+      themeMode: b == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+      debugShowCheckedModeBanner: false,
+      builder: (c, child) => RepaintBoundary(key: key, child: child),
+      home: AppShell(app: app),
+    ));
+    for (var i = 0; i < 2; i++) {
+      await t.pump(const Duration(milliseconds: 800));
+      await t.pumpAndSettle();
+    }
+    return key;
+  }
+
+  Future<void> snap(WidgetTester t, GlobalKey key, String name) =>
+      expectLater(find.byKey(key), matchesGoldenFile('goldens/$name.png'));
+
+  for (final b in [Brightness.light, Brightness.dark]) {
+    testWidgets('navigator states ${b.name}', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      await t.runAsync(() async {
+        for (var i = 0; i < 4; i++) {
+          await app.addSection();
+        }
+        final secs =
+            app.nodes.where((n) => n.kind == NodeKind.section).toList();
+        app.groupSectionsTogether(secs[2].id, secs[3].id);
+        app.groupToRename = null;
+        final pages =
+            app.nodes.where((n) => n.kind == NodeKind.page).toList();
+        await app.deleteNode(pages.last.id);
+        await app.deleteNode(secs.last.id);
+        await app.selectPage(
+            app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+      });
+      final key = await mountNav(t, app, b);
+      await snap(t, key, 'nav_${b.name}_resting');
+
+      // The plus beside the section list.
+      await t.tap(find.byTooltip('New section or group'));
+      await t.pumpAndSettle();
+      await snap(t, key, 'nav_${b.name}_plus_menu');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+
+      // The bin's panel.
+      await t.tap(find.byTooltip('Recycle bin'));
+      await t.pumpAndSettle();
+      await snap(t, key, 'nav_${b.name}_bin');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+
+      // A section carried over the middle of another: "Group together".
+      final loose = app.nodes
+          .where((n) => n.kind == NodeKind.section && n.parentId == null)
+          .toList();
+      expect(loose.length, greaterThanOrEqualTo(2));
+      final from = find.text(loose.first.title).first;
+      final to = find.text(loose.last.title).first;
+      final g = await t.startGesture(t.getCenter(from));
+      await g.moveBy(const Offset(0, 6));
+      await t.pump();
+      await g.moveTo(t.getCenter(to));
+      await t.pump();
+      await snap(t, key, 'nav_${b.name}_drag_group');
+      await g.moveTo(t.getTopLeft(to) + const Offset(20, -6));
+      await t.pump();
+      await snap(t, key, 'nav_${b.name}_drag_above');
+      await g.cancel();
+      await t.pumpAndSettle();
+      app.cancelPendingSave();
+    });
+  }
+
+  // Narrow navigators: the places row gives up its words, then its numbers'
+  // place, then everything but the icons.
+  for (final w in [150.0, 190.0, 232.0]) {
+    testWidgets('navigator places at ${w.toInt()}', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      await t.runAsync(() async {
+        final pages =
+            app.nodes.where((n) => n.kind == NodeKind.page).toList();
+        await app.deleteNode(pages.last.id);
+        await app.selectPage(pages.first.id);
+      });
+      app.navSectionsCollapsed = true;
+      app.navPagesW = w;
+      final key = await mountNav(t, app, Brightness.light);
+      await snap(t, key, 'nav_places_${w.toInt()}');
+      app.cancelPendingSave();
+    });
+  }
 }

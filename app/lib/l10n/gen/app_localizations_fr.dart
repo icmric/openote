@@ -709,17 +709,88 @@ class LFr extends L {
   String get navExpand => 'Déplier le navigateur  (Ctrl+\\)';
 
   @override
+  String get navSectionsHeader => 'Sections';
+
+  @override
+  String get navNewSectionOrGroup => 'Nouvelle section ou groupe';
+
+  @override
+  String get dropMoveAbove => 'Placer au-dessus';
+
+  @override
+  String get dropMoveBelow => 'Placer en dessous';
+
+  @override
+  String get dropMakeSubpage => 'Faire une sous-page';
+
+  @override
+  String get dropGroupTogether => 'Regrouper';
+
+  @override
+  String get dropMoveIntoGroup => 'Déplacer dans le groupe';
+
+  @override
+  String get dropMoveToSection => 'Déplacer vers cette section';
+
+  @override
+  String get navBinEmptyAction => 'Vider';
+
+  @override
+  String get navBinEmptyTitle => 'Vider la corbeille ?';
+
+  @override
+  String get navBinEmptyBody =>
+      'Tout ce qu’elle contient sera supprimé définitivement. Cette action est irréversible.';
+
+  @override
+  String get navBinEmptySharedNote =>
+      'Les carnets d’un dossier partagé sont seulement retirés de cet ordinateur.';
+
+  @override
+  String navBinDeleteOneBody(String title) {
+    return '« $title » sera supprimé définitivement. Cette action est irréversible.';
+  }
+
+  @override
+  String get navBinKindPage => 'Page';
+
+  @override
+  String get navBinKindSection => 'Section';
+
+  @override
+  String get navBinKindGroup => 'Groupe de sections';
+
+  @override
+  String get navBinKindNotebook => 'Carnet';
+
+  @override
+  String navBinItemLine(String kind, String when) {
+    return '$kind · $when';
+  }
+
+  @override
+  String get navBinWhenToday => 'aujourd’hui';
+
+  @override
+  String get navBinWhenYesterday => 'hier';
+
+  @override
+  String navBinWhenDaysAgo(int days) {
+    return 'il y a $days jours';
+  }
+
+  @override
   String get navHideSections => 'Masquer la liste des sections';
 
   @override
-  String get navHome => 'Accueil';
+  String get navRecent => 'Récents';
 
   @override
   String get navHomeEmpty =>
       'Rien ici pour l\'instant.\n\nFaites un clic droit sur une page et choisissez Favori pour l\'épingler ; les pages que vous visitez apparaissent dans Récents.';
 
   @override
-  String get navHomeTip => 'Accueil — favoris et récents';
+  String get navRecentTip => 'Pages récentes et favoris';
 
   @override
   String get navInPageContent => 'Dans le contenu des pages';

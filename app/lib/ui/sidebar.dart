@@ -420,7 +420,7 @@ class _SidebarState extends State<Sidebar> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _HomeTile(app: app),
+                _SectionsHeader(app: app),
                 Expanded(child: _sectionsColumn(context)),
               ],
             ),
@@ -475,9 +475,7 @@ class _SidebarState extends State<Sidebar> {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 16),
-                visualDensity: VisualDensity.compact,
+              _PlusButton(
                 tooltip: l.navNewPageIn(section.title),
                 onPressed: () => app.addPage(sectionId: section.id),
               ),
@@ -527,6 +525,7 @@ class _SidebarState extends State<Sidebar> {
     }
 
     Widget row(TreeNode s) => _SectionHeader(
+        key: ValueKey(s.id),
         app: app,
         section: s,
         dark: dark,
@@ -539,7 +538,7 @@ class _SidebarState extends State<Sidebar> {
         padding: const EdgeInsets.only(bottom: 8),
         children: [
         for (final g in groups) ...[
-          _GroupHeader(app: app, group: g),
+          _GroupHeader(key: ValueKey(g.id), app: app, group: g),
           // Indented AND railed. Indentation alone says "these are children";
           // the rail is what says where the group ENDS — with several groups
           // in a column, an indent that just stops is ambiguous, because the
@@ -575,44 +574,26 @@ class _SidebarState extends State<Sidebar> {
 
   // ── Footer toolbar ────────────────────────────────────────────────────
 
-  Widget _footer(BuildContext context) {
-    final l = L.of(context);
-    return Padding(
-        padding: const EdgeInsets.all(6),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextButton.icon(
-                icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                label: Text(l.navSection, style: const TextStyle(fontSize: 12)),
-                onPressed: app.addSection,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.topic_outlined, size: 16),
-              tooltip: l.navNewSectionGroup,
-              onPressed: app.addSectionGroup,
-            ),
-            // **Restore-from-bin, not a bin.** A plain `delete_outline` next
-            // to two "make a new thing" buttons reads as the button that
-            // deletes the thing you are on — the owner's words: "it looks
-            // like a delete button at the moment rather than a place to
-            // restore things from". The arrow coming back out of the bin is
-            // the whole difference, and it is the icon every desktop uses for
-            // exactly this.
-            IconButton(
-              icon: const Icon(Icons.restore_from_trash_outlined, size: 16),
-              tooltip: l.navRecycleBin,
-              onPressed: () => showRecycleBin(context, app),
-            ),
-          ],
-        ),
+  /// Whether the recycle bin's panel is up, so its place can show it.
+  bool _binOpen = false;
+
+  /// **Places, not buttons.** Adding a section or a group moved to the plus
+  /// above the section list, which leaves the foot of the navigator for where
+  /// you go: Recent, and the Recycle bin. Both on one row, so they take half
+  /// the height the two stacked rows did. See [_Places].
+  Widget _footer(BuildContext context) => _Places(
+        app: app,
+        binOpen: _binOpen,
+        onBin: (row) async {
+          setState(() => _binOpen = true);
+          await showRecycleBin(context, app, anchor: row);
+          if (mounted) setState(() => _binOpen = false);
+        },
       );
-  }
 }
 
 class _GroupHeader extends StatefulWidget {
-  const _GroupHeader({required this.app, required this.group});
+  const _GroupHeader({super.key, required this.app, required this.group});
   final AppState app;
   final TreeNode group;
 
@@ -641,7 +622,18 @@ class _GroupHeaderState extends State<_GroupHeader> {
   TreeNode get group => widget.group;
 
   @override
+  void initState() {
+    super.initState();
+    // A group that has just been made opens for its name to be typed over.
+    if (app.groupToRename == group.id) {
+      app.groupToRename = null;
+      _renaming = true;
+    }
+  }
+
+  @override
   void dispose() {
+    _DropPill.hide();
     _rowFocus.dispose();
     super.dispose();
   }
@@ -650,11 +642,18 @@ class _GroupHeaderState extends State<_GroupHeader> {
   Widget build(BuildContext context) {
     final collapsed = app.collapsedGroups.contains(group.id);
     final scheme = Theme.of(context).colorScheme;
+    final l = L.of(context);
     // Drop a section ONTO a group → move it into the group (ORG-1).
     return DragTarget<String>(
       onWillAcceptWithDetails: (d) =>
           app.node(d.data)?.kind == NodeKind.section,
-      onAcceptWithDetails: (d) => app.moveSectionToGroup(d.data, group.id),
+      onMove: (d) => _DropPill.show(
+          context, d.offset, l.dropMoveIntoGroup, Icons.folder_outlined),
+      onLeave: (_) => _DropPill.hide(),
+      onAcceptWithDetails: (d) {
+        _DropPill.hide();
+        app.moveSectionToGroup(d.data, group.id);
+      },
       builder: (ctx, cand, rej) {
         final target = cand.isNotEmpty;
         final labelStyle = TextStyle(
@@ -701,14 +700,12 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
                     size: 16, color: context.surfaces.textSecondary),
                 const SizedBox(width: 6),
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                      color: _groupColor(app, group,
-                          Theme.of(context).brightness == Brightness.dark),
-                      shape: BoxShape.circle),
-                ),
+                // A small folder in the group's colour, not a dot: a dot beside
+                // a name is what "unread" and "unsaved" look like.
+                Icon(Icons.folder_outlined,
+                    size: 14,
+                    color: _groupColor(app, group,
+                        Theme.of(context).brightness == Brightness.dark)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _renaming
@@ -723,7 +720,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
                             if (mounted) setState(() => _renaming = false);
                           },
                         )
-                      : Text(target ? 'move section here' : group.title,
+                      : Text(group.title,
                           overflow: TextOverflow.ellipsis, style: labelStyle),
                 ),
               ],
@@ -828,46 +825,343 @@ class _VDragHandle extends StatelessWidget {
   }
 }
 
-/// The Home entry above the section list: favourites and recents, which were
-/// persisted state with no surface at all until this pane existed.
-class _HomeTile extends StatelessWidget {
-  const _HomeTile({required this.app});
+/// A plus beside a list's heading: 28 square, tinted while what it opened is
+/// still open. The page list's and the section list's are the same button, so
+/// the two headings line up and the two plusses read as one idea.
+class _PlusButton extends StatelessWidget {
+  const _PlusButton(
+      {required this.tooltip, required this.onPressed, this.open = false});
+  final String tooltip;
+  final VoidCallback onPressed;
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        borderRadius: BorderRadius.circular(6),
+        onTap: onPressed,
+        child: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+              color: open ? scheme.primary.withValues(alpha: .14) : null,
+              borderRadius: BorderRadius.circular(6)),
+          child: Icon(Icons.add,
+              size: 16,
+              color: open ? scheme.primary : context.surfaces.textPrimary),
+        ),
+      ),
+    );
+  }
+}
+
+/// The heading above the section list, with the plus that adds to it.
+///
+/// **One plus, like the page list has.** It opens a short menu rather than
+/// adding at once, because a section list can be added to two ways: a section,
+/// or a group to put sections in. The new-section row carries the colour the
+/// section would take, so nothing about it is a surprise.
+class _SectionsHeader extends StatefulWidget {
+  const _SectionsHeader({required this.app});
   final AppState app;
+
+  @override
+  State<_SectionsHeader> createState() => _SectionsHeaderState();
+}
+
+class _SectionsHeaderState extends State<_SectionsHeader> {
+  bool _open = false;
+
+  Future<void> _menu(BuildContext button) async {
+    final app = widget.app;
+    final l = L.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final overlay = Overlay.of(button).context.findRenderObject() as RenderBox;
+    final box = button.findRenderObject() as RenderBox;
+    final rect = Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero),
+            ancestor: overlay));
+    setState(() => _open = true);
+    final chosen = await showMenu<String>(
+      context: button,
+      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      items: [
+        PopupMenuItem<String>(
+          value: 'section',
+          height: 36,
+          child: Row(children: [
+            _SectionRing(
+                color: _sectionColor(app.nextSectionColorToken, dark)),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Text(l.navNewSection,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13))),
+          ]),
+        ),
+        _nodeItem('group', Icons.create_new_folder_outlined,
+            l.navNewSectionGroup),
+      ],
+    );
+    if (mounted) setState(() => _open = false);
+    switch (chosen) {
+      case 'section':
+        await app.addSection();
+      case 'group':
+        app.addSectionGroup();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final l = L.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final active = app.navHome;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-      child: InkWell(
-        mouseCursor: WidgetStateMouseCursor.clickable,
-        borderRadius: BorderRadius.circular(6),
-        onTap: app.openHome,
-        child: Container(
-          decoration: active
-              ? BoxDecoration(
-                  color: scheme.primary.withValues(alpha: .09),
-                  borderRadius: BorderRadius.circular(6))
-              : null,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          child: Row(children: [
-            Icon(Icons.star_outline,
-                size: 16,
-                color: active ? scheme.primary : OnoteColors.brass400),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(l.navHome,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: active ? scheme.primary : null)),
+      padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              l.navSectionsHeader.toUpperCase(),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .6,
+                color: dark ? OnoteColors.moon300 : OnoteColors.graphite500,
+              ),
+            ),
+          ),
+          Builder(
+            builder: (button) => _PlusButton(
+                tooltip: l.navNewSectionOrGroup,
+                open: _open,
+                onPressed: () => _menu(button)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The label that follows the pointer while something is dragged over the
+/// navigator, saying what letting go will do.
+///
+/// Drawn in the overlay, not in the row: a row is clipped to its list and
+/// painted over by the row below it, and this has to sit across both. One at a
+/// time, so it is one shared thing rather than one per row.
+class _DropPill {
+  static OverlayEntry? _entry;
+  static final _what =
+      ValueNotifier<({Offset at, String label, IconData icon})?>(null);
+
+  static void show(
+      BuildContext context, Offset at, String label, IconData icon) {
+    _what.value = (at: at, label: label, icon: icon);
+    if (_entry != null) return;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _entry = OverlayEntry(
+      builder: (ctx) => ValueListenableBuilder(
+        valueListenable: _what,
+        builder: (ctx, v, _) {
+          if (v == null) return const SizedBox.shrink();
+          final s = ctx.surfaces;
+          return Positioned(
+            left: v.at.dx + 18,
+            top: v.at.dy + 30,
+            child: IgnorePointer(
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  height: 26,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: s.textPrimary,
+                    borderRadius: BorderRadius.circular(13),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x66000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 4))
+                    ],
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(v.icon, size: 16, color: s.canvas),
+                    const SizedBox(width: 6),
+                    Text(v.label,
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: s.canvas)),
+                  ]),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    overlay.insert(_entry!);
+  }
+
+  static void hide() {
+    _what.value = null;
+    final e = _entry;
+    _entry = null;
+    if (e == null) return;
+    e.remove();
+    e.dispose();
+  }
+}
+
+/// The places at the foot of the navigator: **Recent** and the **Recycle bin**,
+/// on one row.
+///
+/// Not two buttons stacked, and not a bare icon: a place with a name and a
+/// count reads as somewhere you go, where a bin with a small arrow in it read
+/// as "delete this". The navigator's own width decides how much is drawn: the
+/// bin's name goes first, the count moves onto its corner, and below that only
+/// the icons stay, each with its tooltip.
+class _Places extends StatelessWidget {
+  const _Places({required this.app, required this.binOpen, required this.onBin});
+  final AppState app;
+  final bool binOpen;
+
+  /// Called with the rectangle of the whole row, so the panel can open above it.
+  final void Function(Rect row) onBin;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    return LayoutBuilder(builder: (context, c) {
+      final w = c.maxWidth;
+      final recentLabel = w > 150;
+      final binLabel = w > 230;
+      final count = app.binCount;
+      return SizedBox(
+        height: 36,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Flexible(
+              child: _Place(
+                  icon: Icons.history,
+                  label: recentLabel ? l.navRecent : null,
+                  tooltip: l.navRecentTip,
+                  on: app.navHome,
+                  onTap: app.openHome),
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: _Place(
+                  icon: Icons.delete_outline,
+                  label: binLabel ? l.navRecycleBin : null,
+                  tooltip: l.navRecycleBin,
+                  on: binOpen,
+                  count: count,
+                  badge: !binLabel,
+                  onTap: () {
+                    final row = context.findRenderObject() as RenderBox;
+                    onBin(row.localToGlobal(Offset.zero) & row.size);
+                  }),
             ),
           ]),
         ),
+      );
+    });
+  }
+}
+
+class _Place extends StatelessWidget {
+  const _Place({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.label,
+    this.on = false,
+    this.count = 0,
+    this.badge = false,
+  });
+  final IconData icon;
+  final String? label;
+  final String tooltip;
+  final bool on;
+  final int count;
+
+  /// The count sits on the icon's corner instead of beside the name.
+  final bool badge;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final s = context.surfaces;
+    final fg = on ? scheme.primary : s.textSecondary;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Stack(clipBehavior: Clip.none, children: [
+          Container(
+            height: 28,
+            padding: EdgeInsets.symmetric(horizontal: label == null ? 8 : 9),
+            decoration: BoxDecoration(
+                color: on ? scheme.primary.withValues(alpha: .14) : null,
+                borderRadius: BorderRadius.circular(6)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 16, color: fg),
+              if (label != null) ...[
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(label!,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: fg)),
+                ),
+              ],
+              if (count > 0 && !badge) ...[
+                const SizedBox(width: 7),
+                _CountPill(count, small: false),
+              ],
+            ]),
+          ),
+          if (count > 0 && badge)
+            Positioned(top: -3, right: -3, child: _CountPill(count, small: true)),
+        ]),
       ),
+    );
+  }
+}
+
+class _CountPill extends StatelessWidget {
+  const _CountPill(this.n, {required this.small});
+  final int n;
+  final bool small;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    final h = small ? 16.0 : 18.0;
+    return Container(
+      constraints: BoxConstraints(minWidth: h),
+      height: h,
+      padding: EdgeInsets.symmetric(horizontal: small ? 4 : 6),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+          color: small ? s.border : s.border.withValues(alpha: .7),
+          borderRadius: BorderRadius.circular(h / 2)),
+      child: Text('$n',
+          style: TextStyle(
+              fontSize: small ? 10 : 11, height: 1, color: s.textSecondary)),
     );
   }
 }
@@ -1147,7 +1441,7 @@ class _NavRail extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.star_outline, size: 16),
             color: OnoteColors.brass400,
-            tooltip: l.navHomeTip,
+            tooltip: l.navRecentTip,
             visualDensity: VisualDensity.compact,
             onPressed: () {
               app.toggleNavCollapsed();
@@ -1315,6 +1609,7 @@ class _NotebookHeader extends StatelessWidget {
 
 class _SectionHeader extends StatefulWidget {
   const _SectionHeader({
+    super.key,
     required this.app,
     required this.section,
     required this.dark,
@@ -1352,32 +1647,119 @@ class _SectionHeaderState extends State<_SectionHeader> {
 
   @override
   void dispose() {
+    _DropPill.hide();
     _rowFocus.dispose();
     super.dispose();
   }
 
+  /// Where in the row a dragged SECTION hovers: the top and bottom quarters
+  /// put it above or below, the middle joins the two. The same three places a
+  /// dragged page has on a page row.
+  _DropZone _zone = _DropZone.none;
+
+  _DropZone _dropZoneAt(Offset globalOffset) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize || box.size.height <= 0) {
+      return _DropZone.into;
+    }
+    final y = box.globalToLocal(globalOffset).dy / box.size.height;
+    if (y < 0.25) return _DropZone.before;
+    if (y > 0.75) return _DropZone.after;
+    return _DropZone.into;
+  }
+
+  bool _isSection(String id) => app.node(id)?.kind == NodeKind.section;
+
   @override
   Widget build(BuildContext context) {
-    // Drop a page ONTO a section header → move it into that section (ORG-2).
+    final l = L.of(context);
+    // Two kinds of thing can be let go here. A PAGE dropped on a section is
+    // moved into it (ORG-2); a SECTION dropped on one goes above or below it,
+    // or, in the middle, is grouped with it.
     return DragTarget<String>(
-      onWillAcceptWithDetails: (d) => app.node(d.data)?.kind == NodeKind.page,
-      onAcceptWithDetails: (d) => app.movePageToSection(d.data, section.id),
+      onWillAcceptWithDetails: (d) =>
+          app.node(d.data)?.kind == NodeKind.page ||
+          (d.data != section.id && _isSection(d.data)),
+      onMove: (d) {
+        if (!_isSection(d.data)) {
+          _DropPill.show(context, d.offset, l.dropMoveToSection,
+              Icons.drive_file_move_outlined);
+          return;
+        }
+        final zone = _dropZoneAt(d.offset);
+        if (zone != _zone) setState(() => _zone = zone);
+        _DropPill.show(
+            context,
+            d.offset,
+            switch (zone) {
+              _DropZone.before => l.dropMoveAbove,
+              _DropZone.after => l.dropMoveBelow,
+              _ => section.parentId != null
+                  ? l.dropMoveIntoGroup
+                  : l.dropGroupTogether,
+            },
+            zone == _DropZone.before || zone == _DropZone.after
+                ? Icons.drag_indicator
+                : Icons.folder_outlined);
+      },
+      onLeave: (_) {
+        _DropPill.hide();
+        if (_zone != _DropZone.none) setState(() => _zone = _DropZone.none);
+      },
+      onAcceptWithDetails: (d) {
+        _DropPill.hide();
+        final zone = _zone;
+        setState(() => _zone = _DropZone.none);
+        if (!_isSection(d.data)) {
+          app.movePageToSection(d.data, section.id);
+          return;
+        }
+        switch (zone) {
+          case _DropZone.before:
+            app.reorderNode(d.data, section.id, after: false);
+          case _DropZone.after:
+            app.reorderNode(d.data, section.id, after: true);
+          case _DropZone.into:
+          case _DropZone.none:
+            app.groupSectionsTogether(d.data, section.id);
+        }
+      },
       builder: (ctx, cand, rej) {
-        final header = _header(context, pageTarget: cand.isNotEmpty);
+        final over = cand.isNotEmpty;
+        final sectionOver = over && _isSection(cand.first!);
+        final edge = sectionOver &&
+            (_zone == _DropZone.before || _zone == _DropZone.after);
+        // The row lights up for a page dropped on it, and for a section
+        // dropped on its middle: the two places letting go puts the thing
+        // INSIDE it.
+        final header = _header(context,
+            target: over && !edge);
         if (_renaming) return header;
-        // Section itself is draggable into groups.
-        return Draggable<String>(
+        // Section itself is draggable: into groups, and above or below others.
+        final row = Draggable<String>(
           data: section.id,
           dragAnchorStrategy: pointerDragAnchorStrategy,
           feedback: dragChip(context, section.title, Icons.folder_outlined),
           childWhenDragging: Opacity(opacity: .4, child: _header(context)),
           child: header,
         );
+        if (!edge) return row;
+        // The insertion line, the same one a page row draws.
+        final line = Container(
+            height: 2,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: Theme.of(context).colorScheme.primary);
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          if (_zone == _DropZone.before) line,
+          row,
+          if (_zone == _DropZone.after) line,
+        ]);
       },
     );
   }
 
-  Widget _header(BuildContext context, {bool pageTarget = false}) {
+  Widget _header(BuildContext context, {bool target = false}) {
+    final pageTarget = target;
     final color = _sectionColor(section.color, dark);
     final scheme = Theme.of(context).colorScheme;
     final active = widget.active;
@@ -1454,7 +1836,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
                       },
                     )
                   : Text(
-                      pageTarget ? 'move here' : section.title,
+                      section.title,
                       overflow: TextOverflow.ellipsis,
                       style: labelStyle,
                     ),
@@ -1466,159 +1848,313 @@ class _SectionHeaderState extends State<_SectionHeader> {
   }
 }
 
-/// How long until a trashed item (deleted at [deletedAt]) is auto-purged.
-String _retentionSubtitle(int deletedAt, int retentionDays) {
-  final expireMs =
-      deletedAt + Duration(days: retentionDays).inMilliseconds;
-  final remaining = expireMs - DateTime.now().millisecondsSinceEpoch;
-  final days = (remaining / const Duration(days: 1).inMilliseconds).ceil();
-  if (days <= 0) return 'Deletes soon';
-  return 'Deletes in $days day${days == 1 ? '' : 's'}';
+/// "Section · 2 days ago": what a recycle bin row is, and when it went in.
+String _binLine(L l, String kind, int deletedAtMs) {
+  final days = DateTime.now()
+      .difference(DateTime.fromMillisecondsSinceEpoch(deletedAtMs))
+      .inDays;
+  final when = days <= 0
+      ? l.navBinWhenToday
+      : days == 1
+          ? l.navBinWhenYesterday
+          : l.navBinWhenDaysAgo(days);
+  final what = switch (kind) {
+    'page' => l.navBinKindPage,
+    'section' => l.navBinKindSection,
+    'notebook' => l.navBinKindNotebook,
+    _ => l.navBinKindGroup,
+  };
+  return l.navBinItemLine(what, when);
 }
 
-/// Recycle bin (ORG-7): restore or permanently delete soft-deleted notebooks
-/// and, within the current notebook, sections/pages/groups. Items are
-/// auto-purged after the retention window (swept on open).
-Future<void> showRecycleBin(BuildContext context, AppState app) async {
-  final l = L.of(context);
+/// The recycle bin (ORG-7): restore or remove for good what was deleted from
+/// the open notebook, and deleted notebooks. Things go for good on their own
+/// after the retention window (swept when this opens).
+///
+/// A small panel that opens above [anchor] (the places row it came from), not
+/// a dialog in the middle of the window: it is somewhere you glance into. The
+/// main action on a row is **Restore**; removing for good is a small cross,
+/// which asks first, as does **Empty**.
+Future<void> showRecycleBin(BuildContext context, AppState app,
+    {Rect? anchor}) async {
   await app.purgeExpiredTrash();
   if (!context.mounted) return;
-  final retention = app.recycleRetentionDays;
+  final size = MediaQuery.sizeOf(context);
+  const width = 304.0;
   await showOnoteDialog<void>(
     context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setLocal) {
-        final notebooks = app.trashedNotebooks;
-        final items = app.deletedNodes();
-        return AlertDialog(
-          title: Text(l.navRecycleBin),
-          content: SizedBox(
-            width: 400,
-            child: (notebooks.isEmpty && items.isEmpty)
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(l.navBinEmpty))
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 400),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
-                          child: Text(
-                              l.navBinRetention(retention),
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: context.surfaces.textSecondary)),
-                        ),
-                        if (notebooks.isNotEmpty) ...[
-                          _BinSectionLabel(l.navBinNotebooks),
-                          for (final nb in notebooks)
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.menu_book_outlined,
-                                  size: 16),
-                              title: Text(nb.title,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13)),
-                              subtitle: Text(
-                                  _retentionSubtitle(
-                                      nb.deletedAt ?? 0, retention),
-                                  style: const TextStyle(fontSize: 11)),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TextButton(
-                                    onPressed: () async {
-                                      await app.restoreNotebook(nb.id);
-                                      setLocal(() {});
-                                    },
-                                    child: Text(l.navRestore),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_forever,
-                                        size: 16, color: OnoteColors.danger),
-                                    tooltip: l.navDeletePermanently,
-                                    onPressed: () async {
-                                      if (app.livesInSharedFolder(nb.id)) {
-                                        final choice =
-                                            await askSharedRemoval(ctx, nb);
-                                        if (choice == SharedRemoval.cancel) {
-                                          return;
-                                        }
-                                        if (choice == SharedRemoval.everywhere) {
-                                          await app
-                                              .purgeNotebookEverywhere(nb.id);
-                                        } else {
-                                          await app.purgeNotebook(nb.id);
-                                        }
-                                        setLocal(() {});
-                                        return;
-                                      }
-                                      final ok = await _confirmPurgeNotebook(
-                                          ctx, nb,
-                                          caveat: app.purgeCaveat(nb.id));
-                                      if (ok) {
-                                        await app.purgeNotebook(nb.id);
-                                        setLocal(() {});
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          if (items.isNotEmpty) _BinSectionLabel(l.navBinItems),
-                        ],
-                        for (final it in items)
-                          ListTile(
-                            dense: true,
-                            leading: Icon(
-                                it.kind == 'page'
-                                    ? Icons.description_outlined
-                                    : it.kind == 'section'
-                                        ? Icons.folder_outlined
-                                        : Icons.topic_outlined,
-                                size: 16),
-                            title: Text(it.title,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13)),
-                            subtitle: Text(
-                                _retentionSubtitle(it.deletedAt, retention),
-                                style: const TextStyle(fontSize: 11)),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TextButton(
-                                  onPressed: () async {
-                                    await app.restoreDeleted(it.id);
-                                    setLocal(() {});
-                                  },
-                                  child: Text(l.navRestore),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_forever,
-                                      size: 16, color: OnoteColors.danger),
-                                  tooltip: l.navDeletePermanently,
-                                  onPressed: () {
-                                    app.purgeDeleted(it.id);
-                                    setLocal(() {});
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx), child: Text(l.navClose)),
-          ],
-        );
-      },
-    ),
+    growFrom: anchor == null ? null : Offset(anchor.left + 20, anchor.top),
+    builder: (ctx) {
+      final panel = _RecycleBinPanel(app: app, width: width);
+      if (anchor == null) return Center(child: panel);
+      final left = anchor.left.clamp(8.0, size.width - width - 8.0);
+      return Stack(children: [
+        Positioned(
+          left: left,
+          bottom: size.height - anchor.top + 4,
+          child: panel,
+        ),
+      ]);
+    },
   );
+}
+
+class _RecycleBinPanel extends StatefulWidget {
+  const _RecycleBinPanel({required this.app, required this.width});
+  final AppState app;
+  final double width;
+
+  @override
+  State<_RecycleBinPanel> createState() => _RecycleBinPanelState();
+}
+
+class _RecycleBinPanelState extends State<_RecycleBinPanel> {
+  AppState get app => widget.app;
+
+  Future<bool> _sure(String body, {String? extra, String? confirm}) async {
+    final l = L.of(context);
+    final ok = await showOnoteDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(confirm == null
+            ? l.navDeleteForeverTitle
+            : l.navBinEmptyTitle),
+        content: Text(extra == null ? body : '$body\n\n$extra'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l.commonCancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(confirm ?? l.navDeleteForever),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Future<void> _removeNotebook(NotebookRef nb) async {
+    if (app.livesInSharedFolder(nb.id)) {
+      final choice = await askSharedRemoval(context, nb);
+      if (choice == SharedRemoval.cancel) return;
+      if (choice == SharedRemoval.everywhere) {
+        await app.purgeNotebookEverywhere(nb.id);
+      } else {
+        await app.purgeNotebook(nb.id);
+      }
+    } else {
+      final ok = await _confirmPurgeNotebook(context, nb,
+          caveat: app.purgeCaveat(nb.id));
+      if (!ok) return;
+      await app.purgeNotebook(nb.id);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _empty(List<NotebookRef> notebooks,
+      List<({String id, String kind, String title, int deletedAt})> items) async {
+    final l = L.of(context);
+    final shared = notebooks.any((n) => app.livesInSharedFolder(n.id));
+    final ok = await _sure(l.navBinEmptyBody,
+        extra: shared ? l.navBinEmptySharedNote : null,
+        confirm: l.navBinEmptyAction);
+    if (!ok) return;
+    for (final it in items) {
+      app.purgeDeleted(it.id);
+    }
+    // A notebook in a shared folder is taken off this computer only: the same
+    // default as removing it from here by hand, and the note above says so.
+    for (final nb in notebooks) {
+      await app.purgeNotebook(nb.id);
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    final s = context.surfaces;
+    final notebooks = app.trashedNotebooks;
+    final items = app.deletedNodes();
+    final empty = notebooks.isEmpty && items.isEmpty;
+    final retention = app.recycleRetentionDays;
+    final maxH = MediaQuery.sizeOf(context).height * .6;
+    return Material(
+      color: s.raised,
+      elevation: 8,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxWidth: widget.width, minWidth: widget.width, maxHeight: maxH),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+              child: Row(children: [
+                Expanded(
+                  child: Text(l.navRecycleBin,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 24),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      foregroundColor: s.textSecondary),
+                  onPressed: empty ? null : () => _empty(notebooks, items),
+                  child: Text(l.navBinEmptyAction,
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(l.navBinRetention(retention),
+                  style: TextStyle(fontSize: 11, color: s.textSecondary)),
+            ),
+            Divider(height: 1, color: s.border),
+            if (empty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(l.navBinEmpty,
+                    style: TextStyle(fontSize: 12, color: s.textSecondary)),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  children: [
+                    for (final nb in notebooks)
+                      _BinRow(
+                        icon: Icons.menu_book_outlined,
+                        title: nb.title,
+                        line: _binLine(l, 'notebook', nb.deletedAt ?? 0),
+                        onRestore: () async {
+                          await app.restoreNotebook(nb.id);
+                          if (mounted) setState(() {});
+                        },
+                        onForever: () => _removeNotebook(nb),
+                      ),
+                    for (final it in items)
+                      _BinRow(
+                        icon: it.kind == 'page'
+                            ? Icons.description_outlined
+                            : it.kind == 'section'
+                                ? Icons.folder_outlined
+                                : Icons.topic_outlined,
+                        title: it.title,
+                        line: _binLine(l, it.kind, it.deletedAt),
+                        onRestore: () async {
+                          await app.restoreDeleted(it.id);
+                          if (mounted) setState(() {});
+                        },
+                        onForever: () async {
+                          if (await _sure(l.navBinDeleteOneBody(it.title))) {
+                            app.purgeDeleted(it.id);
+                            if (mounted) setState(() {});
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One thing in the recycle bin: what it is and when it went in, a **Restore**
+/// that does what it says, and a small cross that only turns red when the
+/// pointer reaches for it.
+class _BinRow extends StatefulWidget {
+  const _BinRow({
+    required this.icon,
+    required this.title,
+    required this.line,
+    required this.onRestore,
+    required this.onForever,
+  });
+  final IconData icon;
+  final String title;
+  final String line;
+  final VoidCallback onRestore;
+  final VoidCallback onForever;
+
+  @override
+  State<_BinRow> createState() => _BinRowState();
+}
+
+class _BinRowState extends State<_BinRow> {
+  bool _overCross = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    final s = context.surfaces;
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+      child: Row(children: [
+        Icon(widget.icon, size: 16, color: s.textSecondary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.title.isEmpty ? l.navUntitled : widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500)),
+              Text(widget.line,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: s.textSecondary)),
+            ],
+          ),
+        ),
+        TextButton.icon(
+          style: TextButton.styleFrom(
+              minimumSize: const Size(0, 26),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              foregroundColor: scheme.primary),
+          icon: const Icon(Icons.restore_from_trash_outlined, size: 16),
+          label: Text(l.navRestore, style: const TextStyle(fontSize: 12)),
+          onPressed: widget.onRestore,
+        ),
+        MouseRegion(
+          onEnter: (_) => setState(() => _overCross = true),
+          onExit: (_) => setState(() => _overCross = false),
+          child: Tooltip(
+            message: l.navDeletePermanently,
+            child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
+              borderRadius: BorderRadius.circular(6),
+              onTap: widget.onForever,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                    color: _overCross ? s.border.withValues(alpha: .7) : null,
+                    borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.close,
+                    size: 16,
+                    color: _overCross ? OnoteColors.danger : s.textSecondary),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 }
 
 Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb,
@@ -1643,21 +2179,6 @@ Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb,
     ),
   );
   return ok == true;
-}
-
-class _BinSectionLabel extends StatelessWidget {
-  const _BinSectionLabel(this.text);
-  final String text;
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
-        child: Text(text.toUpperCase(),
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: .6,
-                color: context.surfaces.textSecondary)),
-      );
 }
 
 /// Inline rename field (§7a: rename is a direct-manipulation action, no
@@ -1821,6 +2342,7 @@ class _PageTileState extends State<_PageTile> {
 
   @override
   void dispose() {
+    _DropPill.hide();
     _rowFocus.dispose();
     super.dispose();
   }
@@ -1837,9 +2359,26 @@ class _PageTileState extends State<_PageTile> {
         // show what the drop will do BEFORE the user commits (ORG-2).
         final zone = _dropZoneAt(d.offset);
         if (zone != _zone) setState(() => _zone = zone);
+        final l = L.of(context);
+        _DropPill.show(
+            context,
+            d.offset,
+            switch (zone) {
+              _DropZone.before => l.dropMoveAbove,
+              _DropZone.after => l.dropMoveBelow,
+              _ => l.dropMakeSubpage,
+            },
+            switch (zone) {
+              _DropZone.before || _DropZone.after => Icons.drag_indicator,
+              _ => Icons.subdirectory_arrow_right,
+            });
       },
-      onLeave: (_) => setState(() => _zone = _DropZone.none),
+      onLeave: (_) {
+        _DropPill.hide();
+        setState(() => _zone = _DropZone.none);
+      },
       onAcceptWithDetails: (d) {
+        _DropPill.hide();
         final zone = _zone;
         setState(() => _zone = _DropZone.none);
         switch (zone) {
@@ -1984,7 +2523,7 @@ class _PageTileState extends State<_PageTile> {
                         },
                       )
                     : Text(
-                        subpageTarget ? '↳ make subpage' : page.title,
+                        page.title,
                         overflow: TextOverflow.ellipsis,
                         style: labelStyle,
                       ),

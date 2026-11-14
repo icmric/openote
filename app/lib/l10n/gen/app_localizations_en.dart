@@ -709,17 +709,88 @@ class LEn extends L {
   String get navExpand => 'Expand the navigator  (Ctrl+\\)';
 
   @override
+  String get navSectionsHeader => 'Sections';
+
+  @override
+  String get navNewSectionOrGroup => 'New section or group';
+
+  @override
+  String get dropMoveAbove => 'Move above';
+
+  @override
+  String get dropMoveBelow => 'Move below';
+
+  @override
+  String get dropMakeSubpage => 'Make a subpage';
+
+  @override
+  String get dropGroupTogether => 'Group together';
+
+  @override
+  String get dropMoveIntoGroup => 'Move into group';
+
+  @override
+  String get dropMoveToSection => 'Move to this section';
+
+  @override
+  String get navBinEmptyAction => 'Empty';
+
+  @override
+  String get navBinEmptyTitle => 'Empty the recycle bin?';
+
+  @override
+  String get navBinEmptyBody =>
+      'Everything in it will be removed for good. This can\'t be undone.';
+
+  @override
+  String get navBinEmptySharedNote =>
+      'Notebooks in a shared folder are only removed from this computer.';
+
+  @override
+  String navBinDeleteOneBody(String title) {
+    return '“$title” will be removed for good. This can\'t be undone.';
+  }
+
+  @override
+  String get navBinKindPage => 'Page';
+
+  @override
+  String get navBinKindSection => 'Section';
+
+  @override
+  String get navBinKindGroup => 'Section group';
+
+  @override
+  String get navBinKindNotebook => 'Notebook';
+
+  @override
+  String navBinItemLine(String kind, String when) {
+    return '$kind · $when';
+  }
+
+  @override
+  String get navBinWhenToday => 'today';
+
+  @override
+  String get navBinWhenYesterday => 'yesterday';
+
+  @override
+  String navBinWhenDaysAgo(int days) {
+    return '$days days ago';
+  }
+
+  @override
   String get navHideSections => 'Hide the section list';
 
   @override
-  String get navHome => 'Home';
+  String get navRecent => 'Recent';
 
   @override
   String get navHomeEmpty =>
       'Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.';
 
   @override
-  String get navHomeTip => 'Home — favourites & recents';
+  String get navRecentTip => 'Recent pages and favourites';
 
   @override
   String get navInPageContent => 'In page content';

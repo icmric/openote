@@ -710,17 +710,88 @@ class LIt extends L {
   String get navExpand => 'Apri il navigatore  (Ctrl+\\)';
 
   @override
+  String get navSectionsHeader => 'Sezioni';
+
+  @override
+  String get navNewSectionOrGroup => 'Nuova sezione o gruppo';
+
+  @override
+  String get dropMoveAbove => 'Sposta sopra';
+
+  @override
+  String get dropMoveBelow => 'Sposta sotto';
+
+  @override
+  String get dropMakeSubpage => 'Rendi sottopagina';
+
+  @override
+  String get dropGroupTogether => 'Raggruppa';
+
+  @override
+  String get dropMoveIntoGroup => 'Sposta nel gruppo';
+
+  @override
+  String get dropMoveToSection => 'Sposta in questa sezione';
+
+  @override
+  String get navBinEmptyAction => 'Svuota';
+
+  @override
+  String get navBinEmptyTitle => 'Svuotare il cestino?';
+
+  @override
+  String get navBinEmptyBody =>
+      'Tutto il contenuto verrà rimosso per sempre. L’operazione non si può annullare.';
+
+  @override
+  String get navBinEmptySharedNote =>
+      'I quaderni in una cartella condivisa vengono rimossi solo da questo computer.';
+
+  @override
+  String navBinDeleteOneBody(String title) {
+    return '“$title” verrà rimosso per sempre. L’operazione non si può annullare.';
+  }
+
+  @override
+  String get navBinKindPage => 'Pagina';
+
+  @override
+  String get navBinKindSection => 'Sezione';
+
+  @override
+  String get navBinKindGroup => 'Gruppo di sezioni';
+
+  @override
+  String get navBinKindNotebook => 'Quaderno';
+
+  @override
+  String navBinItemLine(String kind, String when) {
+    return '$kind · $when';
+  }
+
+  @override
+  String get navBinWhenToday => 'oggi';
+
+  @override
+  String get navBinWhenYesterday => 'ieri';
+
+  @override
+  String navBinWhenDaysAgo(int days) {
+    return '$days giorni fa';
+  }
+
+  @override
   String get navHideSections => 'Nascondi l\'elenco delle sezioni';
 
   @override
-  String get navHome => 'Home';
+  String get navRecent => 'Recenti';
 
   @override
   String get navHomeEmpty =>
       'Qui non c\'è ancora niente.\n\nClicca con il tasto destro su una pagina e scegli Preferita per fissarla; le pagine che apri finiscono in Recenti.';
 
   @override
-  String get navHomeTip => 'Home — preferiti e recenti';
+  String get navRecentTip => 'Pagine recenti e preferiti';
 
   @override
   String get navInPageContent => 'Nel contenuto delle pagine';

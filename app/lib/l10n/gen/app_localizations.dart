@@ -1193,17 +1193,143 @@ abstract class L {
   /// **'Expand the navigator  (Ctrl+\\)'**
   String get navExpand;
 
+  /// Heading above the list of sections in the navigator. Shown in capitals.
+  ///
+  /// In en, this message translates to:
+  /// **'Sections'**
+  String get navSectionsHeader;
+
+  /// Tooltip on the plus beside the Sections heading. It opens a short menu: new section, new section group.
+  ///
+  /// In en, this message translates to:
+  /// **'New section or group'**
+  String get navNewSectionOrGroup;
+
+  /// Label that follows the pointer while dragging a page or section over the top edge of a row. Short.
+  ///
+  /// In en, this message translates to:
+  /// **'Move above'**
+  String get dropMoveAbove;
+
+  /// Same, over the bottom edge of a row.
+  ///
+  /// In en, this message translates to:
+  /// **'Move below'**
+  String get dropMoveBelow;
+
+  /// Same, over the middle of a page row: the dragged page becomes a subpage of it.
+  ///
+  /// In en, this message translates to:
+  /// **'Make a subpage'**
+  String get dropMakeSubpage;
+
+  /// Same, over the middle of a section row: the two sections become a group.
+  ///
+  /// In en, this message translates to:
+  /// **'Group together'**
+  String get dropGroupTogether;
+
+  /// Same, over the middle of a section that is already in a group: the dragged section joins that group.
+  ///
+  /// In en, this message translates to:
+  /// **'Move into group'**
+  String get dropMoveIntoGroup;
+
+  /// Same, a page dragged over a section: it will be moved into that section.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to this section'**
+  String get dropMoveToSection;
+
+  /// Button in the recycle bin that removes everything in it for good. Also the confirm button of the question that follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty'**
+  String get navBinEmptyAction;
+
+  /// Question asked before the recycle bin is emptied.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty the recycle bin?'**
+  String get navBinEmptyTitle;
+
+  /// Says what emptying the recycle bin does. Plain words; it cannot be undone.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything in it will be removed for good. This can\'t be undone.'**
+  String get navBinEmptyBody;
+
+  /// Added under the question when a notebook in the bin lives in a shared (cloud) folder: it is taken off this computer only.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebooks in a shared folder are only removed from this computer.'**
+  String get navBinEmptySharedNote;
+
+  /// Question body when one item in the recycle bin is about to be removed for good.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” will be removed for good. This can\'t be undone.'**
+  String navBinDeleteOneBody(String title);
+
+  /// What kind of thing a recycle bin row is: a page.
+  ///
+  /// In en, this message translates to:
+  /// **'Page'**
+  String get navBinKindPage;
+
+  /// A section.
+  ///
+  /// In en, this message translates to:
+  /// **'Section'**
+  String get navBinKindSection;
+
+  /// A section group.
+  ///
+  /// In en, this message translates to:
+  /// **'Section group'**
+  String get navBinKindGroup;
+
+  /// A notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebook'**
+  String get navBinKindNotebook;
+
+  /// Second line of a recycle bin row: what it is, then when it was deleted. Example: Section · 2 days ago.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind} · {when}'**
+  String navBinItemLine(String kind, String when);
+
+  /// When a recycle bin item was deleted: today.
+  ///
+  /// In en, this message translates to:
+  /// **'today'**
+  String get navBinWhenToday;
+
+  /// Yesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'yesterday'**
+  String get navBinWhenYesterday;
+
+  /// Two or more days ago.
+  ///
+  /// In en, this message translates to:
+  /// **'{days} days ago'**
+  String navBinWhenDaysAgo(int days);
+
   /// Tooltip on the button that folds the sections column away to give the page more room.
   ///
   /// In en, this message translates to:
   /// **'Hide the section list'**
   String get navHideSections;
 
-  /// The navigator's first pane: favourites, recent pages and what is coming up.
+  /// Label of the place at the bottom of the navigator that opens recent pages, favourites and what is coming up.
   ///
   /// In en, this message translates to:
-  /// **'Home'**
-  String get navHome;
+  /// **'Recent'**
+  String get navRecent;
 
   /// Shown on the Home pane before anything has been favourited or visited. 'Favourite' and 'Recent' name things elsewhere in this file — keep them consistent. Keep the blank line.
   ///
@@ -1211,11 +1337,11 @@ abstract class L {
   /// **'Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.'**
   String get navHomeEmpty;
 
-  /// Tooltip on the Home button.
+  /// Tooltip on the Recent button in the collapsed navigator.
   ///
   /// In en, this message translates to:
-  /// **'Home — favourites & recents'**
-  String get navHomeTip;
+  /// **'Recent pages and favourites'**
+  String get navRecentTip;
 
   /// Heading over search results found in the words ON pages, as opposed to in page titles.
   ///

@@ -402,8 +402,22 @@ class AppState extends ChangeNotifier
   /// Replaces the `app.nodes = repo.loadNodes(id)` line that used to be copied
   /// at every mutation site, importers included.
   void reloadNodes() {
+    _binItems = null;
     if (notebookId != null) nodes = _repo.loadNodes(notebookId!);
   }
+
+  /// How many things are in the recycle bin right now: deleted notebooks, and
+  /// the deleted pages, sections and groups of the open one. The navigator
+  /// shows it on the bin, so it is asked for on every redraw; the count of
+  /// items is therefore kept until the tree is reloaded, which is what every
+  /// delete, restore and purge does, rather than asked of the store each time.
+  int get binCount {
+    if (notebookId == null) return trashedNotebooks.length;
+    _binItems ??= _repo.loadDeletedNodes(notebookId!).length;
+    return _binItems! + trashedNotebooks.length;
+  }
+
+  int? _binItems;
 
   // ── Read access to ANY notebook, for the external API (spec 14) ───────
   //
@@ -8488,6 +8502,7 @@ class AppState extends ChangeNotifier
   Future<void> purgeExpiredTrash() async {
     await _repo.purgeExpiredNotebooks(scopeFor: _scopeForRemoval);
     if (notebookId != null) _repo.purgeExpiredNodes(notebookId!);
+    _binItems = null;
     notifyListeners();
   }
 
@@ -9419,14 +9434,28 @@ class AppState extends ChangeNotifier
 
   void addSectionGroup() {
     final count = nodes.where((n) => n.kind == NodeKind.sectionGroup).length;
-    _putNode(
+    final g = _putNode(
         notebookId!,
         TreeNode(
             kind: NodeKind.sectionGroup,
             title: 'Group ${count + 1}',
             position: _nextPosition()));
     reloadNodes();
+    // A name nobody chose is a name to change: open it for typing.
+    groupToRename = g.id;
     notifyListeners();
+  }
+
+  /// The group the navigator should open for renaming the next time it draws
+  /// that row, then forget. Set when a group is made, so "Group 1" arrives
+  /// already selected for typing over rather than as a name to hunt for.
+  String? groupToRename;
+
+  /// The colour the next section made will take, so the "New section" row in
+  /// the plus menu can show it before anyone clicks.
+  String get nextSectionColorToken {
+    final count = nodes.where((n) => n.kind == NodeKind.section).length;
+    return _sectionColors[count % _sectionColors.length];
   }
 
   /// A new page beside the one you are on — never one of its children, and
@@ -9852,6 +9881,45 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// **Drop one section on another to group them.**
+  ///
+  /// Two loose sections become the two members of a new group, which takes the
+  /// place of the one that was dropped on and opens for renaming. When the one
+  /// dropped on is already in a group there is nothing to make: the other joins
+  /// that group. The two keep the order they already had, so nothing is
+  /// shuffled by the act of grouping them.
+  ///
+  /// Returns the group the two now share, or null when nothing happened (the
+  /// same section twice, something that is not a section, a read-only notebook).
+  String? groupSectionsTogether(String movingId, String targetId) {
+    final a = node(movingId), b = node(targetId);
+    if (a == null || b == null || a.id == b.id) return null;
+    if (a.kind != NodeKind.section || b.kind != NodeKind.section) return null;
+    if (notebookIsReadOnly(notebookId!)) return null;
+    final existing = b.parentId;
+    if (existing != null) {
+      pushUndo();
+      moveSectionToGroup(a.id, existing);
+      return existing;
+    }
+    pushUndo();
+    final count = nodes.where((n) => n.kind == NodeKind.sectionGroup).length;
+    final g = _putNode(
+        notebookId!,
+        TreeNode(
+            kind: NodeKind.sectionGroup,
+            title: 'Group ${count + 1}',
+            position: b.position));
+    a.parentId = g.id;
+    b.parentId = g.id;
+    _putNode(notebookId!, a);
+    _putNode(notebookId!, b);
+    reloadNodes();
+    groupToRename = g.id;
+    notifyListeners();
+    return g.id;
+  }
+
   TreeNode? node(String? id) =>
       id == null ? null : nodes.where((n) => n.id == id).firstOrNull;
 
@@ -9875,6 +9943,7 @@ class AppState extends ChangeNotifier
     if (notebookIsReadOnly(notebookId!)) return;
     _repo.purgeNode(notebookId!, id);
     _recorderFor(notebookId!)?.nodePurged(id);
+    _binItems = null;
     notifyListeners();
   }
 

@@ -953,21 +953,123 @@
   "@navExpand": {
     "description": "Tooltip. Keep the shortcut in brackets as typed — the character is a backslash."
   },
+  "navSectionsHeader": "Sections",
+  "@navSectionsHeader": {
+    "description": "Heading above the list of sections in the navigator. Shown in capitals."
+  },
+  "navNewSectionOrGroup": "New section or group",
+  "@navNewSectionOrGroup": {
+    "description": "Tooltip on the plus beside the Sections heading. It opens a short menu: new section, new section group."
+  },
+  "dropMoveAbove": "Move above",
+  "@dropMoveAbove": {
+    "description": "Label that follows the pointer while dragging a page or section over the top edge of a row. Short."
+  },
+  "dropMoveBelow": "Move below",
+  "@dropMoveBelow": {
+    "description": "Same, over the bottom edge of a row."
+  },
+  "dropMakeSubpage": "Make a subpage",
+  "@dropMakeSubpage": {
+    "description": "Same, over the middle of a page row: the dragged page becomes a subpage of it."
+  },
+  "dropGroupTogether": "Group together",
+  "@dropGroupTogether": {
+    "description": "Same, over the middle of a section row: the two sections become a group."
+  },
+  "dropMoveIntoGroup": "Move into group",
+  "@dropMoveIntoGroup": {
+    "description": "Same, over the middle of a section that is already in a group: the dragged section joins that group."
+  },
+  "dropMoveToSection": "Move to this section",
+  "@dropMoveToSection": {
+    "description": "Same, a page dragged over a section: it will be moved into that section."
+  },
+  "navBinEmptyAction": "Empty",
+  "@navBinEmptyAction": {
+    "description": "Button in the recycle bin that removes everything in it for good. Also the confirm button of the question that follows."
+  },
+  "navBinEmptyTitle": "Empty the recycle bin?",
+  "@navBinEmptyTitle": {
+    "description": "Question asked before the recycle bin is emptied."
+  },
+  "navBinEmptyBody": "Everything in it will be removed for good. This can't be undone.",
+  "@navBinEmptyBody": {
+    "description": "Says what emptying the recycle bin does. Plain words; it cannot be undone."
+  },
+  "navBinEmptySharedNote": "Notebooks in a shared folder are only removed from this computer.",
+  "@navBinEmptySharedNote": {
+    "description": "Added under the question when a notebook in the bin lives in a shared (cloud) folder: it is taken off this computer only."
+  },
+  "navBinDeleteOneBody": "“{title}” will be removed for good. This can't be undone.",
+  "@navBinDeleteOneBody": {
+    "description": "Question body when one item in the recycle bin is about to be removed for good.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navBinKindPage": "Page",
+  "@navBinKindPage": {
+    "description": "What kind of thing a recycle bin row is: a page."
+  },
+  "navBinKindSection": "Section",
+  "@navBinKindSection": {
+    "description": "A section."
+  },
+  "navBinKindGroup": "Section group",
+  "@navBinKindGroup": {
+    "description": "A section group."
+  },
+  "navBinKindNotebook": "Notebook",
+  "@navBinKindNotebook": {
+    "description": "A notebook."
+  },
+  "navBinItemLine": "{kind} · {when}",
+  "@navBinItemLine": {
+    "description": "Second line of a recycle bin row: what it is, then when it was deleted. Example: Section · 2 days ago.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      },
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "navBinWhenToday": "today",
+  "@navBinWhenToday": {
+    "description": "When a recycle bin item was deleted: today."
+  },
+  "navBinWhenYesterday": "yesterday",
+  "@navBinWhenYesterday": {
+    "description": "Yesterday."
+  },
+  "navBinWhenDaysAgo": "{days} days ago",
+  "@navBinWhenDaysAgo": {
+    "description": "Two or more days ago.",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
   "navHideSections": "Hide the section list",
   "@navHideSections": {
     "description": "Tooltip on the button that folds the sections column away to give the page more room."
   },
-  "navHome": "Home",
-  "@navHome": {
-    "description": "The navigator's first pane: favourites, recent pages and what is coming up."
+  "navRecent": "Recent",
+  "@navRecent": {
+    "description": "Label of the place at the bottom of the navigator that opens recent pages, favourites and what is coming up."
   },
   "navHomeEmpty": "Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.",
   "@navHomeEmpty": {
     "description": "Shown on the Home pane before anything has been favourited or visited. 'Favourite' and 'Recent' name things elsewhere in this file — keep them consistent. Keep the blank line."
   },
-  "navHomeTip": "Home — favourites & recents",
-  "@navHomeTip": {
-    "description": "Tooltip on the Home button."
+  "navRecentTip": "Recent pages and favourites",
+  "@navRecentTip": {
+    "description": "Tooltip on the Recent button in the collapsed navigator."
   },
   "navInPageContent": "In page content",
   "@navInPageContent": {

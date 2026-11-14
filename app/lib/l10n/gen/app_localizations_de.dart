@@ -710,17 +710,88 @@ class LDe extends L {
   String get navExpand => 'Navigator ausklappen  (Strg+\\)';
 
   @override
+  String get navSectionsHeader => 'Abschnitte';
+
+  @override
+  String get navNewSectionOrGroup => 'Neuer Abschnitt oder Gruppe';
+
+  @override
+  String get dropMoveAbove => 'Darüber einfügen';
+
+  @override
+  String get dropMoveBelow => 'Darunter einfügen';
+
+  @override
+  String get dropMakeSubpage => 'Als Unterseite einfügen';
+
+  @override
+  String get dropGroupTogether => 'Zusammen gruppieren';
+
+  @override
+  String get dropMoveIntoGroup => 'In die Gruppe verschieben';
+
+  @override
+  String get dropMoveToSection => 'In diesen Abschnitt verschieben';
+
+  @override
+  String get navBinEmptyAction => 'Leeren';
+
+  @override
+  String get navBinEmptyTitle => 'Papierkorb leeren?';
+
+  @override
+  String get navBinEmptyBody =>
+      'Alles darin wird endgültig entfernt. Das lässt sich nicht rückgängig machen.';
+
+  @override
+  String get navBinEmptySharedNote =>
+      'Notizbücher in einem geteilten Ordner werden nur von diesem Computer entfernt.';
+
+  @override
+  String navBinDeleteOneBody(String title) {
+    return '„$title“ wird endgültig entfernt. Das lässt sich nicht rückgängig machen.';
+  }
+
+  @override
+  String get navBinKindPage => 'Seite';
+
+  @override
+  String get navBinKindSection => 'Abschnitt';
+
+  @override
+  String get navBinKindGroup => 'Abschnittsgruppe';
+
+  @override
+  String get navBinKindNotebook => 'Notizbuch';
+
+  @override
+  String navBinItemLine(String kind, String when) {
+    return '$kind · $when';
+  }
+
+  @override
+  String get navBinWhenToday => 'heute';
+
+  @override
+  String get navBinWhenYesterday => 'gestern';
+
+  @override
+  String navBinWhenDaysAgo(int days) {
+    return 'vor $days Tagen';
+  }
+
+  @override
   String get navHideSections => 'Abschnittsliste ausblenden';
 
   @override
-  String get navHome => 'Start';
+  String get navRecent => 'Zuletzt';
 
   @override
   String get navHomeEmpty =>
       'Hier ist noch nichts.\n\nKlicke mit der rechten Maustaste auf eine Seite und wähle Favorit, um sie anzuheften; Seiten, die du öffnest, erscheinen unter Zuletzt.';
 
   @override
-  String get navHomeTip => 'Start — Favoriten und zuletzt geöffnet';
+  String get navRecentTip => 'Zuletzt geöffnete Seiten und Favoriten';
 
   @override
   String get navInPageContent => 'Im Seiteninhalt';

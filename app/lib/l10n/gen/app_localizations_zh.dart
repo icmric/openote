@@ -686,16 +686,85 @@ class LZh extends L {
   String get navExpand => '展开导航栏  (Ctrl+\\)';
 
   @override
+  String get navSectionsHeader => '分区';
+
+  @override
+  String get navNewSectionOrGroup => '新建分区或分区组';
+
+  @override
+  String get dropMoveAbove => '移到上方';
+
+  @override
+  String get dropMoveBelow => '移到下方';
+
+  @override
+  String get dropMakeSubpage => '设为子页面';
+
+  @override
+  String get dropGroupTogether => '归为一组';
+
+  @override
+  String get dropMoveIntoGroup => '移入该组';
+
+  @override
+  String get dropMoveToSection => '移到此分区';
+
+  @override
+  String get navBinEmptyAction => '清空';
+
+  @override
+  String get navBinEmptyTitle => '清空回收站？';
+
+  @override
+  String get navBinEmptyBody => '里面的所有内容都将被永久删除，且无法撤销。';
+
+  @override
+  String get navBinEmptySharedNote => '共享文件夹中的笔记本只会从这台电脑上移除。';
+
+  @override
+  String navBinDeleteOneBody(String title) {
+    return '“$title”将被永久删除，且无法撤销。';
+  }
+
+  @override
+  String get navBinKindPage => '页面';
+
+  @override
+  String get navBinKindSection => '分区';
+
+  @override
+  String get navBinKindGroup => '分区组';
+
+  @override
+  String get navBinKindNotebook => '笔记本';
+
+  @override
+  String navBinItemLine(String kind, String when) {
+    return '$kind · $when';
+  }
+
+  @override
+  String get navBinWhenToday => '今天';
+
+  @override
+  String get navBinWhenYesterday => '昨天';
+
+  @override
+  String navBinWhenDaysAgo(int days) {
+    return '$days 天前';
+  }
+
+  @override
   String get navHideSections => '隐藏分区列表';
 
   @override
-  String get navHome => '主页';
+  String get navRecent => '最近';
 
   @override
   String get navHomeEmpty => '这里还什么都没有。\n\n右键点击页面并选择「收藏」即可固定；你打开过的页面会出现在「最近」里。';
 
   @override
-  String get navHomeTip => '主页 — 收藏与最近';
+  String get navRecentTip => '最近的页面和收藏';
 
   @override
   String get navInPageContent => '在页面内容中';

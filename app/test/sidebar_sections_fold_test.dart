@@ -85,16 +85,16 @@ void main() {
   double navWidth(WidgetTester tester) =>
       tester.getSize(find.byType(Sidebar)).width;
 
-  /// The "Home" row at the top of the sections column.
+  /// The "SECTIONS" heading at the top of the sections column.
   final homeTile = find.descendant(
-      of: find.byType(Sidebar), matching: find.text('Home'));
+      of: find.byType(Sidebar), matching: find.text('SECTIONS'));
 
   testWidgets('the sections column folds away, and the navigator narrows',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await shell(tester);
 
-    // "Home" lives in the sections column and nowhere else in the
+    // "SECTIONS" lives in the sections column and nowhere else in the
     // navigator, so it is the honest marker for whether that column is on
     // screen. Scoped to the Sidebar because the shell draws more than one
     // thing that says it.
