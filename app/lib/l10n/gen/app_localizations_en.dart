@@ -780,6 +780,88 @@ class LEn extends L {
   }
 
   @override
+  String get reviewTitle => 'Review writing';
+
+  @override
+  String reviewChip(int count) {
+    return '$count to review';
+  }
+
+  @override
+  String get reviewChipClear => 'No writing issues';
+
+  @override
+  String get reviewTooltip => 'Review writing (F7)';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return 'On this page · $count to review · $language';
+  }
+
+  @override
+  String get reviewSpelling => 'Spelling';
+
+  @override
+  String get reviewGrammar => 'Grammar';
+
+  @override
+  String get reviewPunctuation => 'Punctuation';
+
+  @override
+  String get reviewFixAll => 'Fix all';
+
+  @override
+  String get reviewAccept => 'Accept';
+
+  @override
+  String get reviewIgnore => 'Ignore';
+
+  @override
+  String get reviewAddToDictionary => 'Add to dictionary';
+
+  @override
+  String get reviewNotInDictionary => 'Not in the dictionary';
+
+  @override
+  String get reviewRemove => 'Remove';
+
+  @override
+  String get reviewAllClear => 'Nothing to review on this page.';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Fixed $count spelling mistakes',
+      one: 'Fixed 1 spelling mistake',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Fixed $count grammar mistakes',
+      one: 'Fixed 1 grammar mistake',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Fixed $count punctuation mistakes',
+      one: 'Fixed 1 punctuation mistake',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get navHideSections => 'Hide the section list';
 
   @override

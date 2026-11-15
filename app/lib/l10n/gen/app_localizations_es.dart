@@ -780,6 +780,88 @@ class LEs extends L {
   }
 
   @override
+  String get reviewTitle => 'Revisar la escritura';
+
+  @override
+  String reviewChip(int count) {
+    return '$count por revisar';
+  }
+
+  @override
+  String get reviewChipClear => 'Sin problemas de escritura';
+
+  @override
+  String get reviewTooltip => 'Revisar la escritura (F7)';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return 'En esta página · $count por revisar · $language';
+  }
+
+  @override
+  String get reviewSpelling => 'Ortografía';
+
+  @override
+  String get reviewGrammar => 'Gramática';
+
+  @override
+  String get reviewPunctuation => 'Puntuación';
+
+  @override
+  String get reviewFixAll => 'Corregir todo';
+
+  @override
+  String get reviewAccept => 'Aceptar';
+
+  @override
+  String get reviewIgnore => 'Omitir';
+
+  @override
+  String get reviewAddToDictionary => 'Añadir al diccionario';
+
+  @override
+  String get reviewNotInDictionary => 'No está en el diccionario';
+
+  @override
+  String get reviewRemove => 'Quitar';
+
+  @override
+  String get reviewAllClear => 'No hay nada que revisar en esta página.';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count errores de ortografía corregidos',
+      one: '1 error de ortografía corregido',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count errores gramaticales corregidos',
+      one: '1 error gramatical corregido',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count errores de puntuación corregidos',
+      one: '1 error de puntuación corregido',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get navHideSections => 'Ocultar la lista de secciones';
 
   @override

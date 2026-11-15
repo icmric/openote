@@ -65,12 +65,13 @@ import '../store/repository.dart';
 import '../math/math_editor.dart';
 import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
-import '../core/onote_text.dart' show EnglishDialect;
+import '../core/onote_text.dart' show EnglishDialect, TextFinding;
 import '../spell/writing_language.dart';
 import 'ui_scale.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
+import '../spell/writing_review.dart';
 import '../study/flashcards.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
@@ -129,7 +130,11 @@ enum SidePanelKind {
   planner('Planner'),
   tags('Tags'),
   outline('Outline'),
-  links('Links');
+  links('Links'),
+  // Every spelling, grammar and punctuation suggestion on the page. Drawn as a
+  // side panel on a wide window and as a sheet over the lower half of a narrow
+  // one; the name here is only the fallback, the words come from `L`.
+  review('Review writing');
 
   const SidePanelKind(this.label);
 
@@ -5504,6 +5509,59 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  // ── Review writing ───────────────────────────────────────────────────────
+
+  /// The page-wide look at spelling, grammar and punctuation. Made the first
+  /// time anything asks for it (the status bar does, on a computer that writes
+  /// English), so an app that never shows it never starts it.
+  WritingReview get review =>
+      _review ??= WritingReview(this, check: reviewChecker);
+  WritingReview? _review;
+
+  /// A stand-in for the checker, for tests. Set before the first use of
+  /// [review]; null means the real one.
+  @visibleForTesting
+  WritingCheck? reviewChecker;
+
+  /// Open the Review writing panel, or close it. Does nothing when the person
+  /// is not writing English: there is no such panel for them.
+  void toggleReview() {
+    if (openPanel == SidePanelKind.review) {
+      closePanel();
+      return;
+    }
+    if (!review.available) return;
+    showPanel(SidePanelKind.review);
+    review.noteChanged(soon: true);
+  }
+
+  /// Suggestions the person has said to leave alone, each remembered for a word
+  /// in a place: the text box, the words, and a few letters before them. Kept
+  /// with the workspace, not the notebook: it is about how someone writes.
+  final Set<String> writingIgnored = <String>{};
+
+  String _ignoreKey(String blockId, String text, TextFinding f) {
+    final s = f.start.clamp(0, text.length);
+    final from = s - 12 < 0 ? 0 : s - 12;
+    return '$blockId|${f.word}|${text.substring(from, s)}';
+  }
+
+  bool isWritingIgnored(String blockId, String text, TextFinding f) =>
+      writingIgnored.isNotEmpty &&
+      writingIgnored.contains(_ignoreKey(blockId, text, f));
+
+  /// Remember to leave [f] alone in this place. Old ones fall off the end
+  /// after a few hundred, so the list cannot grow for ever.
+  void ignoreWriting(String blockId, String text, TextFinding f) {
+    writingIgnored.add(_ignoreKey(blockId, text, f));
+    while (writingIgnored.length > 500) {
+      writingIgnored.remove(writingIgnored.first);
+    }
+    _repo.setSetting('writingIgnored', writingIgnored.toList());
+    docRevision++; // open editors drop the underline
+    notifyListeners();
+  }
+
   // ── Interface size ───────────────────────────────────────────────────────
 
   /// How much the whole window is zoomed: one of [kUiScales], 1.0 by default.
@@ -7820,6 +7878,8 @@ class AppState extends ChangeNotifier
     // person's jargon shouldn't become everyone's on a shared notebook.
     final lw = _repo.getSetting('learnedWords');
     if (lw is List) loadLearnedWords(lw.cast<String>());
+    final wi = _repo.getSetting('writingIgnored');
+    if (wi is List) writingIgnored.addAll(wi.whereType<String>());
     onLearnedChanged = (words) => _repo.setSetting('learnedWords', words);
     final mi = _repo.getSetting('mirrors');
     if (mi is Map) {
@@ -11482,6 +11542,7 @@ class AppState extends ChangeNotifier
     // rederived once per edit, so tagging a line produces a card immediately
     // instead of only after you navigate away.
     study.noteContentChanged();
+    _review?.noteChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), flushSave);
     // "Would need to all be automated by default as most people wont remeber
@@ -11868,6 +11929,7 @@ class AppState extends ChangeNotifier
     // would otherwise end with one still pending.
     _housekeepingTimer?.cancel();
     _housekeepingNoteClear?.cancel();
+    _review?.cancelPending();
     // And navigating (selectPage → _persistSession) arms the repository's
     // debounced workspace write, which is the same shape of pending timer.
     _repo.cancelPendingWorkspaceWrite();
@@ -11883,6 +11945,8 @@ class AppState extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
+    _review?.dispose();
+    _review = null;
     // The caret watcher outlives nothing. A widget test builds and tears down
     // an AppState per case, and a listener left on a controller from the last
     // one is a leak that only shows up as a confusing failure in the next.

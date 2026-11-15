@@ -1161,11 +1161,17 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // person may have kept typing: an answer for text that is gone would
       // underline the wrong letters.
       if (_disposed || controller.text != text) return;
-      controller.misspellings = result.spelling;
-      _spellingFindings = result.spellingFindings;
-      _grammarFindings = result.grammar;
+      // What was ignored in Review writing stays ignored here too.
+      bool kept(TextFinding f) => !app.isWritingIgnored(blockId, text, f);
+      final spelled = [for (final f in result.spellingFindings) if (kept(f)) f];
+      final flagged = [for (final f in result.grammar) if (kept(f)) f];
+      controller.misspellings = result.spellingFindings.isEmpty
+          ? result.spelling
+          : [for (final f in spelled) TextRange(start: f.start, end: f.end)];
+      _spellingFindings = spelled;
+      _grammarFindings = flagged;
       controller.grammarMarks = [
-        for (final f in result.grammar) TextRange(start: f.start, end: f.end)
+        for (final f in flagged) TextRange(start: f.start, end: f.end)
       ];
     });
   }

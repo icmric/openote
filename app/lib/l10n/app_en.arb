@@ -1055,6 +1055,106 @@
       }
     }
   },
+  "reviewTitle": "Review writing",
+  "@reviewTitle": {
+    "description": "Title of the panel that lists every spelling, grammar and punctuation suggestion on the page."
+  },
+  "reviewChip": "{count} to review",
+  "@reviewChip": {
+    "description": "The entry in the status bar when there is something to review. {count} is how many suggestions.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reviewChipClear": "No writing issues",
+  "@reviewChipClear": {
+    "description": "The status bar entry when the page has nothing to review."
+  },
+  "reviewTooltip": "Review writing (F7)",
+  "@reviewTooltip": {
+    "description": "Tooltip on the status bar entry. Keep the key name F7 as is."
+  },
+  "reviewSubtitle": "On this page · {count} to review · {language}",
+  "@reviewSubtitle": {
+    "description": "Line under the panel title. {language} is the English the person writes, e.g. English (Australia).",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "language": {
+        "type": "String"
+      }
+    }
+  },
+  "reviewSpelling": "Spelling",
+  "@reviewSpelling": {
+    "description": "Heading of the group of spelling suggestions."
+  },
+  "reviewGrammar": "Grammar",
+  "@reviewGrammar": {
+    "description": "Heading of the group of grammar suggestions."
+  },
+  "reviewPunctuation": "Punctuation",
+  "@reviewPunctuation": {
+    "description": "Heading of the group of punctuation suggestions."
+  },
+  "reviewFixAll": "Fix all",
+  "@reviewFixAll": {
+    "description": "Button on each group: accept every suggestion in it at once."
+  },
+  "reviewAccept": "Accept",
+  "@reviewAccept": {
+    "description": "Button: take this suggestion."
+  },
+  "reviewIgnore": "Ignore",
+  "@reviewIgnore": {
+    "description": "Button: leave this one as it is. It is not offered again in that place."
+  },
+  "reviewAddToDictionary": "Add to dictionary",
+  "@reviewAddToDictionary": {
+    "description": "Button on a spelling suggestion: the word is right, learn it."
+  },
+  "reviewNotInDictionary": "Not in the dictionary",
+  "@reviewNotInDictionary": {
+    "description": "Why a word is flagged: the dictionary does not have it."
+  },
+  "reviewRemove": "Remove",
+  "@reviewRemove": {
+    "description": "Label of a suggestion that deletes the words."
+  },
+  "reviewAllClear": "Nothing to review on this page.",
+  "@reviewAllClear": {
+    "description": "Shown in the panel when there is nothing to review."
+  },
+  "reviewFixedSpelling": "{count, plural, =1{Fixed 1 spelling mistake} other{Fixed {count} spelling mistakes}}",
+  "@reviewFixedSpelling": {
+    "description": "Notice after Fix all on spelling. It carries an Undo.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reviewFixedGrammar": "{count, plural, =1{Fixed 1 grammar mistake} other{Fixed {count} grammar mistakes}}",
+  "@reviewFixedGrammar": {
+    "description": "Notice after Fix all on grammar. It carries an Undo.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reviewFixedPunctuation": "{count, plural, =1{Fixed 1 punctuation mistake} other{Fixed {count} punctuation mistakes}}",
+  "@reviewFixedPunctuation": {
+    "description": "Notice after Fix all on punctuation. It carries an Undo.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "navHideSections": "Hide the section list",
   "@navHideSections": {
     "description": "Tooltip on the button that folds the sections column away to give the page more room."

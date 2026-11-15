@@ -24,6 +24,7 @@ import 'context_menus.dart';
 import 'onboarding.dart';
 import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
+import 'review_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
 import 'save_problem_dialog.dart';
@@ -489,6 +490,19 @@ class _AppShellState extends State<AppShell> {
         !ctrl &&
         !HardwareKeyboard.instance.isAltPressed) {
       return _cycleRegion(shift ? -1 : 1);
+    }
+
+    // F7 — Review writing, Word's own key for it. Before the typing
+    // early-return for the same reason as F6: it is for stepping out of the
+    // box you are in. Nothing happens, and the key is left alone, for anyone
+    // who is not writing English.
+    if (k == LogicalKeyboardKey.f7 &&
+        !ctrl &&
+        !shift &&
+        !HardwareKeyboard.instance.isAltPressed) {
+      if (_routeOnTop || !app.review.available) return false;
+      app.toggleReview();
+      return true;
     }
 
     // **Shift+F10 / the Menu key — the same menu the right button opens.**
@@ -1017,12 +1031,18 @@ class _AppShellState extends State<AppShell> {
   /// The one open panel, or null. A single switch rather than five `if`s in
   /// the Row so the F6 marker is applied in exactly one place — a panel that
   /// grew its own `if` would quietly drop out of the rotation.
-  Widget? _openPanel(TreeNode? page) => switch (app.openPanel) {
+  Widget? _openPanel(BuildContext context, TreeNode? page) => switch (app.openPanel) {
         SidePanelKind.study => StudyPanel(app: app),
         SidePanelKind.planner => PlannerPanel(app: app),
         SidePanelKind.tags => _TagsPanel(app: app),
         SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
         SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
+        // Gone for anyone not writing English, and drawn as a sheet instead of
+        // in this slot on a narrow window (see `_shell`).
+        SidePanelKind.review => !app.review.available ||
+                MediaQuery.sizeOf(context).width < kReviewSheetBelow
+            ? null
+            : ReviewPanel(app: app),
         null => null,
       };
 
@@ -1408,7 +1428,10 @@ class _AppShellState extends State<AppShell> {
       listenable: app,
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
-        final panel = _openPanel(page);
+        final panel = _openPanel(context, page);
+        final reviewSheet = app.openPanel == SidePanelKind.review &&
+            app.review.available &&
+            MediaQuery.sizeOf(context).width < kReviewSheetBelow;
         return Scaffold(
           // A `Stack`, so a reminder floats OVER the page rather than pushing
           // it. An alert that reflowed the canvas would move the line you were
@@ -1478,6 +1501,7 @@ class _AppShellState extends State<AppShell> {
                         ],
                       ),
                     ),
+                    if (reviewSheet) ReviewSheet(app: app),
                     _StatusBar(app: app),
                   ],
                 ),
@@ -2119,6 +2143,15 @@ class _StatusBar extends StatelessWidget {
               ),
             ),
           ),
+          // Review writing, at the far right so the cheat sheet gives way to it
+          // and not the other way round. Nothing here for anyone who is not
+          // writing English.
+          if (app.review.available) ...[
+            const SizedBox(width: 10),
+            // Flexible, so on a window too narrow for everything the chip
+            // gives way (its words shorten) rather than the row overflowing.
+            Flexible(child: ReviewChip(app: app)),
+          ],
         ],
       ),
     );

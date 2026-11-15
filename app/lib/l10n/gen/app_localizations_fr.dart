@@ -780,6 +780,88 @@ class LFr extends L {
   }
 
   @override
+  String get reviewTitle => 'Relire le texte';
+
+  @override
+  String reviewChip(int count) {
+    return '$count à relire';
+  }
+
+  @override
+  String get reviewChipClear => 'Aucun problème d’écriture';
+
+  @override
+  String get reviewTooltip => 'Relire le texte (F7)';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return 'Sur cette page · $count à relire · $language';
+  }
+
+  @override
+  String get reviewSpelling => 'Orthographe';
+
+  @override
+  String get reviewGrammar => 'Grammaire';
+
+  @override
+  String get reviewPunctuation => 'Ponctuation';
+
+  @override
+  String get reviewFixAll => 'Tout corriger';
+
+  @override
+  String get reviewAccept => 'Accepter';
+
+  @override
+  String get reviewIgnore => 'Ignorer';
+
+  @override
+  String get reviewAddToDictionary => 'Ajouter au dictionnaire';
+
+  @override
+  String get reviewNotInDictionary => 'Absent du dictionnaire';
+
+  @override
+  String get reviewRemove => 'Supprimer';
+
+  @override
+  String get reviewAllClear => 'Rien à relire sur cette page.';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fautes d’orthographe corrigées',
+      one: '1 faute d’orthographe corrigée',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fautes de grammaire corrigées',
+      one: '1 faute de grammaire corrigée',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count erreurs de ponctuation corrigées',
+      one: '1 erreur de ponctuation corrigée',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get navHideSections => 'Masquer la liste des sections';
 
   @override

@@ -781,6 +781,88 @@ class LDe extends L {
   }
 
   @override
+  String get reviewTitle => 'Text prüfen';
+
+  @override
+  String reviewChip(int count) {
+    return '$count zu prüfen';
+  }
+
+  @override
+  String get reviewChipClear => 'Keine Schreibprobleme';
+
+  @override
+  String get reviewTooltip => 'Text prüfen (F7)';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return 'Auf dieser Seite · $count zu prüfen · $language';
+  }
+
+  @override
+  String get reviewSpelling => 'Rechtschreibung';
+
+  @override
+  String get reviewGrammar => 'Grammatik';
+
+  @override
+  String get reviewPunctuation => 'Zeichensetzung';
+
+  @override
+  String get reviewFixAll => 'Alle korrigieren';
+
+  @override
+  String get reviewAccept => 'Übernehmen';
+
+  @override
+  String get reviewIgnore => 'Ignorieren';
+
+  @override
+  String get reviewAddToDictionary => 'Zum Wörterbuch hinzufügen';
+
+  @override
+  String get reviewNotInDictionary => 'Nicht im Wörterbuch';
+
+  @override
+  String get reviewRemove => 'Entfernen';
+
+  @override
+  String get reviewAllClear => 'Auf dieser Seite gibt es nichts zu prüfen.';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Rechtschreibfehler korrigiert',
+      one: '1 Rechtschreibfehler korrigiert',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Grammatikfehler korrigiert',
+      one: '1 Grammatikfehler korrigiert',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Zeichensetzungsfehler korrigiert',
+      one: '1 Zeichensetzungsfehler korrigiert',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get navHideSections => 'Abschnittsliste ausblenden';
 
   @override

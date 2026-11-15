@@ -46,6 +46,10 @@ const List<KeySection> keyboardMap = [
         'Jump between the sidebar, the toolbar, the row of controls for what '
         'you are writing, the page, the open panel and a reminder that has '
         'popped up'),
+    KeyBinding('F7',
+        'Review writing: every spelling, grammar and punctuation suggestion on '
+        'the page in one list (English only). Up and Down move between them, '
+        'Enter accepts, Delete ignores, Esc closes'),
     KeyBinding('Shift+F10  /  Menu key',
         'The menu of things you can add, where you are \u2014 or, with a box '
         'selected, that box\'s own menu'),

@@ -1319,6 +1319,114 @@ abstract class L {
   /// **'{days} days ago'**
   String navBinWhenDaysAgo(int days);
 
+  /// Title of the panel that lists every spelling, grammar and punctuation suggestion on the page.
+  ///
+  /// In en, this message translates to:
+  /// **'Review writing'**
+  String get reviewTitle;
+
+  /// The entry in the status bar when there is something to review. {count} is how many suggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} to review'**
+  String reviewChip(int count);
+
+  /// The status bar entry when the page has nothing to review.
+  ///
+  /// In en, this message translates to:
+  /// **'No writing issues'**
+  String get reviewChipClear;
+
+  /// Tooltip on the status bar entry. Keep the key name F7 as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Review writing (F7)'**
+  String get reviewTooltip;
+
+  /// Line under the panel title. {language} is the English the person writes, e.g. English (Australia).
+  ///
+  /// In en, this message translates to:
+  /// **'On this page · {count} to review · {language}'**
+  String reviewSubtitle(int count, String language);
+
+  /// Heading of the group of spelling suggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Spelling'**
+  String get reviewSpelling;
+
+  /// Heading of the group of grammar suggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Grammar'**
+  String get reviewGrammar;
+
+  /// Heading of the group of punctuation suggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Punctuation'**
+  String get reviewPunctuation;
+
+  /// Button on each group: accept every suggestion in it at once.
+  ///
+  /// In en, this message translates to:
+  /// **'Fix all'**
+  String get reviewFixAll;
+
+  /// Button: take this suggestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept'**
+  String get reviewAccept;
+
+  /// Button: leave this one as it is. It is not offered again in that place.
+  ///
+  /// In en, this message translates to:
+  /// **'Ignore'**
+  String get reviewIgnore;
+
+  /// Button on a spelling suggestion: the word is right, learn it.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to dictionary'**
+  String get reviewAddToDictionary;
+
+  /// Why a word is flagged: the dictionary does not have it.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in the dictionary'**
+  String get reviewNotInDictionary;
+
+  /// Label of a suggestion that deletes the words.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get reviewRemove;
+
+  /// Shown in the panel when there is nothing to review.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to review on this page.'**
+  String get reviewAllClear;
+
+  /// Notice after Fix all on spelling. It carries an Undo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Fixed 1 spelling mistake} other{Fixed {count} spelling mistakes}}'**
+  String reviewFixedSpelling(int count);
+
+  /// Notice after Fix all on grammar. It carries an Undo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Fixed 1 grammar mistake} other{Fixed {count} grammar mistakes}}'**
+  String reviewFixedGrammar(int count);
+
+  /// Notice after Fix all on punctuation. It carries an Undo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Fixed 1 punctuation mistake} other{Fixed {count} punctuation mistakes}}'**
+  String reviewFixedPunctuation(int count);
+
   /// Tooltip on the button that folds the sections column away to give the page more room.
   ///
   /// In en, this message translates to:

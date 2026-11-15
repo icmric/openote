@@ -781,6 +781,88 @@ class LIt extends L {
   }
 
   @override
+  String get reviewTitle => 'Rivedi la scrittura';
+
+  @override
+  String reviewChip(int count) {
+    return '$count da rivedere';
+  }
+
+  @override
+  String get reviewChipClear => 'Nessun problema di scrittura';
+
+  @override
+  String get reviewTooltip => 'Rivedi la scrittura (F7)';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return 'In questa pagina · $count da rivedere · $language';
+  }
+
+  @override
+  String get reviewSpelling => 'Ortografia';
+
+  @override
+  String get reviewGrammar => 'Grammatica';
+
+  @override
+  String get reviewPunctuation => 'Punteggiatura';
+
+  @override
+  String get reviewFixAll => 'Correggi tutto';
+
+  @override
+  String get reviewAccept => 'Accetta';
+
+  @override
+  String get reviewIgnore => 'Ignora';
+
+  @override
+  String get reviewAddToDictionary => 'Aggiungi al dizionario';
+
+  @override
+  String get reviewNotInDictionary => 'Non presente nel dizionario';
+
+  @override
+  String get reviewRemove => 'Rimuovi';
+
+  @override
+  String get reviewAllClear => 'Niente da rivedere in questa pagina.';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count errori di ortografia corretti',
+      one: '1 errore di ortografia corretto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count errori di grammatica corretti',
+      one: '1 errore di grammatica corretto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count errori di punteggiatura corretti',
+      one: '1 errore di punteggiatura corretto',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get navHideSections => 'Nascondi l\'elenco delle sezioni';
 
   @override

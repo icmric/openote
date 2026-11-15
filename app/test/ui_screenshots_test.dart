@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/core/onote_text.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
@@ -434,5 +435,53 @@ void main() {
       await snap(t, key, 'nav_places_${w.toInt()}');
       app.cancelPendingSave();
     });
+  }
+
+  // ── Review writing: the panel on a wide window, the sheet on a tall one ──
+  for (final narrow in [false, true]) {
+    for (final b in [Brightness.light, Brightness.dark]) {
+      testWidgets('review writing ${narrow ? 'sheet' : 'panel'} ${b.name}',
+          (t) async {
+        if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        final app = await seed(t);
+        await t.runAsync(() async {
+          final blk = app.blocks.firstWhere((x) => x.type == BlockType.text);
+          blk.content['text'] = 'The lecture covered how cells recieve signals '
+              'from outside. Its a process called signalling, and their are '
+              'three main types.\n\nRemember to check definately before the '
+              'exam, but we seperated the samples anyway .';
+          app.docRevision++;
+          await OnoteText.warmUp(EnglishDialect.australian);
+          app.systemLocale = () => const Locale('en', 'AU');
+          await app.review.refresh();
+        });
+        t.view.physicalSize = narrow ? const Size(900, 1200) : const Size(1440, 900);
+        t.view.devicePixelRatio = 1;
+        addTearDown(t.view.reset);
+        final key = GlobalKey();
+        await t.pumpWidget(MaterialApp(
+          localizationsDelegates: kOnoteLocalizations,
+          supportedLocales: kOnoteLocales,
+          theme: onoteTheme(b),
+          darkTheme: onoteTheme(Brightness.dark),
+          themeMode: b == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+          debugShowCheckedModeBanner: false,
+          builder: (c, child) => RepaintBoundary(key: key, child: child),
+          home: AppShell(app: app),
+        ));
+        for (var i = 0; i < 2; i++) {
+          await t.pump(const Duration(milliseconds: 800));
+          await t.pumpAndSettle();
+        }
+        app.toggleReview();
+        await t.pumpAndSettle();
+        app.review.openFirst();
+        await t.pumpAndSettle();
+        await expectLater(find.byKey(key),
+            matchesGoldenFile('goldens/review_${narrow ? 'sheet' : 'panel'}_${b.name}.png'));
+        app.cancelPendingSave();
+      });
+    }
   }
 }

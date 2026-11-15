@@ -778,6 +778,88 @@ class LPt extends L {
   }
 
   @override
+  String get reviewTitle => 'Revisar a escrita';
+
+  @override
+  String reviewChip(int count) {
+    return '$count para revisar';
+  }
+
+  @override
+  String get reviewChipClear => 'Nenhum problema de escrita';
+
+  @override
+  String get reviewTooltip => 'Revisar a escrita (F7)';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return 'Nesta página · $count para revisar · $language';
+  }
+
+  @override
+  String get reviewSpelling => 'Ortografia';
+
+  @override
+  String get reviewGrammar => 'Gramática';
+
+  @override
+  String get reviewPunctuation => 'Pontuação';
+
+  @override
+  String get reviewFixAll => 'Corrigir tudo';
+
+  @override
+  String get reviewAccept => 'Aceitar';
+
+  @override
+  String get reviewIgnore => 'Ignorar';
+
+  @override
+  String get reviewAddToDictionary => 'Adicionar ao dicionário';
+
+  @override
+  String get reviewNotInDictionary => 'Não está no dicionário';
+
+  @override
+  String get reviewRemove => 'Remover';
+
+  @override
+  String get reviewAllClear => 'Não há nada para revisar nesta página.';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count erros de ortografia corrigidos',
+      one: '1 erro de ortografia corrigido',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count erros gramaticais corrigidos',
+      one: '1 erro gramatical corrigido',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count erros de pontuação corrigidos',
+      one: '1 erro de pontuação corrigido',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get navHideSections => 'Ocultar a lista de seções';
 
   @override

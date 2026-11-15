@@ -755,6 +755,70 @@ class LZh extends L {
   }
 
   @override
+  String get reviewTitle => '检查文字';
+
+  @override
+  String reviewChip(int count) {
+    return '$count 项待检查';
+  }
+
+  @override
+  String get reviewChipClear => '没有写作问题';
+
+  @override
+  String get reviewTooltip => '检查文字（F7）';
+
+  @override
+  String reviewSubtitle(int count, String language) {
+    return '本页 · $count 项待检查 · $language';
+  }
+
+  @override
+  String get reviewSpelling => '拼写';
+
+  @override
+  String get reviewGrammar => '语法';
+
+  @override
+  String get reviewPunctuation => '标点';
+
+  @override
+  String get reviewFixAll => '全部修正';
+
+  @override
+  String get reviewAccept => '接受';
+
+  @override
+  String get reviewIgnore => '忽略';
+
+  @override
+  String get reviewAddToDictionary => '添加到词典';
+
+  @override
+  String get reviewNotInDictionary => '不在词典中';
+
+  @override
+  String get reviewRemove => '删除';
+
+  @override
+  String get reviewAllClear => '本页没有需要检查的内容。';
+
+  @override
+  String reviewFixedSpelling(int count) {
+    return '已修正 $count 处拼写错误';
+  }
+
+  @override
+  String reviewFixedGrammar(int count) {
+    return '已修正 $count 处语法错误';
+  }
+
+  @override
+  String reviewFixedPunctuation(int count) {
+    return '已修正 $count 处标点错误';
+  }
+
+  @override
   String get navHideSections => '隐藏分区列表';
 
   @override
