@@ -112,10 +112,44 @@ class _BoardBlockViewState extends State<BoardBlockView> {
     return (col: col, card: _cursor.card.clamp(0, _cards(cols[col]).length));
   }
 
+  /// **`hasPrimaryFocus`, not `hasFocus`.** A `FocusNode` reports `hasFocus`
+  /// for anything in its subtree, and the inline editor is in this one, so
+  /// the marker was drawn on card (0, 0) the whole time a column title was
+  /// being renamed, which is the "why is that card selected?" half of the
+  /// bug [_onKey] documents.
   bool _onCursor(int col, int card) =>
-      _keys.hasFocus && _cursor.col == col && _cursor.card == card;
+      _keys.hasPrimaryFocus && _cursor.col == col && _cursor.card == card;
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    // **Only when the board ITSELF has the keyboard.**
+    //
+    // Reported: renaming the second column's title from "Doing" to "In
+    // progress" deleted a card out of the FIRST column: *"by default the
+    // first column, first item was already selected ... I don't know why it
+    // was by default selected."* It was not selected: `_cursor` starts at
+    // (0, 0) and nothing had moved it, and this handler ran anyway.
+    //
+    // A key event is offered to the focused node and then to each of its
+    // ancestors in turn, and this `Focus` wraps the whole board including
+    // the inline `TextField`. So every keystroke aimed at that field was
+    // offered here first, and Backspace reached `_deleteAtCursor` before
+    // the editor ever saw it. Measured on the shipped build, with cards
+    // ['Revise osmosis', 'Past paper'] in column one:
+    //
+    //   * Backspace while renaming a column title → 'Revise osmosis' gone;
+    //   * Backspace while editing a CARD → the same card gone, and not the
+    //     one being edited;
+    //   * Ctrl+Right while renaming a title → 'Revise osmosis' carried into
+    //     the next column;
+    //   * arrows while renaming were swallowed, so the caret could not be
+    //     moved through the title being typed.
+    //
+    // `wantKeys` in [build] already says the board should not hold the
+    // keyboard while an editor is open; this is the same rule enforced
+    // where the keys actually arrive, and asked of the focus tree rather
+    // than of three nullable fields, so anything focusable added inside a
+    // board later is covered by it too.
+    if (!node.hasPrimaryFocus) return KeyEventResult.ignored;
     // Repeats count. Holding an arrow to run down a long column is how this
     // is actually used, and dropping `KeyRepeatEvent` makes the board feel
     // stuck after the first card — the same trap the list editor documents.
