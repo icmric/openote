@@ -3589,11 +3589,25 @@ class Repository {
     }
   }
 
+  /// What the recycle bin lists: each thing the person deleted, once.
+  ///
+  /// Deleting a section stamps its pages (and a group's sections) with the same
+  /// instant as the section itself, so they are LEFT OUT here when their parent
+  /// went in at that same moment: the bin shows the section, and restoring it
+  /// brings the pages back with it ([restoreNode] walks the subtree). A page
+  /// deleted on its own EARLIER keeps its own, older stamp, so it still has its
+  /// own row; and a page whose section has been restored (by restoring just
+  /// that page's neighbour) is shown again, because its parent is no longer
+  /// deleted.
   List<({String id, String kind, String title, int deletedAt})> loadDeletedNodes(
       String notebookId) {
     final rows = _db(notebookId).select(
-        'SELECT id,kind,title,deleted_at FROM nodes '
-        'WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
+        'SELECT n.id AS id, n.kind AS kind, n.title AS title, '
+        'n.deleted_at AS deleted_at FROM nodes n '
+        'LEFT JOIN nodes p ON p.id = n.parent_id '
+        'WHERE n.deleted_at IS NOT NULL '
+        'AND NOT (p.deleted_at IS NOT NULL AND p.deleted_at = n.deleted_at) '
+        'ORDER BY n.deleted_at DESC');
     return [
       for (final r in rows)
         (

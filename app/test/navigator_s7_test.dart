@@ -361,6 +361,54 @@ void main() {
       expect(app.binCount, 1, reason: 'one came back');
     });
 
+    testWidgets('a deleted section is one row, and brings its pages back',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await shell(tester);
+      final victim = sections().last;
+      final pages = app.pagesOf(victim.id).map((p) => p.id).toList();
+      expect(pages, isNotEmpty);
+      await tester.runAsync(() => app.deleteNode(victim.id));
+      await settle(tester);
+
+      expect(app.binCount, 1,
+          reason: 'the section, not the section and each page in it');
+      await tester.tap(inNav(find.text('Recycle bin')));
+      await tester.pumpAndSettle();
+      expect(find.text('Section · today'), findsOneWidget);
+      expect(find.text('Page · today'), findsNothing);
+
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+      expect(app.binCount, 0);
+      expect(app.node(victim.id), isNotNull);
+      for (final p in pages) {
+        expect(app.node(p), isNotNull, reason: 'its pages came back with it');
+      }
+    });
+
+    testWidgets('a page deleted earlier keeps its own row', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await shell(tester);
+      final s = sections();
+      // Give the last section a second page, delete that page, THEN the section.
+      await tester.runAsync(() async {
+        await app.activateSection(s.last.id);
+        await app.addPage(sectionId: s.last.id);
+      });
+      final extra = app.pagesOf(s.last.id).last;
+      await tester.runAsync(() async {
+        await app.deleteNode(extra.id);
+        // Real time, so the two deletes carry different stamps.
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        await app.deleteNode(s.last.id);
+      });
+      await settle(tester);
+      expect(app.binCount, 2,
+          reason: 'the old page and the section; the section\'s other page '
+              'went in with it and is not listed');
+    });
+
     testWidgets('the cross asks first, and Cancel keeps it', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await shell(tester);
