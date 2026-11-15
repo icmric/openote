@@ -126,9 +126,13 @@ void main() {
     final pasted = app.blocks.where((x) => x.id != a.id && x.id != b.id).toList()
       ..sort((p, q) => p.y.compareTo(q.y));
     expect(pasted.length, 2);
-    expect(pasted.first.x, closeTo(600, app.gridSize));
-    expect(pasted.first.y, closeTo(500 - AppState.pasteBarOffset, app.gridSize),
-        reason: 'the first box\'s bar is at the pointer');
+    // The move bar is the strip 16px above a box and its grip is 12px in from
+    // the left edge: the pointer is on the grip, so paste and drag are one
+    // motion.
+    expect(pasted.first.x, 600 - AppState.pasteGripOffset,
+        reason: 'the grip is under the pointer');
+    expect(pasted.first.y, 500 + AppState.pasteBarOffset,
+        reason: 'and the bar is centred on it, not above it');
     expect(pasted.last.y - pasted.first.y, closeTo(200, app.gridSize),
         reason: 'the boxes keep their distance from each other');
   });

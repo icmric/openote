@@ -867,6 +867,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       }
     }
     onChanged(controller.text);
+    _typed = true;
     _scheduleSpellCheck();
   }
 
@@ -1136,7 +1137,70 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// The misspellings as last checked, with their suggestions (see above).
   List<TextFinding> _spellingFindings = const [];
 
+  // ── No red flash on the word being typed ─────────────────────────────────
+  //
+  // `didnt` is underlined for the moment between its last letter and the space
+  // that finishes it, and then the space fixes it: a red line that appears and
+  // vanishes. A word is only wrong once it is FINISHED, so while the person is
+  // typing, the word the caret is at the end of is left alone. It is marked as
+  // soon as the caret leaves it (a space, a click elsewhere), if it is still
+  // wrong by then.
+
+  /// The text the findings below were found in, and the old word list's ranges
+  /// (it attaches no findings).
+  String _checkedText = '';
+  List<TextRange> _fallbackRanges = const [];
+
+  /// Whether the person has typed in this box since it opened. Opening a note
+  /// and putting the caret at the end of a word that was already wrong must
+  /// still show the line.
+  bool _typed = false;
+  int _lastCaret = -1;
+  bool _watchingCaret = false;
+
+  /// The red marks to show now: every misspelling, except the word the caret is
+  /// still at the end of while it is being typed.
+  List<TextRange> _visibleSpelling() {
+    final all = _spellingFindings.isEmpty
+        ? _fallbackRanges
+        : [
+            for (final f in _spellingFindings)
+              TextRange(start: f.start, end: f.end)
+          ];
+    final sel = controller.selection;
+    final caret = sel.isValid && sel.isCollapsed ? sel.baseOffset : -1;
+    if (!_typed || caret < 0) return all;
+    return [for (final r in all) if (r.end != caret) r];
+  }
+
+  void _onCaretMoved() {
+    final sel = controller.selection;
+    final caret = sel.isValid && sel.isCollapsed ? sel.baseOffset : -1;
+    if (caret == _lastCaret) return;
+    _lastCaret = caret;
+    // Findings for text that has since changed would land on the wrong
+    // letters: wait for the check that follows the edit.
+    if (_disposed || controller.text != _checkedText) return;
+    final next = _visibleSpelling();
+    final now = controller.misspellings;
+    if (next.length == now.length) {
+      var same = true;
+      for (var i = 0; i < next.length; i++) {
+        if (next[i] != now[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    controller.misspellings = next;
+  }
+
   void _scheduleSpellCheck({Duration delay = const Duration(milliseconds: 300)}) {
+    if (!_watchingCaret) {
+      _watchingCaret = true;
+      controller.addListener(_onCaretMoved);
+    }
     final dialect = app.writingDialect;
     final spelling = spellCheckEnabled;
     final grammar = app.grammarCheckEnabled;
@@ -1165,11 +1229,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
       bool kept(TextFinding f) => !app.isWritingIgnored(blockId, text, f);
       final spelled = [for (final f in result.spellingFindings) if (kept(f)) f];
       final flagged = [for (final f in result.grammar) if (kept(f)) f];
-      controller.misspellings = result.spellingFindings.isEmpty
-          ? result.spelling
-          : [for (final f in spelled) TextRange(start: f.start, end: f.end)];
+      _checkedText = text;
+      _fallbackRanges = result.spelling;
       _spellingFindings = spelled;
       _grammarFindings = flagged;
+      controller.misspellings = _visibleSpelling();
       controller.grammarMarks = [
         for (final f in flagged) TextRange(start: f.start, end: f.end)
       ];
@@ -1736,6 +1800,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       },
       onChanged: (v) {
         onChanged(v);
+        _typed = true;
         _scheduleSpellCheck();
       }));
 
@@ -2032,6 +2097,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     closeInlineMath(MathExit.done, reposition: false);
     EquationSourcePanel.dismiss();
     _lastContext = null;
+    if (_watchingCaret) controller.removeListener(_onCaretMoved);
     _spellDebounce?.cancel();
     controller.removeListener(_maybeCloseOnCaretExit);
     controller.removeListener(_maybeCancelPendingStyle);

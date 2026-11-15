@@ -151,10 +151,24 @@ class WritingReview extends ChangeNotifier {
   List<ReviewItem> itemsOf(ReviewCategory c) =>
       [for (final i in items) if (i.category == c) i];
 
+  /// The kind the panel is showing on its own, when it shows one at a time (the
+  /// sheet's tabs). The side panel lists all three and leaves this null.
+  ReviewCategory? focusCategory;
+
+  /// The item whose card is open. **Always one**: with nothing chosen it is the
+  /// top of the list (or of the tab on show), so the first suggestion arrives
+  /// opened and it is plain that every one can be. Clicking another row moves
+  /// it there.
   ReviewItem? get current {
+    final list = items;
+    if (list.isEmpty) return null;
+    final cat = focusCategory;
     final k = _currentKey;
-    if (k == null) return null;
-    return items.where((i) => i.key == k).firstOrNull;
+    final hit = k == null ? null : list.where((i) => i.key == k).firstOrNull;
+    if (hit != null && (cat == null || hit.category == cat)) return hit;
+    final pool =
+        cat == null ? list : [for (final i in list) if (i.category == cat) i];
+    return pool.isEmpty ? list.first : pool.first;
   }
 
   // ── Looking ───────────────────────────────────────────────────────────────
@@ -285,17 +299,21 @@ class WritingReview extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Open the first item (the one the keyboard starts on).
+  /// Take the page to the open item. The card is open from the start, but the
+  /// page is only moved when someone chooses.
   void openFirst() {
-    final first = items.firstOrNull;
-    if (first != null) open(first);
+    final cur = current;
+    if (cur != null) open(cur);
   }
 
   /// Up or down the list, wrapping at the ends.
   void step(int delta) {
-    final list = items;
+    final cat = focusCategory;
+    final list =
+        cat == null ? items : [for (final i in items) if (i.category == cat) i];
     if (list.isEmpty) return;
-    final i = list.indexWhere((x) => x.key == _currentKey);
+    final k = current?.key;
+    final i = list.indexWhere((x) => x.key == k);
     final next = i < 0
         ? (delta > 0 ? 0 : list.length - 1)
         : (i + delta + list.length) % list.length;

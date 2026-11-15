@@ -242,12 +242,12 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await shell(tester, extra: 0);
       expect(inNav(find.text('SECTIONS')), findsOneWidget);
-      expect(find.byTooltip('New section or group'), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-add-section')), findsOneWidget);
       // The big button and the small group button at the foot are gone.
       expect(inNav(find.text('Section')), findsNothing);
       expect(find.byTooltip('New section group'), findsNothing);
 
-      await tester.tap(find.byTooltip('New section or group'));
+      await tester.tap(find.byKey(const ValueKey('nav-add-section')));
       await tester.pumpAndSettle();
       expect(find.text('New section'), findsOneWidget);
       expect(find.text('New section group'), findsOneWidget);
@@ -261,7 +261,7 @@ void main() {
     testWidgets('a new group opens for its name', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await shell(tester, extra: 0);
-      await tester.tap(find.byTooltip('New section or group'));
+      await tester.tap(find.byKey(const ValueKey('nav-add-section')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('New section group'));
       await settle(tester);

@@ -3,10 +3,11 @@
 ///
 /// One list, three kinds of mistake. Each kind has its own **Fix all**; every
 /// item has a tick (accept) and a cross (ignore); the item the page is on is
-/// opened to show why and what else it could be. Wide windows get a side panel;
-/// below [kReviewSheetBelow] the same content rises from the status bar as a
-/// sheet instead, so the page keeps its full width. See `spell/writing_review.dart`
-/// for what is checked and how a fix is written.
+/// opened to show why and what else it could be. When the page would keep at
+/// least [kReviewMinCanvas] beside it, it is a side panel, resizable by its left
+/// edge; when it would not, the same content rises from the status bar as a
+/// sheet instead, so the page keeps its full width. See
+/// `spell/writing_review.dart` for what is checked and how a fix is written.
 library;
 
 import 'package:flutter/material.dart';
@@ -20,11 +21,6 @@ import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'side_panel.dart';
 import 'toast.dart';
-
-/// Window widths under this show Review writing as a sheet rather than a side
-/// panel. By width, not by device: a desktop window dragged narrow gets the
-/// sheet, and a tablet turned sideways gets the panel.
-const double kReviewSheetBelow = 1000;
 
 /// The colour of each kind, the same ones the underlines use.
 Color reviewColor(ReviewCategory c) => switch (c) {
@@ -73,8 +69,11 @@ class ReviewChip extends StatelessWidget {
             : clear
                 ? OnoteColors.success
                 : scheme.primary;
-        return Tooltip(
-          message: l.reviewTooltip,
+        // No tooltip: the chip says what it is. The label is for a screen reader.
+        return Semantics(
+          label: l.reviewTooltip,
+          button: true,
+          excludeSemantics: true,
           child: InkWell(
             mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: BorderRadius.circular(10),
@@ -115,18 +114,50 @@ class ReviewChip extends StatelessWidget {
 // ── The side panel ───────────────────────────────────────────────────────────
 
 class ReviewPanel extends StatelessWidget {
-  const ReviewPanel({super.key, required this.app});
+  const ReviewPanel({super.key, required this.app, required this.maxWidth});
   final AppState app;
+
+  /// The widest it may be dragged to, which leaves the page its minimum.
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     final l = L.of(context);
-    return SidePanel(
-      title: l.reviewTitle,
-      icon: Icons.spellcheck,
-      onClose: app.closePanel,
-      child: ReviewBody(app: app, narrow: false),
-    );
+    final s = context.surfaces;
+    final width = app.reviewPanelW.clamp(
+        kReviewPanelMin, maxWidth < kReviewPanelMin ? kReviewPanelMin : maxWidth);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      // The panel's left edge is its handle, the way the navigator's columns
+      // are resized, and it draws the hairline the shell draws for the others.
+      MouseRegion(
+        cursor: SystemMouseCursors.resizeColumn,
+        child: GestureDetector(
+          key: const ValueKey('review-resize'),
+          behavior: HitTestBehavior.opaque,
+          // Dragging left widens it: the panel is on the right.
+          onHorizontalDragUpdate: (d) {
+            app.reviewPanelW = (app.reviewPanelW - d.delta.dx).clamp(
+                kReviewPanelMin,
+                maxWidth < kReviewPanelMin ? kReviewPanelMin : maxWidth);
+            app.refresh();
+          },
+          onHorizontalDragEnd: (_) => app.setReviewPanelW(app.reviewPanelW),
+          child: Container(
+            width: 5,
+            alignment: Alignment.center,
+            color: s.chrome,
+            child: Container(width: 1, color: s.border),
+          ),
+        ),
+      ),
+      SidePanel(
+        title: l.reviewTitle,
+        icon: Icons.spellcheck,
+        width: width,
+        onClose: app.closePanel,
+        child: ReviewBody(app: app, narrow: false),
+      ),
+    ]);
   }
 }
 
@@ -288,6 +319,8 @@ class _ReviewBodyState extends State<ReviewBody> {
                 ReviewCategory.values.where((c) => byCat[c]!.isNotEmpty);
             if (next.isNotEmpty) _tab = next.first;
           }
+          // The card that is open belongs to what is on show.
+          review.focusCategory = widget.narrow ? _tab : null;
           final sub = Padding(
             padding: const EdgeInsets.fromLTRB(16, 2, 12, 8),
             child: Text(
@@ -366,7 +399,12 @@ class _ReviewBodyState extends State<ReviewBody> {
             child: InkWell(
               mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(8),
-              onTap: by[c]!.isEmpty ? null : () => setState(() => _tab = c),
+              onTap: by[c]!.isEmpty
+                  ? null
+                  : () => setState(() {
+                        _tab = c;
+                        review.focusCategory = c;
+                      }),
               child: Container(
                 height: 34,
                 alignment: Alignment.center,
@@ -495,12 +533,14 @@ class _ItemRow extends StatelessWidget {
           ),
           if (item.canFix)
             _IconAction(
+                key: const ValueKey('review-accept'),
                 icon: Icons.check,
                 tooltip: l.reviewAccept,
                 color: OnoteColors.success,
                 size: box,
                 onTap: () => review.accept(item)),
           _IconAction(
+              key: const ValueKey('review-ignore'),
               icon: Icons.close,
               tooltip: l.reviewIgnore,
               color: s.textSecondary,
@@ -514,20 +554,26 @@ class _ItemRow extends StatelessWidget {
 
 class _IconAction extends StatelessWidget {
   const _IconAction(
-      {required this.icon,
+      {super.key,
+      required this.icon,
       required this.tooltip,
       required this.color,
       required this.size,
       required this.onTap});
   final IconData icon;
+
+  /// Read out by a screen reader. Not shown as a tooltip: a tick and a cross
+  /// beside a suggestion need no bubble.
   final String tooltip;
   final Color color;
   final double size;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-        message: tooltip,
+  Widget build(BuildContext context) => Semantics(
+        label: tooltip,
+        button: true,
+        excludeSemantics: true,
         child: InkWell(
           mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: BorderRadius.circular(6),

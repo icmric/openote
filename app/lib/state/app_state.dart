@@ -121,6 +121,16 @@ enum TouchDrawing {
   // returns English is the one thing `l10n_test.dart` cannot see.
 }
 
+/// The Review writing panel's width: where it starts, and how far it can be
+/// dragged either way.
+const double kReviewPanelDefault = 340;
+const double kReviewPanelMin = 280;
+const double kReviewPanelMax = 560;
+
+/// The least width the page keeps beside the Review writing panel. Narrower
+/// than this and the review is drawn as a sheet over the lower half instead.
+const double kReviewMinCanvas = 460;
+
 /// The panels that can occupy the right-hand slot (style guide §7c).
 ///
 /// An enum rather than five booleans, so "which panel is open" has exactly one
@@ -5523,6 +5533,15 @@ class AppState extends ChangeNotifier
   @visibleForTesting
   WritingCheck? reviewChecker;
 
+  /// How wide the Review writing panel is, remembered. Dragged by its left
+  /// edge, like the navigator's columns.
+  double reviewPanelW = kReviewPanelDefault;
+
+  void setReviewPanelW(double v) {
+    reviewPanelW = v.clamp(kReviewPanelMin, kReviewPanelMax).toDouble();
+    _repo.setSetting('reviewPanelW', reviewPanelW);
+  }
+
   /// Open the Review writing panel, or close it. Does nothing when the person
   /// is not writing English: there is no such panel for them.
   void toggleReview() {
@@ -7627,9 +7646,14 @@ class AppState extends ChangeNotifier
     return true;
   }
 
-  /// How far above the pointer a paste puts the top of its first box, so the
-  /// 16px move bar is what the pointer is over.
+  /// **Where a paste puts the box, so the grip is under the pointer.** The move
+  /// bar is the 16px strip ABOVE a box (from `y - 16` to `y`), and its grip is
+  /// 12px in from the box's left edge. Putting the box's own corner on the
+  /// pointer left the bar above it, so the hand had to move up before it could
+  /// grab; this puts the box 8px below the pointer and 12px to its left, which
+  /// is the middle of the grip. Paste, then drag, in one motion.
   static const double pasteBarOffset = 8;
+  static const double pasteGripOffset = 12;
 
   /// Where a paste with no usable pointer goes: the spot the first box takes on
   /// an empty page, otherwise the left margin a small gap under the lowest box
@@ -7681,18 +7705,16 @@ class AppState extends ChangeNotifier
     // multi-box paste into a single pile.
     final target = at == null
         ? _pasteDefaultOrigin()
-        : Offset(at.dx, at.dy - pasteBarOffset);
+        : Offset(at.dx - pasteGripOffset, at.dy + pasteBarOffset);
     var minX = double.infinity, minY = double.infinity;
     for (final src in list) {
       if (src.x < minX) minX = src.x;
       if (src.y < minY) minY = src.y;
     }
-    // Only a pointer position is snapped: the default origin is the left
-    // margin, and snapping it would pull it off the margin the rest of the
-    // page is aligned to.
-    final snapped = at != null && effectiveSnap;
-    final shift = Offset((snapped ? snap(target.dx) : target.dx) - minX,
-        (snapped ? snap(target.dy) : target.dy) - minY);
+    // Not snapped: the paste lands exactly where the pointer put it, because
+    // a snap of up to half a grid square is enough to move the grip out from
+    // under the hand. The default origin is the left margin and stays there.
+    final shift = Offset(target.dx - minX, target.dy - minY);
     final newIds = <String>[];
     final oldToNew = <String, String>{};
     // One map for the whole paste, so blocks that shared a group still share
@@ -7832,6 +7854,11 @@ class AppState extends ChangeNotifier
     uiLocale = parseLocale(_repo.getSetting('uiLocale') as String?);
     final nsw = _repo.getSetting('navSectionsW');
     if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);
+    final rpw = _repo.getSetting('reviewPanelW');
+    if (rpw is num) {
+      reviewPanelW =
+          rpw.toDouble().clamp(kReviewPanelMin, kReviewPanelMax).toDouble();
+    }
     final npw = _repo.getSetting('navPagesW');
     if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
     final nc = _repo.getSetting('navCollapsed');

@@ -476,7 +476,8 @@ class _SidebarState extends State<Sidebar> {
                 ),
               ),
               _PlusButton(
-                tooltip: l.navNewPageIn(section.title),
+                key: const ValueKey('nav-add-page'),
+                label: l.navNewPageIn(section.title),
                 onPressed: () => app.addPage(sectionId: section.id),
               ),
             ],
@@ -830,16 +831,24 @@ class _VDragHandle extends StatelessWidget {
 /// the two headings line up and the two plusses read as one idea.
 class _PlusButton extends StatelessWidget {
   const _PlusButton(
-      {required this.tooltip, required this.onPressed, this.open = false});
-  final String tooltip;
+      {super.key,
+      required this.label,
+      required this.onPressed,
+      this.open = false});
+
+  /// What it does, for a screen reader. No tooltip: a plus beside a list's
+  /// heading says what it adds to, and a bubble on hover is clutter.
+  final String label;
   final VoidCallback onPressed;
   final bool open;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip,
+    return Semantics(
+      label: label,
+      button: true,
+      excludeSemantics: true,
       child: InkWell(
         mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(6),
@@ -939,7 +948,8 @@ class _SectionsHeaderState extends State<_SectionsHeader> {
           ),
           Builder(
             builder: (button) => _PlusButton(
-                tooltip: l.navNewSectionOrGroup,
+                key: const ValueKey('nav-add-section'),
+                label: l.navNewSectionOrGroup,
                 open: _open,
                 onPressed: () => _menu(button)),
           ),
@@ -1103,9 +1113,13 @@ class _Place extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final s = context.surfaces;
     final fg = on ? scheme.primary : s.textSecondary;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
+    // A place with its name showing needs no bubble saying it again. Only when
+    // the navigator is too narrow for the name (the icon stands alone) does
+    // the tooltip earn its place.
+    Widget named(Widget child) =>
+        label == null ? Tooltip(message: tooltip, child: child) : child;
+    return named(
+      InkWell(
         mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(6),
         onTap: onTap,

@@ -331,11 +331,13 @@ void main() {
         box('b', 300, 'They seperated it.'),
       ]);
       await look(t);
-      app.review.step(1);
-      expect(app.review.current!.blockId, 'a');
-      expect(app.selectedBlockId, 'a', reason: 'the page is taken to it');
+      expect(app.review.current!.blockId, 'a',
+          reason: 'the top one is open from the start');
+      expect(app.selectedBlockId, isNot('a'),
+          reason: 'but the page is not moved until someone chooses');
       app.review.step(1);
       expect(app.review.current!.blockId, 'b');
+      expect(app.selectedBlockId, 'b', reason: 'the page is taken to it');
       app.review.step(1);
       expect(app.review.current!.blockId, 'a');
       app.review.step(-1);
@@ -355,7 +357,7 @@ void main() {
     Future<void> openPanel(WidgetTester t) async {
       await look(t);
       await t.pump();
-      await t.tap(find.byTooltip('Review writing (F7)'));
+      await t.tap(find.byType(ReviewChip));
       await t.pumpAndSettle();
     }
 
@@ -402,18 +404,21 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await start(t, texts(), mount: true);
       await openPanel(t);
-      // Nothing is open until one is chosen.
-      expect(find.text('Accept'), findsNothing);
-      await t.tap(find
-          .descendant(
-              of: find.byType(ReviewPanel),
-              matching: find.textContaining('seperated'))
-          .first);
+      // The top one is open from the start, so it is plain every one can be.
+      expect(find.text('Accept'), findsOneWidget);
+      expect(find.text('Not in the dictionary'), findsOneWidget);
+      expect(app.review.current!.finding.word, 'recieve');
+      // The ROW of the second suggestion (the open card's own context also
+      // contains the word, so find the row by its key).
+      final second = app.review.items.firstWhere(
+          (i) => i.finding.word == 'seperated');
+      await t.tap(find.byKey(ValueKey('row-${second.key}')));
       await t.pumpAndSettle();
+      expect(app.review.current!.finding.word, 'seperated',
+          reason: 'clicking another row opens that one instead');
       expect(find.text('Accept'), findsOneWidget);
       expect(find.text('Ignore'), findsOneWidget);
       expect(find.text('Add to dictionary'), findsOneWidget);
-      expect(find.text('Not in the dictionary'), findsOneWidget);
       expect(app.selectedBlockId, 'a', reason: 'the page moved to it');
 
       await t.tap(find.text('Accept'));
@@ -421,7 +426,7 @@ void main() {
       expect(textOf('a'), contains('separated'));
 
       // A tick on a closed row.
-      await t.tap(find.byTooltip('Accept').first);
+      await t.tap(find.byKey(const ValueKey('review-accept')).first);
       await t.pumpAndSettle();
       expect(textOf('a'), contains('receive'));
       // And the one that is left, which the card moved on to.
@@ -435,14 +440,15 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await start(t, texts(), mount: true);
       await openPanel(t);
-      await t.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await t.pumpAndSettle();
-      expect(app.review.current!.finding.word, 'recieve');
+      // The top one is already open, so Enter accepts it.
       await t.sendKeyEvent(LogicalKeyboardKey.enter);
       await t.pumpAndSettle();
       expect(textOf('a'), contains('receive'));
       expect(app.review.current!.finding.word, 'seperated',
           reason: 'the card moves on to what was below it');
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await t.pumpAndSettle();
+      expect(app.review.current!.finding.word, ' ,');
       await t.sendKeyEvent(LogicalKeyboardKey.delete);
       await t.pumpAndSettle();
       expect(app.writingIgnored, hasLength(1));
@@ -470,8 +476,7 @@ void main() {
       await start(t, texts(), mount: true, locale: const Locale('de', 'DE'));
       await look(t);
       await t.pump();
-      expect(find.byTooltip('Review writing (F7)'), findsNothing);
-      expect(find.byTooltip('Text prüfen (F7)'), findsNothing);
+      expect(find.byType(ReviewChip), findsNothing);
       await t.sendKeyEvent(LogicalKeyboardKey.f7);
       await t.pumpAndSettle();
       expect(app.openPanel, isNull);
@@ -490,6 +495,74 @@ void main() {
     });
   });
 
+  group('where it sits and how wide', () {
+    List<Block> one() => [box('a', 100, 'Cells recieve signals.')];
+
+    tw('the chip is at the far right of the status bar, with no tooltip',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await start(t, one(), mount: true, window: const Size(1600, 900));
+      await look(t);
+      await t.pump();
+      final chip = t.getRect(find.byType(ReviewChip));
+      expect(chip.right, greaterThan(1600 - 24),
+          reason: 'at the right edge, not floating in the middle of the bar');
+      expect(
+          find.descendant(
+              of: find.byType(ReviewChip), matching: find.byType(Tooltip)),
+          findsNothing,
+          reason: 'it says what it is; a bubble on top is clutter');
+    });
+
+    tw('it is resized by its left edge, and the width is remembered',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await start(t, one(), mount: true, window: const Size(1600, 900));
+      await look(t);
+      await t.pump();
+      app.toggleReview();
+      await t.pumpAndSettle();
+      expect(t.getSize(find.byType(ReviewPanel)).width, kReviewPanelDefault + 5);
+
+      await t.drag(find.byKey(const ValueKey('review-resize')),
+          const Offset(-100, 0));
+      await t.pumpAndSettle();
+      expect(app.reviewPanelW, kReviewPanelDefault + 100,
+          reason: 'dragging left widens it: it is on the right');
+      expect(repo.getSetting('reviewPanelW'), kReviewPanelDefault + 100);
+
+      await t.drag(find.byKey(const ValueKey('review-resize')),
+          const Offset(-900, 0));
+      await t.pumpAndSettle();
+      expect(app.reviewPanelW, kReviewPanelMax, reason: 'and stops somewhere');
+      await t.drag(find.byKey(const ValueKey('review-resize')),
+          const Offset(900, 0));
+      await t.pumpAndSettle();
+      expect(app.reviewPanelW, kReviewPanelMin);
+    });
+
+    tw('panel or sheet follows the room the page has, not the window',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The same window both times. With the navigator open the page column is
+      // about 710 wide and cannot spare the panel; with it folded to its rail
+      // there is room for both.
+      await start(t, one(), mount: true, window: const Size(1000, 900));
+      await look(t);
+      await t.pump();
+      app.toggleReview();
+      await t.pumpAndSettle();
+      expect(find.byType(ReviewSheet), findsOneWidget);
+      expect(find.byType(ReviewPanel), findsNothing);
+
+      app.toggleNavCollapsed();
+      await t.pumpAndSettle();
+      expect(find.byType(ReviewPanel), findsOneWidget,
+          reason: 'the page now has the room: the window did not change');
+      expect(find.byType(ReviewSheet), findsNothing);
+    });
+  });
+
   group('on a tall, narrow window', () {
     tw('it is a sheet over the lower half, with the kinds as tabs',
         (t) async {
@@ -501,10 +574,10 @@ void main() {
             box('b', 300, 'Done ,really.'),
           ],
           mount: true,
-          window: const Size(900, 1100));
+          window: const Size(1000, 1100));
       await look(t);
       await t.pump();
-      await t.tap(find.byTooltip('Review writing (F7)'));
+      await t.tap(find.byType(ReviewChip));
       await t.pumpAndSettle();
 
       expect(find.byType(ReviewSheet), findsOneWidget);
@@ -516,9 +589,9 @@ void main() {
       expect(find.text('SPELLING · 1'), findsOneWidget);
       expect(find.text('PUNCTUATION · 1'), findsNothing);
 
-      // The tick and cross are touch-sized (26 on the desktop panel).
-      final tick = t.getSize(find.byTooltip('Accept').first);
-      expect(tick.height, greaterThanOrEqualTo(40));
+      // The top suggestion is open and its buttons are touch-sized.
+      final accept = t.getSize(find.widgetWithText(FilledButton, 'Accept'));
+      expect(accept.height, greaterThanOrEqualTo(36));
 
       await t.tap(find.text('Punctuation 1'));
       await t.pumpAndSettle();
@@ -539,7 +612,7 @@ void main() {
     tw('widening the window gives it back as a panel', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await start(t, [box('a', 100, 'Cells recieve signals.')],
-          mount: true, window: const Size(900, 1100));
+          mount: true, window: const Size(1000, 1100));
       await look(t);
       await t.pump();
       app.toggleReview();

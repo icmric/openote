@@ -381,7 +381,7 @@ void main() {
       await snap(t, key, 'nav_${b.name}_resting');
 
       // The plus beside the section list.
-      await t.tap(find.byTooltip('New section or group'));
+      await t.tap(find.byKey(const ValueKey('nav-add-section')));
       await t.pumpAndSettle();
       await snap(t, key, 'nav_${b.name}_plus_menu');
       await t.sendKeyEvent(LogicalKeyboardKey.escape);

@@ -1031,18 +1031,19 @@ class _AppShellState extends State<AppShell> {
   /// The one open panel, or null. A single switch rather than five `if`s in
   /// the Row so the F6 marker is applied in exactly one place — a panel that
   /// grew its own `if` would quietly drop out of the rotation.
-  Widget? _openPanel(BuildContext context, TreeNode? page) => switch (app.openPanel) {
+  Widget? _openPanel(TreeNode? page,
+          {required double reviewMaxWidth, required bool reviewAsSheet}) =>
+      switch (app.openPanel) {
         SidePanelKind.study => StudyPanel(app: app),
         SidePanelKind.planner => PlannerPanel(app: app),
         SidePanelKind.tags => _TagsPanel(app: app),
         SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
         SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
         // Gone for anyone not writing English, and drawn as a sheet instead of
-        // in this slot on a narrow window (see `_shell`).
-        SidePanelKind.review => !app.review.available ||
-                MediaQuery.sizeOf(context).width < kReviewSheetBelow
+        // in this slot when the page would be left too narrow (see `_shell`).
+        SidePanelKind.review => !app.review.available || reviewAsSheet
             ? null
-            : ReviewPanel(app: app),
+            : ReviewPanel(app: app, maxWidth: reviewMaxWidth),
         null => null,
       };
 
@@ -1428,10 +1429,6 @@ class _AppShellState extends State<AppShell> {
       listenable: app,
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
-        final panel = _openPanel(context, page);
-        final reviewSheet = app.openPanel == SidePanelKind.review &&
-            app.review.available &&
-            MediaQuery.sizeOf(context).width < kReviewSheetBelow;
         return Scaffold(
           // A `Stack`, so a reminder floats OVER the page rather than pushing
           // it. An alert that reflowed the canvas would move the line you were
@@ -1448,7 +1445,21 @@ class _AppShellState extends State<AppShell> {
               _regionWrap(_Region.sidebar, _navigator()),
               const VerticalDivider(width: 1),
               Expanded(
-                child: Column(
+                child: LayoutBuilder(builder: (context, size) {
+                // **Decided by the room the PAGE would have, not by the
+                // window.** The column to the right of the navigator is what
+                // the canvas and any panel share, so that is the width asked:
+                // a wide window with the navigator open and a narrow one with
+                // it folded can leave the same room. Review writing is a side
+                // panel while the page would keep at least [kReviewMinCanvas]
+                // beside it, and a sheet over the lower half when it would not.
+                final reviewSheet = app.openPanel == SidePanelKind.review &&
+                    app.review.available &&
+                    size.maxWidth < app.reviewPanelW + kReviewMinCanvas;
+                final panel = _openPanel(page,
+                    reviewMaxWidth: size.maxWidth - kReviewMinCanvas,
+                    reviewAsSheet: reviewSheet);
+                return Column(
                   children: [
                     _regionWrap(_Region.toolbar, CommandBar(app: app)),
                     // **No third band.** The page controls it carried are
@@ -1492,7 +1503,10 @@ class _AppShellState extends State<AppShell> {
                                             state: app))),
                           ),
                           if (panel != null) ...[
-                            const VerticalDivider(width: 1),
+                            // The review panel draws its own edge, which is
+                            // also the handle that resizes it.
+                            if (app.openPanel != SidePanelKind.review)
+                              const VerticalDivider(width: 1),
                             PanelEntryFocus(
                               node: _panelEntry,
                               child: _regionWrap(_Region.panel, panel),
@@ -1504,7 +1518,8 @@ class _AppShellState extends State<AppShell> {
                     if (reviewSheet) ReviewSheet(app: app),
                     _StatusBar(app: app),
                   ],
-                ),
+                );
+                }),
               ),
             ],
           ),
@@ -2134,24 +2149,35 @@ class _StatusBar extends StatelessWidget {
           // right alignment gives the measurement and the layout the same
           // number.
           Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: _DropIfTight(
-                text: L.of(context).shellCheatSheet,
-                style: OnoteType.caption
-                    .copyWith(color: context.surfaces.textSecondary),
+            child: LayoutBuilder(builder: (context, room) {
+              // The chip takes what it needs up to a limit and gives way after
+              // that; with next to no room it is left out rather than cut.
+              final chipMax = (room.maxWidth - 10).clamp(0.0, 170.0);
+              return Row(children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _DropIfTight(
+                    text: L.of(context).shellCheatSheet,
+                    style: OnoteType.caption
+                        .copyWith(color: context.surfaces.textSecondary),
+                  ),
+                ),
               ),
-            ),
+              // Review writing, at the far right so the cheat sheet gives way
+              // to it and not the other way round. Nothing here for anyone who
+              // is not writing English. Not a second flexible child beside the
+              // cheat sheet: two of those split the free space between them
+              // and leave the chip floating in the middle of the bar.
+              if (app.review.available && chipMax >= 60) ...[
+                const SizedBox(width: 10),
+                ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: chipMax),
+                    child: ReviewChip(app: app)),
+              ],
+            ]);
+            }),
           ),
-          // Review writing, at the far right so the cheat sheet gives way to it
-          // and not the other way round. Nothing here for anyone who is not
-          // writing English.
-          if (app.review.available) ...[
-            const SizedBox(width: 10),
-            // Flexible, so on a window too narrow for everything the chip
-            // gives way (its words shorten) rather than the row overflowing.
-            Flexible(child: ReviewChip(app: app)),
-          ],
         ],
       ),
     );

@@ -48,7 +48,12 @@ class SidePanel extends StatelessWidget {
     this.actions = const [],
     this.banner,
     this.footer,
+    this.width = OnoteSize.panelWidth,
   });
+
+  /// How wide the panel is. The standard width unless a panel lets the person
+  /// resize it.
+  final double width;
 
   /// Shown in `overline` — the app's only all-caps style, reserved for panel
   /// titles and list-group labels so it keeps meaning something.
@@ -82,7 +87,7 @@ class SidePanel extends StatelessWidget {
     // wrapper before reaching the first real control.
     final entry = PanelEntryFocus.maybeOf(context);
     return Container(
-      width: OnoteSize.panelWidth,
+      width: width,
       // `chrome`, never `canvas`: in dark mode a panel on the canvas colour
       // merged into the page, so the two regions became one black rectangle.
       color: s.chrome,
