@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -85,12 +86,131 @@ class _BoardBlockViewState extends State<BoardBlockView> {
       if (mounted && !_editFocus.hasFocus) _commitEditor();
     });
 
+  // ── Scrolling, and keeping it inside the board ──────────────────────────
+  //
+  // Measured on the shipped build before anything was changed: a wheel notch
+  // over a board moved the PAGE by 120px and the board by nothing, with
+  // 654px of columns sitting off the right-hand edge and no way to reach
+  // them; a two-finger vertical pan did the same; and a column of thirty
+  // cards overflowed its own block by 859px, which is cards that could not
+  // be reached at all.
+  //
+  // Three faults, one shape: the board had no scroller of its own in the
+  // axis being asked for, so every gesture fell through to the page canvas,
+  // which is listening for the same events. Graphs hit this first and the
+  // machinery already exists: a wheel notch goes through
+  // [GestureBinding.pointerSignalResolver] (`page_canvas.dart` registers
+  // there too, and the innermost registrant is the one that runs), and a
+  // trackpad's `PointerPanZoom` family, which is dispatched to every
+  // `Listener` on the hit-test chain rather than resolved, goes through
+  // [AppState.claimedPointers], which `PageCanvas` checks before it pans.
+
+  /// The column geometry, named because [_columnAt] has to do the arithmetic
+  /// the `Row` does in order to say which column a pointer is over.
+  static const double _colWidth = 210;
+  static const double _colGap = 8;
+  static const double _boardPad = 8;
+
+  /// The board's own sideways scroller, and one per column for its cards.
+  final ScrollController _hScroll = ScrollController();
+  final Map<int, ScrollController> _vScroll = {};
+
+  ScrollController _columnScroll(int i) =>
+      _vScroll.putIfAbsent(i, () => ScrollController());
+
+  /// The pointer this board claimed for a trackpad gesture, if any.
+  int? _panZoomPointer;
+
+  /// Whether that gesture's vertical travel has to be spent sideways; see
+  /// [_panZoomUpdate].
+  bool _panVerticallyScrollsBoard = false;
+
   @override
   void initState() {
     super.initState();
     // The cursor marker is only drawn while the board actually has the
     // keyboard, so gaining and losing focus has to repaint.
     _keys.addListener(_repaint);
+  }
+
+  /// Whether [c] can still travel in [delta]'s direction. A scroller that is
+  /// already at the end of its rope must NOT claim the gesture: that is the
+  /// difference between a board that keeps its own scrolling and a board the
+  /// page cannot be scrolled past.
+  bool _canScroll(ScrollController c, double delta) {
+    if (!c.hasClients) return false;
+    final p = c.position;
+    return (p.pixels + delta).clamp(p.minScrollExtent, p.maxScrollExtent) !=
+        p.pixels;
+  }
+
+  void _scrollBy(ScrollController c, double delta) {
+    final p = c.position;
+    c.jumpTo((p.pixels + delta).clamp(p.minScrollExtent, p.maxScrollExtent));
+  }
+
+  /// The card scroller of the column under [local], or null past the last
+  /// column (the "add a column" button lives there).
+  ScrollController? _columnAt(Offset local) {
+    final n = _cols().length;
+    final scrolled = _hScroll.hasClients ? _hScroll.offset : 0.0;
+    final i =
+        ((local.dx - _boardPad + scrolled) / (_colWidth + _colGap)).floor();
+    return (i < 0 || i >= n) ? null : _columnScroll(i);
+  }
+
+  /// A wheel notch over the board.
+  ///
+  /// A column with somewhere to go has already registered itself with the
+  /// resolver and wins, being inner, so a vertical notch arriving here is
+  /// one no column wanted. A board is a sideways thing, so it is spent
+  /// sideways rather than left to slide the page out from under the board.
+  /// When the board cannot move either, nothing is registered and the page
+  /// gets the notch as before: an inner scroller holding a gesture it cannot
+  /// use is the dead zone this is meant to avoid, not a fix.
+  void _wheel(PointerSignalEvent e) {
+    if (e is! PointerScrollEvent) return;
+    final delta = e.scrollDelta.dx != 0 ? e.scrollDelta.dx : e.scrollDelta.dy;
+    if (delta == 0 || !_canScroll(_hScroll, delta)) return;
+    GestureBinding.instance.pointerSignalResolver
+        .register(e, (_) => _scrollBy(_hScroll, delta));
+  }
+
+  /// A trackpad's two-finger pan, claimed so the page does not move too.
+  ///
+  /// The claim is conditional, unlike a graph's: a graph always has a window
+  /// to pan, while a default three-column board fits inside its block with
+  /// nothing to scroll in either direction, and freezing the page over one
+  /// would trade this bug for a worse one.
+  void _panZoomStart(PointerPanZoomStartEvent e) {
+    final col = _columnAt(e.localPosition);
+    final cards =
+        col != null && col.hasClients && col.position.maxScrollExtent > 0;
+    final sideways =
+        _hScroll.hasClients && _hScroll.position.maxScrollExtent > 0;
+    if (!cards && !sideways) return;
+    _panZoomPointer = e.pointer;
+    _panVerticallyScrollsBoard = !cards;
+    app.claimedPointers.add(e.pointer);
+  }
+
+  void _panZoomUpdate(PointerPanZoomUpdateEvent e) {
+    if (_panZoomPointer != e.pointer) return;
+    // The inner `Scrollable`s take what they can through the gesture arena:
+    // a column takes the vertical travel, the board takes the horizontal.
+    // What is left is a vertical pan over a column with no cards to scroll,
+    // and the board spends that sideways, the same answer [_wheel] gives,
+    // so a trackpad and a mouse do not disagree about what a board does.
+    if (!_panVerticallyScrollsBoard || e.panDelta.dy == 0) return;
+    if (_canScroll(_hScroll, -e.panDelta.dy)) {
+      _scrollBy(_hScroll, -e.panDelta.dy);
+    }
+  }
+
+  void _panZoomEnd(PointerPanZoomEndEvent e) {
+    if (_panZoomPointer != e.pointer) return;
+    app.claimedPointers.remove(e.pointer);
+    _panZoomPointer = null;
   }
 
   void _repaint() {
@@ -103,6 +223,14 @@ class _BoardBlockViewState extends State<BoardBlockView> {
     _keys.dispose();
     _editFocus.dispose();
     _editCtrl.dispose();
+    // A gesture in flight when the block goes away would leave its pointer
+    // claimed for good, and `PageCanvas` would decline to pan for it for the
+    // rest of the session.
+    if (_panZoomPointer != null) app.claimedPointers.remove(_panZoomPointer);
+    _hScroll.dispose();
+    for (final c in _vScroll.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -354,7 +482,8 @@ class _BoardBlockViewState extends State<BoardBlockView> {
   }
 
   void _moveCard(_CardRef from, int toCol, int toIndex) {
-    if (from.col == toCol && (from.card == toIndex || from.card == toIndex - 1)) {
+    if (from.col == toCol &&
+        (from.card == toIndex || from.card == toIndex - 1)) {
       return; // dropped where it already is
     }
     _mutate((cols) {
@@ -396,36 +525,43 @@ class _BoardBlockViewState extends State<BoardBlockView> {
 
   Widget _board(
       BuildContext context, List<Map<String, dynamic>> cols, bool dark) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var i = 0; i < cols.length; i++) ...[
-              _column(context, i, cols[i], dark),
-              const SizedBox(width: 8),
-            ],
-            // Small on purpose: adding a column is rare after week one.
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Tooltip(
-                message: 'Add a column',
-                child: InkWell(
-                  mouseCursor: WidgetStateMouseCursor.clickable,
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () => _mutate((cols) =>
-                      cols.add({'title': 'New column', 'cards': <String>[]})),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child:
-                        Icon(Icons.add, size: 16, color: OnoteColors.graphite400),
+    return Listener(
+      onPointerSignal: _wheel,
+      onPointerPanZoomStart: _panZoomStart,
+      onPointerPanZoomUpdate: _panZoomUpdate,
+      onPointerPanZoomEnd: _panZoomEnd,
+      child: Padding(
+        padding: const EdgeInsets.all(_boardPad),
+        child: SingleChildScrollView(
+          controller: _hScroll,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < cols.length; i++) ...[
+                _column(context, i, cols[i], dark),
+                const SizedBox(width: _colGap),
+              ],
+              // Small on purpose: adding a column is rare after week one.
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Tooltip(
+                  message: 'Add a column',
+                  child: InkWell(
+                    mouseCursor: WidgetStateMouseCursor.clickable,
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => _mutate((cols) =>
+                        cols.add({'title': 'New column', 'cards': <String>[]})),
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(Icons.add,
+                          size: 16, color: OnoteColors.graphite400),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -436,7 +572,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
     final cards = _cards(col);
     final title = '${col['title'] ?? ''}';
     return Container(
-      width: 210,
+      width: _colWidth,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: dark ? OnoteColors.night100 : OnoteColors.paper100,
@@ -486,51 +622,72 @@ class _BoardBlockViewState extends State<BoardBlockView> {
               ),
           ]),
           const SizedBox(height: 4),
-          for (var j = 0; j < cards.length; j++)
-            _dropZone(
-              i,
-              j,
-              child: _editingCard == (col: i, card: j)
-                  ? Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: _inlineEditor(),
-                    )
-                  : _card(context, i, j, cards[j], dark),
+          // **The cards scroll, the heading does not.** A board block is a
+          // fixed-height thing on the page, and a column of thirty cards
+          // overflowed it by 859px, a yellow-and-black bar across work that
+          // could not be reached by any means. `Flexible` rather than
+          // `Expanded` so a column that FITS is still only as tall as its
+          // cards: a board of three short columns looked right and has to go
+          // on looking right.
+          Flexible(
+            child: SingleChildScrollView(
+              controller: _columnScroll(i),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var j = 0; j < cards.length; j++)
+                    _dropZone(
+                      i,
+                      j,
+                      child: _editingCard == (col: i, card: j)
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: _inlineEditor(),
+                            )
+                          : _card(context, i, j, cards[j], dark),
+                    ),
+                  // The column's tail catches drops below the last card — and IS the
+                  // whole surface of an empty column.
+                  _dropZone(i, cards.length,
+                      child: _addingTo == i
+                          ? _inlineEditor()
+                          : DecoratedBox(
+                              decoration: _onCursor(i, cards.length)
+                                  ? BoxDecoration(
+                                      border: Border.all(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          width: 2),
+                                      borderRadius: BorderRadius.circular(6))
+                                  : const BoxDecoration(),
+                              child: InkWell(
+                                mouseCursor: WidgetStateMouseCursor.clickable,
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () => _startEditing(() {
+                                  _addingTo = i;
+                                  _editCtrl.clear();
+                                }),
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(children: [
+                                    SizedBox(width: 4),
+                                    Icon(Icons.add,
+                                        size: 13,
+                                        color: OnoteColors.graphite400),
+                                    SizedBox(width: 4),
+                                    Text('Add a card',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: OnoteColors.graphite400)),
+                                  ]),
+                                ),
+                              ))),
+                ],
+              ),
             ),
-          // The column's tail catches drops below the last card — and IS the
-          // whole surface of an empty column.
-          _dropZone(i, cards.length,
-              child: _addingTo == i
-                  ? _inlineEditor()
-                  : DecoratedBox(
-                      decoration: _onCursor(i, cards.length)
-                          ? BoxDecoration(
-                              border: Border.all(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: 2),
-                              borderRadius: BorderRadius.circular(6))
-                          : const BoxDecoration(),
-                      child: InkWell(
-                        mouseCursor: WidgetStateMouseCursor.clickable,
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () => _startEditing(() {
-                        _addingTo = i;
-                        _editCtrl.clear();
-                      }),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
-                        child: Row(children: [
-                          SizedBox(width: 4),
-                          Icon(Icons.add,
-                              size: 13, color: OnoteColors.graphite400),
-                          SizedBox(width: 4),
-                          Text('Add a card',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: OnoteColors.graphite400)),
-                        ]),
-                      ),
-                    ))),
+          ),
         ],
       ),
     );
@@ -566,8 +723,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
         side: _onCursor(col, idx)
-            ? BorderSide(
-                color: Theme.of(context).colorScheme.primary, width: 2)
+            ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
             : BorderSide.none,
       ),
       elevation: 1,
@@ -605,8 +761,8 @@ class _BoardBlockViewState extends State<BoardBlockView> {
               onTap: () => _deleteCard(col, idx),
               child: const Padding(
                 padding: EdgeInsets.all(2),
-                child: Icon(Icons.close,
-                    size: 13, color: OnoteColors.graphite400),
+                child:
+                    Icon(Icons.close, size: 13, color: OnoteColors.graphite400),
               ),
             ),
           ),
