@@ -733,7 +733,7 @@ class LZh extends L {
   String get navBinKindSection => '分区';
 
   @override
-  String get navBinKindGroup => '分区组';
+  String get navBinKindGroup => '分组';
 
   @override
   String get navBinKindNotebook => '笔记本';
@@ -767,6 +767,14 @@ class LZh extends L {
 
   @override
   String get reviewTooltip => '检查文字（F7）';
+
+  @override
+  String get reviewChecking => '正在检查文字…';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return '还原为“$word”';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -927,7 +935,7 @@ class LZh extends L {
   String get navNewSection => '新建分区';
 
   @override
-  String get navNewSectionGroup => '新建分区组';
+  String get navNewSectionGroup => '新建分组';
 
   @override
   String get navNoGroupTopLevel => '（不属于任何组 — 顶层）';

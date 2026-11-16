@@ -759,7 +759,7 @@ class LDe extends L {
   String get navBinKindSection => 'Abschnitt';
 
   @override
-  String get navBinKindGroup => 'Abschnittsgruppe';
+  String get navBinKindGroup => 'Gruppe';
 
   @override
   String get navBinKindNotebook => 'Notizbuch';
@@ -793,6 +793,14 @@ class LDe extends L {
 
   @override
   String get reviewTooltip => 'Text prüfen (F7)';
+
+  @override
+  String get reviewChecking => 'Text wird geprüft …';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return '„$word“ wiederherstellen';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -973,7 +981,7 @@ class LDe extends L {
   String get navNewSection => 'Neuer Abschnitt';
 
   @override
-  String get navNewSectionGroup => 'Neue Abschnittsgruppe';
+  String get navNewSectionGroup => 'Neue Gruppe';
 
   @override
   String get navNoGroupTopLevel => '(Keine Gruppe — oberste Ebene)';

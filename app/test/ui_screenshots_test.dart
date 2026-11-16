@@ -30,6 +30,7 @@ import 'package:openote/core/onote_text.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
+import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/export/import_job.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -433,6 +434,61 @@ void main() {
       app.navPagesW = w;
       final key = await mountNav(t, app, Brightness.light);
       await snap(t, key, 'nav_places_${w.toInt()}');
+      app.cancelPendingSave();
+    });
+  }
+
+  // ── The marker under a word the app corrected ──────────────────────────────
+  for (final b in [Brightness.light, Brightness.dark]) {
+    testWidgets('autocorrect marker ${b.name}', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      app.systemLocale = () => const Locale('en', 'AU');
+      final blk = Block(
+          id: 'fx',
+          type: BlockType.text,
+          x: 0,
+          y: 0,
+          w: 380,
+          content: {
+            'text': 'We went to the lab and I think we dont',
+            'autoWidth': false
+          });
+      app.editingBlockId = 'fx';
+      t.view.physicalSize = const Size(460, 150);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final key = GlobalKey();
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(b),
+        debugShowCheckedModeBanner: false,
+        builder: (c, child) => RepaintBoundary(key: key, child: child),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SizedBox(
+                width: 380, child: TextBlockView(block: blk, app: app)),
+          ),
+        ),
+      ));
+      await t.showKeyboard(find.byType(TextField));
+      const before = 'We went to the lab and I think we dont';
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+          text: before, selection: TextSelection.collapsed(offset: before.length)));
+      await t.pump();
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+          text: '$before ',
+          selection: TextSelection.collapsed(offset: before.length + 1)));
+      await t.pump();
+      await t.pump();
+      await t.pump();
+      await expectLater(
+          find.byKey(key), matchesGoldenFile('goldens/autocorrect_marker_${b.name}.png'));
+      await t.pumpWidget(const SizedBox());
+      await t.pump(const Duration(seconds: 2));
       app.cancelPendingSave();
     });
   }

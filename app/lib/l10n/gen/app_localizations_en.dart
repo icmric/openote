@@ -758,7 +758,7 @@ class LEn extends L {
   String get navBinKindSection => 'Section';
 
   @override
-  String get navBinKindGroup => 'Section group';
+  String get navBinKindGroup => 'Group';
 
   @override
   String get navBinKindNotebook => 'Notebook';
@@ -792,6 +792,14 @@ class LEn extends L {
 
   @override
   String get reviewTooltip => 'Review writing (F7)';
+
+  @override
+  String get reviewChecking => 'Checking your writing…';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return 'Put back “$word”';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -971,7 +979,7 @@ class LEn extends L {
   String get navNewSection => 'New section';
 
   @override
-  String get navNewSectionGroup => 'New section group';
+  String get navNewSectionGroup => 'New group';
 
   @override
   String get navNoGroupTopLevel => '(No group — top level)';

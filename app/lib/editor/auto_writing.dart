@@ -35,7 +35,10 @@ class AutoFix {
     required this.replacement,
     required this.start,
     required this.before,
-  });
+    String? typed,
+    String? put,
+  })  : typed = typed ?? original,
+        put = put ?? replacement;
 
   /// The edited value, to put in the field.
   final TextEditingValue value;
@@ -43,6 +46,13 @@ class AutoFix {
   /// The word as typed, and what it became.
   final String original;
   final String replacement;
+
+  /// The characters this fix took out of the text, and the ones it put in their
+  /// place, at [start]. For a single word they are [original] and [replacement];
+  /// for a pair (`its a`) only the first word was touched, so they are that word
+  /// and its fix, which is what the "put it back" marker needs.
+  final String typed;
+  final String put;
 
   /// Where the word starts.
   final int start;
@@ -232,6 +242,8 @@ AutoFix? _fixPrevious(String t, TextEditingValue next, int ws, int we,
     // the single word.
     original: key,
     replacement: '${fixed.toLowerCase()} $follower',
+    typed: prev,
+    put: fixed,
     start: ps,
     before: next,
   );

@@ -758,7 +758,7 @@ class LEs extends L {
   String get navBinKindSection => 'Sección';
 
   @override
-  String get navBinKindGroup => 'Grupo de secciones';
+  String get navBinKindGroup => 'Grupo';
 
   @override
   String get navBinKindNotebook => 'Cuaderno';
@@ -792,6 +792,14 @@ class LEs extends L {
 
   @override
   String get reviewTooltip => 'Revisar la escritura (F7)';
+
+  @override
+  String get reviewChecking => 'Revisando la escritura…';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return 'Volver a «$word»';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -971,7 +979,7 @@ class LEs extends L {
   String get navNewSection => 'Nueva sección';
 
   @override
-  String get navNewSectionGroup => 'Nuevo grupo de secciones';
+  String get navNewSectionGroup => 'Nuevo grupo';
 
   @override
   String get navNoGroupTopLevel => '(Sin grupo — nivel superior)';

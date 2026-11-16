@@ -1286,7 +1286,7 @@ abstract class L {
   /// A section group.
   ///
   /// In en, this message translates to:
-  /// **'Section group'**
+  /// **'Group'**
   String get navBinKindGroup;
 
   /// A notebook.
@@ -1342,6 +1342,18 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Review writing (F7)'**
   String get reviewTooltip;
+
+  /// Read out by a screen reader for the status bar entry while the page is still being checked. Not shown on screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your writing…'**
+  String get reviewChecking;
+
+  /// Read out by a screen reader for the small marker that appears under a word the app corrected by itself; pressing it puts the word back as it was typed. {word} is the word as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Put back “{word}”'**
+  String fixNoticeRevert(String word);
 
   /// Line under the panel title. {language} is the English the person writes, e.g. English (Australia).
   ///
@@ -1634,7 +1646,7 @@ abstract class L {
   /// Tooltip. A section group is a folder holding several sections.
   ///
   /// In en, this message translates to:
-  /// **'New section group'**
+  /// **'New group'**
   String get navNewSectionGroup;
 
   /// The choice in that dialog meaning 'not inside any group'.

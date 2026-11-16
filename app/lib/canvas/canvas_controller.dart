@@ -219,7 +219,42 @@ class CanvasController extends ChangeNotifier {
   /// canvas does not need to know.
   bool get isFollowingCaret => _following;
 
+  /// Which glide is current. Anything that moves the view by hand bumps it, and
+  /// a glide that finds it has been overtaken stops where it is.
+  int _glideGen = 0;
+
+  /// **Slide the view so [pagePoint] is centred**, rather than jumping there:
+  /// where a person is being taken (the next suggestion in Review writing) it
+  /// reads as a place on the page and not as a cut. About a third of a second,
+  /// easing in and out; a hand on the wheel or a zoom ends it at once.
+  void glideTo(Offset pagePoint) {
+    // Nothing on screen to slide: just be there.
+    if (viewport == Size.zero) return centerOn(pagePoint);
+    _stopFollowing();
+    final gen = _glideGen;
+    final from = offset;
+    final keep = offset;
+    offset = Offset(viewport.width / 2, viewport.height / 2) - pagePoint * scale;
+    clampToPage();
+    final to = offset;
+    offset = keep;
+    if ((to - from).distance < 1) return;
+    const total = 350000; // microseconds
+    Duration? start;
+    void tick(Duration stamp) {
+      if (gen != _glideGen) return;
+      start ??= stamp;
+      final p = ((stamp - start!).inMicroseconds / total).clamp(0.0, 1.0);
+      offset = Offset.lerp(from, to, Curves.easeInOutCubic.transform(p))!;
+      notifyListeners();
+      if (p < 1) SchedulerBinding.instance.scheduleFrameCallback(tick);
+    }
+
+    SchedulerBinding.instance.scheduleFrameCallback(tick);
+  }
+
   void _stopFollowing() {
+    _glideGen++;
     _following = false;
     _followTargetDy = null;
     _lastTickMs = null;

@@ -1018,7 +1018,7 @@
   "@navBinKindSection": {
     "description": "A section."
   },
-  "navBinKindGroup": "Section group",
+  "navBinKindGroup": "Group",
   "@navBinKindGroup": {
     "description": "A section group."
   },
@@ -1075,6 +1075,19 @@
   "reviewTooltip": "Review writing (F7)",
   "@reviewTooltip": {
     "description": "Tooltip on the status bar entry. Keep the key name F7 as is."
+  },
+  "reviewChecking": "Checking your writing…",
+  "@reviewChecking": {
+    "description": "Read out by a screen reader for the status bar entry while the page is still being checked. Not shown on screen."
+  },
+  "fixNoticeRevert": "Put back “{word}”",
+  "@fixNoticeRevert": {
+    "description": "Read out by a screen reader for the small marker that appears under a word the app corrected by itself; pressing it puts the word back as it was typed. {word} is the word as typed.",
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
   },
   "reviewSubtitle": "On this page · {count} to review · {language}",
   "@reviewSubtitle": {
@@ -1307,7 +1320,7 @@
   "@navNewSection": {
     "description": "Button that adds a section."
   },
-  "navNewSectionGroup": "New section group",
+  "navNewSectionGroup": "New group",
   "@navNewSectionGroup": {
     "description": "Tooltip. A section group is a folder holding several sections."
   },

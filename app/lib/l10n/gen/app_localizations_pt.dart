@@ -756,7 +756,7 @@ class LPt extends L {
   String get navBinKindSection => 'Seção';
 
   @override
-  String get navBinKindGroup => 'Grupo de seções';
+  String get navBinKindGroup => 'Grupo';
 
   @override
   String get navBinKindNotebook => 'Caderno';
@@ -790,6 +790,14 @@ class LPt extends L {
 
   @override
   String get reviewTooltip => 'Revisar a escrita (F7)';
+
+  @override
+  String get reviewChecking => 'Verificando a escrita…';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return 'Voltar para “$word”';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -969,7 +977,7 @@ class LPt extends L {
   String get navNewSection => 'Nova seção';
 
   @override
-  String get navNewSectionGroup => 'Novo grupo de seções';
+  String get navNewSectionGroup => 'Novo grupo';
 
   @override
   String get navNoGroupTopLevel => '(Sem grupo — nível principal)';

@@ -758,7 +758,7 @@ class LFr extends L {
   String get navBinKindSection => 'Section';
 
   @override
-  String get navBinKindGroup => 'Groupe de sections';
+  String get navBinKindGroup => 'Groupe';
 
   @override
   String get navBinKindNotebook => 'Carnet';
@@ -792,6 +792,14 @@ class LFr extends L {
 
   @override
   String get reviewTooltip => 'Relire le texte (F7)';
+
+  @override
+  String get reviewChecking => 'Vérification du texte…';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return 'Remettre « $word »';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -972,7 +980,7 @@ class LFr extends L {
   String get navNewSection => 'Nouvelle section';
 
   @override
-  String get navNewSectionGroup => 'Nouveau groupe de sections';
+  String get navNewSectionGroup => 'Nouveau groupe';
 
   @override
   String get navNoGroupTopLevel => '(Aucun groupe — premier niveau)';

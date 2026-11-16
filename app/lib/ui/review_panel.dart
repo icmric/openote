@@ -15,19 +15,16 @@ import 'package:flutter/services.dart';
 
 import '../core/onote_text.dart';
 import '../l10n/l10n.dart';
+import '../spell/review_marks.dart';
 import '../spell/writing_review.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'icon_tap.dart';
 import 'side_panel.dart';
 import 'toast.dart';
 
-/// The colour of each kind, the same ones the underlines use.
-Color reviewColor(ReviewCategory c) => switch (c) {
-      ReviewCategory.spelling => const Color(0xFFE5484D),
-      ReviewCategory.grammar => const Color(0xFF4C8DF6),
-      ReviewCategory.punctuation => const Color(0xFFD9971F),
-    };
+export '../spell/review_marks.dart' show reviewColor;
 
 String _categoryName(L l, ReviewCategory c) => switch (c) {
       ReviewCategory.spelling => l.reviewSpelling,
@@ -46,8 +43,12 @@ String _dialectName(L l, EnglishDialect? d) => switch (d) {
 
 // ── The status bar entry ─────────────────────────────────────────────────────
 
-/// The count, at the right of the status bar. Nothing at all while the person
-/// is not writing English, and nothing until the page has been looked at once.
+/// Review writing's place at the right of the status bar. **Always the same
+/// size and always there while writing English**, so nothing around it moves:
+/// the spell-check icon, and in its small fixed slot one of three things, a
+/// turning ring while the page is being looked at, a tick when nothing needs
+/// attention, or the number of suggestions. No words, so it reads the same in
+/// every language; the words are for a screen reader.
 class ReviewChip extends StatelessWidget {
   const ReviewChip({super.key, required this.app});
   final AppState app;
@@ -58,20 +59,38 @@ class ReviewChip extends StatelessWidget {
     return ListenableBuilder(
       listenable: review,
       builder: (context, _) {
-        if (!review.checked) return const SizedBox.shrink();
         final l = L.of(context);
+        final checked = review.checked;
         final n = review.count;
         final scheme = Theme.of(context).colorScheme;
         final open = app.openPanel == SidePanelKind.review;
-        final clear = n == 0;
+        final clear = checked && n == 0;
         final fg = open
             ? scheme.onPrimary
             : clear
                 ? OnoteColors.success
-                : scheme.primary;
-        // No tooltip: the chip says what it is. The label is for a screen reader.
+                : checked
+                    ? scheme.primary
+                    : context.surfaces.textSecondary;
+        final Widget slot = !checked
+            ? _WorkingRing(key: const ValueKey('review-working'), color: fg)
+            : clear
+                ? Icon(Icons.check,
+                    key: const ValueKey('review-clear'), size: 14, color: fg)
+                : Text(n > 99 ? '99+' : '$n',
+                    key: const ValueKey('review-count'),
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700, color: fg));
+        // No tooltip: an icon and a number need no bubble. The words are here
+        // for a screen reader only.
         return Semantics(
-          label: l.reviewTooltip,
+          label: !checked
+              ? l.reviewChecking
+              : clear
+                  ? l.reviewChipClear
+                  : l.reviewChip(n),
           button: true,
           excludeSemantics: true,
           child: InkWell(
@@ -79,28 +98,32 @@ class ReviewChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             onTap: app.toggleReview,
             child: Container(
-              height: 20,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              height: 22,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
               decoration: BoxDecoration(
                 color: open
                     ? scheme.primary
-                    : clear
-                        ? null
-                        : scheme.primary.withValues(alpha: .14),
-                borderRadius: BorderRadius.circular(10),
+                    : checked && !clear
+                        ? scheme.primary.withValues(alpha: .18)
+                        : null,
+                // An outline even when nothing needs attention, so it reads
+                // as a button and is not missed at the end of the bar.
+                border: Border.all(
+                    color: open
+                        ? scheme.primary
+                        : clear
+                            ? OnoteColors.success.withValues(alpha: .6)
+                            : scheme.primary.withValues(alpha: .5)),
+                borderRadius: BorderRadius.circular(11),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.spellcheck, size: 14, color: fg),
+                Icon(Icons.spellcheck, size: 16, color: fg),
                 const SizedBox(width: 5),
-                Flexible(
-                  child: Text(clear ? l.reviewChipClear : l.reviewChip(n),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: clear ? FontWeight.w400 : FontWeight.w600,
-                        color: fg)),
+                // The slot keeps the chip one size whichever it holds (a count
+                // of two digits is the only thing that makes it a little wider).
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 14),
+                  child: Center(widthFactor: 1, child: slot),
                 ),
               ]),
             ),
@@ -109,6 +132,75 @@ class ReviewChip extends StatelessWidget {
       },
     );
   }
+}
+
+/// A small ring that turns while the page is being looked at. It stops turning
+/// after about half a minute and stays as a still ring: a check that takes that
+/// long has something wrong with it, and a spinner that never ends is its own
+/// alarm.
+class _WorkingRing extends StatefulWidget {
+  const _WorkingRing({super.key, required this.color});
+  final Color color;
+
+  @override
+  State<_WorkingRing> createState() => _WorkingRingState();
+}
+
+class _WorkingRingState extends State<_WorkingRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 900));
+  int _turns = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _c.addStatusListener((st) {
+      if (st == AnimationStatus.completed && mounted && ++_turns < 35) {
+        _c.forward(from: 0);
+      }
+    });
+    _c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 11,
+        height: 11,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) => CustomPaint(
+              painter: _RingPainter(widget.color, _c.value * 6.2832)),
+        ),
+      );
+}
+
+class _RingPainter extends CustomPainter {
+  _RingPainter(this.color, this.turn);
+  final Color color;
+  final double turn;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = Offset.zero & size;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(r.deflate(1), 0, 6.2832, false,
+        paint..color = color.withValues(alpha: .25));
+    canvas.drawArc(r.deflate(1), turn, 1.7, false, paint..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.turn != turn || old.color != color;
 }
 
 // ── The side panel ───────────────────────────────────────────────────────────
@@ -176,8 +268,12 @@ class ReviewSheet extends StatelessWidget {
     final l = L.of(context);
     final s = context.surfaces;
     final h = MediaQuery.sizeOf(context).height;
+    // A share of the window, kept between a floor that still shows a few rows
+    // and a ceiling that leaves the page its top.
+    final top = (h * kReviewSheetMax).clamp(160.0, double.infinity);
+    final height = (h * app.reviewSheetShare).clamp(160.0, top).toDouble();
     return Container(
-      height: (h * 0.5).clamp(260.0, 560.0),
+      height: height,
       decoration: BoxDecoration(
         color: s.chrome,
         border: Border(top: BorderSide(color: s.border)),
@@ -188,17 +284,38 @@ class ReviewSheet extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
       ),
       child: Column(children: [
-        Center(
-          child: Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(top: 8),
-            decoration: BoxDecoration(
-                color: s.border, borderRadius: BorderRadius.circular(2)),
+        // The grey bar is a handle, and does what it looks like it does: drag it
+        // up for more of the list, down for more of the page. The strip around
+        // it is the target, so it does not have to be hit exactly.
+        MouseRegion(
+          cursor: SystemMouseCursors.resizeRow,
+          child: GestureDetector(
+            key: const ValueKey('review-sheet-resize'),
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragUpdate: (d) {
+              app.reviewSheetShare = (app.reviewSheetShare - d.delta.dy / h)
+                  .clamp(kReviewSheetMin, kReviewSheetMax)
+                  .toDouble();
+              app.refresh();
+            },
+            onVerticalDragEnd: (_) =>
+                app.setReviewSheetShare(app.reviewSheetShare),
+            child: SizedBox(
+              height: 22,
+              width: double.infinity,
+              child: Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: s.border, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+            ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
           child: Row(children: [
             Icon(Icons.spellcheck,
                 size: 16, color: Theme.of(context).colorScheme.primary),
@@ -208,9 +325,12 @@ class ReviewSheet extends StatelessWidget {
                   style: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600)),
             ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              tooltip: l.navClose,
+            IconTap(
+              icon: Icons.close,
+              label: l.navClose,
+              size: 18,
+              width: 40,
+              height: 40,
               onPressed: app.closePanel,
             ),
           ]),

@@ -10,6 +10,8 @@ import '../core/picture_bytes.dart';
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
 import '../model/inline_atom.dart';
+import '../spell/review_marks.dart';
+import '../spell/writing_review.dart' show ReviewCategory;
 import 'inline_atom_view.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
@@ -1047,7 +1049,10 @@ class LiveMarkdownController extends TextEditingController {
 
       collect(root);
       if (buf.toString() == full) {
-        final done = (misspellings.isEmpty && grammarMarks.isEmpty)
+        final done = (misspellings.isEmpty &&
+                grammarMarks.isEmpty &&
+                punctuationMarks.isEmpty &&
+                fixedMarks.isEmpty)
             ? root
             : _underlineMisspellings(root, lo, hi);
         return _hangWrappedListLines(done, full, base);
@@ -1079,17 +1084,30 @@ class LiveMarkdownController extends TextEditingController {
     notifyListeners();
   }
 
-  static const _misspellingStyle = TextStyle(
-    decoration: TextDecoration.underline,
-    decorationStyle: TextDecorationStyle.wavy,
-    decorationColor: Color(0xFFD23B3B),
-  );
+  /// Punctuation findings: the dotted line, in its own colour.
+  List<TextRange> _punctuationMarks = const [];
+  List<TextRange> get punctuationMarks => _punctuationMarks;
+  set punctuationMarks(List<TextRange> v) {
+    if (identical(v, _punctuationMarks)) return;
+    _punctuationMarks = v;
+    notifyListeners();
+  }
 
-  static const _grammarStyle = TextStyle(
-    decoration: TextDecoration.underline,
-    decorationStyle: TextDecorationStyle.wavy,
-    decorationColor: Color(0xFF3F7FE0),
-  );
+  /// A word the app has just corrected by itself, marked quietly for as long as
+  /// the "put it back" marker is up. Lowest of the four: a real finding on the
+  /// same word shows as that.
+  List<TextRange> _fixedMarks = const [];
+  List<TextRange> get fixedMarks => _fixedMarks;
+  set fixedMarks(List<TextRange> v) {
+    if (identical(v, _fixedMarks)) return;
+    _fixedMarks = v;
+    notifyListeners();
+  }
+
+  // The styles are `spell/review_marks.dart`'s, shared with the review panel.
+  static final _misspellingStyle = reviewUnderline(ReviewCategory.spelling);
+  static final _grammarStyle = reviewUnderline(ReviewCategory.grammar);
+  static final _punctuationStyle = reviewUnderline(ReviewCategory.punctuation);
 
   /// Re-split the finished span tree at misspelling boundaries and merge the
   /// wavy underline in.
@@ -1110,7 +1128,14 @@ class LiveMarkdownController extends TextEditingController {
       for (final r in _grammarMarks)
         if (!(caretLo >= r.start && caretHi <= r.end)) r
     ];
-    final ranges = [...spell, ...gram];
+    final punct = [
+      for (final r in _punctuationMarks)
+        if (!(caretLo >= r.start && caretHi <= r.end)) r
+    ];
+    // Not hidden under the caret: the word was just fixed, and the caret is
+    // right behind it.
+    final fixed = [..._fixedMarks];
+    final ranges = [...spell, ...gram, ...punct, ...fixed];
     if (ranges.isEmpty) return root;
 
     var offset = 0;
@@ -1168,7 +1193,11 @@ class LiveMarkdownController extends TextEditingController {
             ? _misspellingStyle
             : covers(gram)
                 ? _grammarStyle
-                : null;
+                : covers(punct)
+                    ? _punctuationStyle
+                    : covers(fixed)
+                        ? correctedUnderline
+                        : null;
         pieces.add(TextSpan(
           text: text.substring(a, b),
           style: mark != null

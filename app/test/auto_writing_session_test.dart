@@ -276,6 +276,110 @@ void main() {
     await settle(t);
   });
 
+  // ── The marker that says a word was changed ───────────────────────────────
+
+  /// Frames enough for the marker to be placed and then built.
+  Future<void> frames(WidgetTester t) async {
+    await t.pump();
+    await t.pump();
+  }
+
+  final marker = find.byKey(const ValueKey('fix-notice'));
+
+  testWidgets('a fixed word is marked, showing what was typed', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    expect(marker, findsNothing);
+    await type(t, c, ' ');
+    await frames(t);
+    expect(c.text, "we don't ");
+    expect(marker, findsOneWidget, reason: 'it says the app changed something');
+    expect(find.descendant(of: marker, matching: find.text('dont')),
+        findsOneWidget,
+        reason: 'with the word as it was typed, to put back');
+    expect(find.descendant(of: marker, matching: find.byIcon(Icons.undo)),
+        findsOneWidget,
+        reason: 'an icon, not words');
+    expect(
+        (app.activeEditor!.controller as dynamic).fixedMarks as List<TextRange>,
+        [const TextRange(start: 3, end: 8)],
+        reason: 'and the word carries a quiet dotted line while it is up');
+    await settle(t);
+  });
+
+  testWidgets('pressing it puts the word back, and it is not fixed again',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    await frames(t);
+    await type(t, c, 'a'); // a little more written first
+    await type(t, c, ' ');
+    expect(c.text, "we don't a ");
+
+    await t.tap(marker);
+    await frames(t);
+    expect(c.text, 'we dont a ', reason: 'the word is back as typed');
+    expect(c.selection.baseOffset, 10, reason: 'the caret has not moved off its place');
+    expect(marker, findsNothing);
+
+    for (final ch in 'and dont '.split('')) {
+      await type(t, c, ch);
+    }
+    expect(c.text, 'we dont a and dont ',
+        reason: 'the person said they meant it');
+    await settle(t);
+  });
+
+  testWidgets('it goes once a few more words are written', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    await frames(t);
+    for (final ch in 'so far '.split('')) {
+      await type(t, c, ch);
+    }
+    await frames(t);
+    expect(marker, findsOneWidget, reason: 'two words on: still there');
+    for (final ch in 'and so on '.split('')) {
+      await type(t, c, ch);
+    }
+    await frames(t);
+    expect(marker, findsNothing, reason: 'it does not pile up');
+    expect(
+        (app.activeEditor!.controller as dynamic).fixedMarks as List<TextRange>,
+        isEmpty);
+    await settle(t);
+  });
+
+  testWidgets('it goes when the caret leaves the word, or the text before it changes',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    await frames(t);
+    expect(marker, findsOneWidget);
+    c.selection = const TextSelection.collapsed(offset: 1);
+    await frames(t);
+    expect(marker, findsNothing, reason: 'the caret went back before the word');
+
+    // A newer fix replaces an older marker rather than adding a second.
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+    await frames(t);
+    for (final ch in 'and im'.split('')) {
+      await type(t, c, ch);
+    }
+    await type(t, c, ' ');
+    await frames(t);
+    expect(c.text, "we don't and I'm ");
+    expect(marker, findsOneWidget);
+    await settle(t);
+  });
+
   testWidgets("its a becomes it's a, and Ctrl+Z takes back just that",
       (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');

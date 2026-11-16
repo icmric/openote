@@ -33,6 +33,7 @@ import '../l10n/l10n.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'icon_tap.dart';
 import 'math_bar.dart';
 
 /// The palette, while an equation is being written.
@@ -165,38 +166,45 @@ class PageFace extends StatelessWidget {
         onPressed: app.toggleSnap,
       ),
       const _Sep(),
-      IconButton(
-        icon: const Icon(Icons.remove, size: OnoteIcon.md),
-        tooltip: l.objectRowZoomOut,
-        visualDensity: VisualDensity.compact,
+      // Zoom: a minus, the percentage and a plus need no bubble to say what
+      // they do, so none of them has one (the words are for a screen reader).
+      IconTap(
+        icon: Icons.remove,
+        label: l.objectRowZoomOut,
+        size: OnoteIcon.md,
+        width: 32,
+        height: 32,
         onPressed: () => app.canvas.setZoom(app.canvas.scale / 1.2),
       ),
-      // **A button, and it says so before you press it.** It was the only
-      // control on this row with no tooltip, sitting between a minus and a
-      // plus, reading as the number those two were changing — and pressing
-      // it resets the OFFSET as well as the scale, so somebody at the bottom
-      // of a long page was thrown back to the top with no warning.
-      Tooltip(
-        message: l.objectRowZoomReset,
-        child: AnimatedBuilder(
-          animation: app.canvas,
-          builder: (context, _) => TextButton(
+      // The percentage is a button too (it goes back to 100% and the top of the
+      // page), and it reads as one by being the number the two beside it change.
+      AnimatedBuilder(
+        animation: app.canvas,
+        builder: (context, _) => Semantics(
+          label: l.objectRowZoomReset,
+          button: true,
+          excludeSemantics: true,
+          child: TextButton(
             onPressed: app.canvas.reset,
             child: Text(l.objectRowZoomPercent((app.canvas.scale * 100).round()),
                 style: OnoteType.small),
           ),
         ),
       ),
-      IconButton(
-        icon: const Icon(Icons.add, size: OnoteIcon.md),
-        tooltip: l.objectRowZoomIn,
-        visualDensity: VisualDensity.compact,
+      IconTap(
+        icon: Icons.add,
+        label: l.objectRowZoomIn,
+        size: OnoteIcon.md,
+        width: 32,
+        height: 32,
         onPressed: () => app.canvas.setZoom(app.canvas.scale * 1.2),
       ),
-      IconButton(
-        icon: const Icon(Icons.fit_screen_outlined, size: OnoteIcon.md),
-        tooltip: l.objectRowZoomFit,
-        visualDensity: VisualDensity.compact,
+      IconTap(
+        icon: Icons.fit_screen_outlined,
+        label: l.objectRowZoomFit,
+        size: OnoteIcon.md,
+        width: 32,
+        height: 32,
         onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
       ),
       const SizedBox(width: 4),

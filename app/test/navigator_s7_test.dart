@@ -245,12 +245,12 @@ void main() {
       expect(find.byKey(const ValueKey('nav-add-section')), findsOneWidget);
       // The big button and the small group button at the foot are gone.
       expect(inNav(find.text('Section')), findsNothing);
-      expect(find.byTooltip('New section group'), findsNothing);
+      expect(find.byTooltip('New group'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('nav-add-section')));
       await tester.pumpAndSettle();
       expect(find.text('New section'), findsOneWidget);
-      expect(find.text('New section group'), findsOneWidget);
+      expect(find.text('New group'), findsOneWidget);
 
       final before = sections().length;
       await tester.tap(find.text('New section'));
@@ -263,7 +263,7 @@ void main() {
       await shell(tester, extra: 0);
       await tester.tap(find.byKey(const ValueKey('nav-add-section')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('New section group'));
+      await tester.tap(find.text('New group'));
       await settle(tester);
       expect(app.nodes.where((n) => n.kind == NodeKind.sectionGroup).length, 1);
       final g = app.nodes.firstWhere((n) => n.kind == NodeKind.sectionGroup);
@@ -463,6 +463,45 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Items here are permanently deleted after 30 days.'),
           findsNothing);
+    });
+  });
+
+  group('a new section goes below the one being worked in', () {
+    testWidgets('in the middle of the list, not at the end', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await shell(tester, extra: 2); // three sections
+      final first = sections()[0];
+      await tester.runAsync(() async {
+        await app.selectPage(app.pagesOf(first.id).first.id);
+        await app.addSection();
+      });
+      app.reloadNodes();
+      final order = [for (final s in sections()) s.id];
+      expect(order.indexOf(app.activeSectionId!), 1,
+          reason: 'second: straight after the first, not last');
+      expect(order.first, first.id);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and into its group when it is in one', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await shell(tester, extra: 2);
+      final s = sections();
+      final g = app.groupSectionsTogether(s[0].id, s[1].id)!;
+      app.reloadNodes();
+      await tester.runAsync(() async {
+        await app.selectPage(app.pagesOf(s[0].id).first.id);
+        await app.addSection();
+      });
+      app.reloadNodes();
+      final made = app.node(app.activeSectionId)!;
+      expect(made.parentId, g, reason: 'in the same group');
+      final inGroup = [
+        for (final n in app.nodes)
+          if (n.kind == NodeKind.section && n.parentId == g) n.id
+      ];
+      expect(inGroup.indexOf(made.id), 1, reason: 'right below the active one');
+      app.cancelPendingSave();
     });
   });
 }

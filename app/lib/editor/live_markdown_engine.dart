@@ -14,6 +14,7 @@ import '../model/tags.dart';
 import '../core/onote_text.dart' show OnoteText, TextFinding;
 import '../spell/autocorrect_table.dart';
 import '../spell/spell_checker.dart';
+import '../spell/writing_review.dart' show ReviewCategory;
 import '../spell/writing_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -25,6 +26,7 @@ import '../canvas/portal_view.dart';
 import 'auto_writing.dart';
 import 'block_atom_host.dart';
 import 'emphasis_guard.dart';
+import 'fix_notice.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
 import 'math_paste_formatter.dart';
@@ -1212,6 +1214,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     if (dialect == null || (!spelling && !grammar)) {
       controller.misspellings = const [];
       controller.grammarMarks = const [];
+      controller.punctuationMarks = const [];
       _grammarFindings = const [];
       _spellingFindings = const [];
       return;
@@ -1234,8 +1237,17 @@ class _LiveMarkdownSession extends OnoteEditSession {
       _spellingFindings = spelled;
       _grammarFindings = flagged;
       controller.misspellings = _visibleSpelling();
+      // Grammar and punctuation are drawn differently (a double line and a
+      // dotted one), the same way the review panel tells them apart.
       controller.grammarMarks = [
-        for (final f in flagged) TextRange(start: f.start, end: f.end)
+        for (final f in flagged)
+          if (ReviewCategory.of(f) != ReviewCategory.punctuation)
+            TextRange(start: f.start, end: f.end)
+      ];
+      controller.punctuationMarks = [
+        for (final f in flagged)
+          if (ReviewCategory.of(f) == ReviewCategory.punctuation)
+            TextRange(start: f.start, end: f.end)
       ];
     });
   }
@@ -1259,10 +1271,156 @@ class _LiveMarkdownSession extends OnoteEditSession {
       return false;
     }
     _keepAsTyped.add(fix.original.toLowerCase());
+    _dismissNotice();
     controller.value = fix.before.copyWith(composing: TextRange.empty);
     onChanged(controller.text);
     _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
     return true;
+  }
+
+  // ── "I changed that word": the marker under an automatic fix ────────────
+
+  FixNotice? _notice;
+  OverlayEntry? _noticeEntry;
+  final ValueNotifier<Offset?> _noticeAt = ValueNotifier<Offset?>(null);
+  bool _noticeWatching = false;
+
+  /// A fix has just been made. Shown once the text has the fix in it (this is
+  /// called while the field is still working out the edit).
+  void _noticeFix(AutoFix f) {
+    _dismissNotice();
+    final notice = FixNotice(
+      start: f.start,
+      typed: f.typed,
+      put: f.put,
+      keepKey: f.original.toLowerCase(),
+      textAtFix: f.value.text,
+    );
+    _notice = notice;
+    if (!_noticeWatching) {
+      _noticeWatching = true;
+      controller.addListener(_onNoticeText);
+      app.canvas.addListener(_onNoticeMoved);
+      _focus.addListener(_onNoticeFocus);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || _notice != notice) return;
+      if (!notice.stillWanted(controller.text, controller.selection)) {
+        _dismissNotice();
+        return;
+      }
+      controller.fixedMarks = [TextRange(start: notice.start, end: notice.end)];
+      _placeNotice();
+    });
+    // The post-frame callback needs a frame to run in.
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _onNoticeText() {
+    final n = _notice;
+    if (n == null) return;
+    if (!n.stillWanted(controller.text, controller.selection)) {
+      _dismissNotice();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _placeNotice());
+  }
+
+  void _onNoticeMoved() {
+    if (_notice == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _placeNotice());
+  }
+
+  void _onNoticeFocus() {
+    if (!_focus.hasFocus) _dismissNotice();
+  }
+
+  /// Put the marker under the fixed word, in the overlay.
+  void _placeNotice() {
+    final n = _notice;
+    final ctx = _lastContext;
+    if (_disposed || n == null || ctx == null || !ctx.mounted) return;
+    final st = _editableState();
+    final overlay = Overlay.maybeOf(ctx);
+    if (st == null || overlay == null) return;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize || n.start > controller.text.length) return;
+      final local = r.getLocalRectForCaret(TextPosition(offset: n.start));
+      final g = r.localToGlobal(Offset(local.left, local.bottom));
+      final box = overlay.context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) return;
+      final o = box.globalToLocal(g);
+      // Inside the window: never half off the right-hand edge.
+      final maxLeft = (box.size.width - 160).clamp(0.0, double.infinity);
+      _noticeAt.value = Offset(o.dx.clamp(4.0, maxLeft), o.dy + 3);
+      if (_noticeEntry == null) {
+        final entry = OverlayEntry(
+          builder: (_) => ValueListenableBuilder<Offset?>(
+            valueListenable: _noticeAt,
+            builder: (context, at, _) {
+              final cur = _notice;
+              if (at == null || cur == null) return const SizedBox.shrink();
+              return Stack(children: [
+                Positioned(
+                  left: at.dx,
+                  top: at.dy,
+                  child: FixNoticeChip(typed: cur.typed, onTap: _revertNotice),
+                ),
+              ]);
+            },
+          ),
+        );
+        overlay.insert(entry);
+        _noticeEntry = entry;
+      }
+    } catch (_) {
+      // No layout yet, or the field went away between frames: no marker.
+    }
+  }
+
+  /// Put the word back as it was typed, and do not change it again.
+  void _revertNotice() {
+    final n = _notice;
+    if (n == null || _disposed) return;
+    final text = controller.text;
+    if (!n.stillWanted(text, controller.selection) ||
+        text.substring(n.start, n.end) != n.put) {
+      _dismissNotice();
+      return;
+    }
+    final caret = controller.selection.baseOffset;
+    final delta = n.typed.length - n.put.length;
+    _keepAsTyped.add(n.keepKey);
+    _lastFix = null;
+    _dismissNotice();
+    controller.value = TextEditingValue(
+      text: text.replaceRange(n.start, n.end, n.typed),
+      selection: TextSelection.collapsed(offset: caret >= n.end ? caret + delta : caret),
+    );
+    onChanged(controller.text);
+    _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+    _focus.requestFocus();
+  }
+
+  void _dismissNotice() {
+    if (_notice == null && _noticeEntry == null) return;
+    _notice = null;
+    _noticeAt.value = null;
+    try {
+      _noticeEntry?.remove();
+      _noticeEntry?.dispose();
+    } catch (_) {}
+    _noticeEntry = null;
+    if (_noticeWatching) {
+      _noticeWatching = false;
+      controller.removeListener(_onNoticeText);
+      app.canvas.removeListener(_onNoticeMoved);
+      _focus.removeListener(_onNoticeFocus);
+    }
+    if (!_disposed && controller.fixedMarks.isNotEmpty) {
+      controller.fixedMarks = const [];
+    }
   }
 
   /// Check the text a session opens with, without waiting for a keystroke.
@@ -1754,6 +1912,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
             _lastFix = f;
             // Ctrl+Z straight after this takes back just this fix.
             app.autoFixUndo = _undoAutoFix;
+            // And a marker under the word says it was changed, with a way back
+            // for as long as it is still fresh.
+            _noticeFix(f);
           },
         ),
       ],
@@ -2092,6 +2253,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
   @override
   void dispose() {
     _disposed = true;
+    _dismissNotice();
+    _noticeAt.dispose();
     // The one exit path runs even on teardown, so Alt+= followed by clicking
     // a different block cannot leave an empty `$$` in the note.
     closeInlineMath(MathExit.done, reposition: false);

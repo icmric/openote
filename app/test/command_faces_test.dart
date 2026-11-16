@@ -25,6 +25,7 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
+import 'package:openote/ui/icon_tap.dart';
 import 'package:openote/ui/math_bar.dart';
 import 'package:openote/ui/object_face.dart';
 import 'package:openote/ui/command_faces.dart';
@@ -431,11 +432,21 @@ void main() {
       for (final tip in [
         'Background: blank',
         'Background: grid',
+      ]) {
+        expect(find.byTooltip(tip), findsOneWidget, reason: tip);
+      }
+      // Zoom has no bubble (it is as obvious as undo), but a screen reader
+      // still reads what each one does.
+      for (final label in [
         'Zoom in  (Ctrl+=)',
         'Zoom out  (Ctrl+-)',
         'Zoom to fit content',
       ]) {
-        expect(find.byTooltip(tip), findsOneWidget, reason: tip);
+        expect(find.byTooltip(label), findsNothing, reason: label);
+        expect(
+            find.byWidgetPredicate((w) => w is IconTap && w.label == label),
+            findsOneWidget,
+            reason: label);
       }
       // And it acts on the page.
       await tester.tap(find.byTooltip('Background: grid'));

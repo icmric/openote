@@ -27,6 +27,7 @@ import 'command_button.dart';
 import 'compacting_toolbar.dart';
 import 'memo.dart';
 import 'font_picker.dart';
+import 'icon_tap.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'settings_dialog.dart';
@@ -1350,18 +1351,11 @@ class _MiniIcon extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onPressed;
 
+  /// Read by a screen reader only. Undo and redo are the best-known icons there
+  /// are, so there is no bubble.
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 30,
-        height: 28,
-        child: IconButton(
-          icon: Icon(icon, size: 16),
-          tooltip: tooltip,
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          onPressed: onPressed,
-        ),
-      );
+  Widget build(BuildContext context) =>
+      IconTap(icon: icon, label: tooltip, onPressed: onPressed);
 }
 
 /// `H2` / `H3` on the Home row.

@@ -335,7 +335,13 @@ ThemeData onoteTheme(Brightness brightness) {
         side: BorderSide(color: surfaces.border),
       ),
       menuPadding: const EdgeInsets.symmetric(vertical: OnoteSpace.x2),
+      // Every row of every popup menu: "New section", "New group", Rename...
+      mouseCursor: clickable,
     ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(mouseCursor: clickable),
+    ),
+    tabBarTheme: const TabBarThemeData(mouseCursor: clickable),
     menuTheme: MenuThemeData(
       style: MenuStyle(
         backgroundColor: WidgetStatePropertyAll(surfaces.raised),
@@ -353,6 +359,7 @@ ThemeData onoteTheme(Brightness brightness) {
     // often as buttons are, and were arrows for the same reason.
     menuButtonTheme: const MenuButtonThemeData(
       style: ButtonStyle(
+        mouseCursor: clickable,
         minimumSize:
             WidgetStatePropertyAll(Size(0, OnoteSize.menuRow)),
         padding: WidgetStatePropertyAll(

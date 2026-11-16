@@ -131,6 +131,12 @@ const double kReviewPanelMax = 560;
 /// than this and the review is drawn as a sheet over the lower half instead.
 const double kReviewMinCanvas = 460;
 
+/// The Review writing sheet's height as a share of the window, where it starts
+/// and how far it can be dragged. Never so tall that the page above it goes.
+const double kReviewSheetDefault = 0.5;
+const double kReviewSheetMin = 0.25;
+const double kReviewSheetMax = 0.8;
+
 /// The panels that can occupy the right-hand slot (style guide §7c).
 ///
 /// An enum rather than five booleans, so "which panel is open" has exactly one
@@ -5542,6 +5548,16 @@ class AppState extends ChangeNotifier
     _repo.setSetting('reviewPanelW', reviewPanelW);
   }
 
+  /// How tall the sheet is when Review writing rises from the bottom, as a
+  /// share of the window's height (so it still fits when the window changes),
+  /// remembered. Dragged by the bar at its top.
+  double reviewSheetShare = kReviewSheetDefault;
+
+  void setReviewSheetShare(double v) {
+    reviewSheetShare = v.clamp(kReviewSheetMin, kReviewSheetMax).toDouble();
+    _repo.setSetting('reviewSheetShare', reviewSheetShare);
+  }
+
   /// Open the Review writing panel, or close it. Does nothing when the person
   /// is not writing English: there is no such panel for them.
   void toggleReview() {
@@ -7859,6 +7875,11 @@ class AppState extends ChangeNotifier
       reviewPanelW =
           rpw.toDouble().clamp(kReviewPanelMin, kReviewPanelMax).toDouble();
     }
+    final rss = _repo.getSetting('reviewSheetShare');
+    if (rss is num) {
+      reviewSheetShare =
+          rss.toDouble().clamp(kReviewSheetMin, kReviewSheetMax).toDouble();
+    }
     final npw = _repo.getSetting('navPagesW');
     if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
     final nc = _repo.getSetting('navCollapsed');
@@ -8735,7 +8756,26 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// An empty text box the person was in when they left: clicking the page
+  /// makes one, and leaving by any other route than closing its editor (a click
+  /// on another page or section) never gave it the cleanup that closing does,
+  /// so it was saved as a stray empty box.
+  void _dropEmptyBoxBeingEdited() {
+    for (final id in {editingBlockId, pendingEmptyBlockId, selectedBlockId}) {
+      if (id == null) continue;
+      final b = blocks.where((b) => b.id == id).firstOrNull;
+      if (b == null || b.type != BlockType.text) continue;
+      final text = (b.content['text'] as String? ?? '').trim();
+      if (text.isEmpty && tablesIn(b.content).isEmpty) {
+        removeBlock(id, recordUndo: false);
+      }
+    }
+    pendingEmptyBlockId = null;
+  }
+
   Future<void> selectPage(String? id) async {
+    // Only when actually leaving: reselecting the same page keeps what is there.
+    if (id != pageId) _dropEmptyBoxBeingEdited();
     _rememberView(); // keep your place when flicking between pages (§7a.5)
     await flushSave();
     // A window onto a locked page asks again on every visit (bug 33), and so
@@ -9507,15 +9547,23 @@ class AppState extends ChangeNotifier
 
   Future<void> addSection({String? groupId}) async {
     final count = nodes.where((n) => n.kind == NodeKind.section).length;
+    // A new section goes just below the one being worked in, and into its
+    // group if it is in one, rather than at the very end of the notebook. An
+    // explicit [groupId] (made from a group's own menu) goes at that group's end.
+    final here = groupId == null ? activeSection : null;
+    final into = groupId ?? (here?.kind == NodeKind.section ? here?.parentId : null);
     final n = _putNode(
         notebookId!,
         TreeNode(
             kind: NodeKind.section,
-            parentId: groupId,
+            parentId: into,
             title: 'Section ${count + 1}',
             color: _sectionColors[count % _sectionColors.length],
             position: _nextPosition()));
     reloadNodes();
+    if (here != null && here.kind == NodeKind.section) {
+      reorderNode(n.id, here.id, after: true, undoable: false);
+    }
     await addPage(sectionId: n.id);
   }
 
@@ -9848,7 +9896,8 @@ class AppState extends ChangeNotifier
   /// Subpages travel with their parent, for the same reason section sorting
   /// does it: the navigator renders hierarchy from contiguous runs, so moving
   /// a page without its children silently reparents them.
-  void reorderNode(String movingId, String targetId, {required bool after}) {
+  void reorderNode(String movingId, String targetId,
+      {required bool after, bool undoable = true}) {
     final moving = node(movingId), target = node(targetId);
     if (moving == null || target == null || movingId == targetId) return;
     if (moving.kind != target.kind) return;
@@ -9883,7 +9932,7 @@ class AppState extends ChangeNotifier
         : groups.indexOf(targetGroup) + (after ? 1 : 0);
     groups.insert(at.clamp(0, groups.length), movingGroup);
 
-    pushUndo();
+    if (undoable) pushUndo();
     // Re-parent in case the page came from another section.
     if (moving.parentId != target.parentId) {
       moving.parentId = target.parentId;
@@ -11521,7 +11570,7 @@ class AppState extends ChangeNotifier
 
   /// Select a block and centre the view on it. Shared by find and the page
   /// outline so both behave identically.
-  void jumpToBlock(String id) {
+  void jumpToBlock(String id, {bool smooth = false}) {
     final b = blocks.where((b) => b.id == id).firstOrNull;
     if (b == null) return;
     selectedIds
@@ -11530,7 +11579,8 @@ class AppState extends ChangeNotifier
     selectedBlockId = id;
     editingBlockId = null;
     final h = b.h ?? renderSizes[id]?.height ?? 60;
-    canvas.centerOn(Offset(b.x + b.w / 2, b.y + h / 2));
+    final at = Offset(b.x + b.w / 2, b.y + h / 2);
+    smooth ? canvas.glideTo(at) : canvas.centerOn(at);
     notifyListeners();
   }
 

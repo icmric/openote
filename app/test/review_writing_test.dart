@@ -364,13 +364,21 @@ void main() {
     tw('the status bar says how many, and opens it', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await start(t, texts(), mount: true);
-      expect(find.text('3 to review'), findsNothing,
-          reason: 'nothing until the page has been looked at');
+      // Always there, so nothing around it moves when the answer arrives: a
+      // turning ring until the page has been looked at.
+      expect(find.byKey(const ValueKey('review-working')), findsOneWidget,
+          reason: 'it says it is checking, rather than not being there');
+      expect(find.byKey(const ValueKey('review-count')), findsNothing);
+      final waiting = t.getSize(find.byType(ReviewChip));
       await look(t);
       await t.pump();
-      expect(find.text('3 to review'), findsOneWidget);
+      expect(find.byKey(const ValueKey('review-working')), findsNothing);
+      expect(
+          t.widget<Text>(find.byKey(const ValueKey('review-count'))).data, '3');
+      expect(t.getSize(find.byType(ReviewChip)), waiting,
+          reason: 'the chip is the same size before and after the answer');
 
-      await t.tap(find.text('3 to review'));
+      await t.tap(find.byType(ReviewChip));
       await t.pumpAndSettle();
       expect(find.byType(ReviewPanel), findsOneWidget);
       expect(find.text('SPELLING · 2'), findsOneWidget);
@@ -488,8 +496,9 @@ void main() {
       await start(t, [box('a', 100, 'All fine here.')], mount: true);
       await look(t);
       await t.pump();
-      expect(find.text('No writing issues'), findsOneWidget);
-      await t.tap(find.text('No writing issues'));
+      expect(find.byKey(const ValueKey('review-clear')), findsOneWidget,
+          reason: 'a tick: nothing needs attention');
+      await t.tap(find.byType(ReviewChip));
       await t.pumpAndSettle();
       expect(find.text('Nothing to review on this page.'), findsOneWidget);
     });
@@ -607,6 +616,37 @@ void main() {
       final bar = t.getRect(find.textContaining('Sav').first);
       expect(sheet.bottom, lessThanOrEqualTo(bar.top + 1),
           reason: 'the sheet sits on the status bar, not under it');
+    });
+
+    tw('the grey bar on the sheet drags it taller and shorter, and is remembered',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await start(t, [box('a', 100, 'Cells recieve signals.')],
+          mount: true, window: const Size(1000, 1100));
+      await look(t);
+      await t.pump();
+      app.toggleReview();
+      await t.pumpAndSettle();
+      final before = t.getSize(find.byType(ReviewSheet)).height;
+      expect(before, closeTo(1100 * kReviewSheetDefault, 1));
+
+      await t.drag(find.byKey(const ValueKey('review-sheet-resize')),
+          const Offset(0, -150));
+      await t.pumpAndSettle();
+      expect(t.getSize(find.byType(ReviewSheet)).height, closeTo(before + 150, 2),
+          reason: 'dragging the bar up makes the list taller');
+      expect(repo.getSetting('reviewSheetShare'), isNotNull);
+
+      await t.drag(find.byKey(const ValueKey('review-sheet-resize')),
+          const Offset(0, 2000));
+      await t.pumpAndSettle();
+      expect(app.reviewSheetShare, kReviewSheetMin,
+          reason: 'and it stops at a floor that still shows rows');
+      await t.drag(find.byKey(const ValueKey('review-sheet-resize')),
+          const Offset(0, -2000));
+      await t.pumpAndSettle();
+      expect(app.reviewSheetShare, kReviewSheetMax,
+          reason: 'and at a ceiling that leaves the page its top');
     });
 
     tw('widening the window gives it back as a panel', (t) async {

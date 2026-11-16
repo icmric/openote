@@ -102,6 +102,10 @@ class WritingReview extends ChangeNotifier {
     _seenRevision = app.docRevision;
     _seenSignature = _signature();
     app.addListener(_onApp);
+    // Made when the status bar first needs it, which is after the page is
+    // already open: nothing would otherwise ask for the first look until the
+    // next edit, and the chip would wait for it.
+    noteChanged(soon: true);
   }
 
   final AppState app;
@@ -295,7 +299,7 @@ class WritingReview extends ChangeNotifier {
   /// Open [item]'s card and take the page to it.
   void open(ReviewItem item) {
     _currentKey = item.key;
-    app.jumpToBlock(item.blockId);
+    app.jumpToBlock(item.blockId, smooth: true);
     notifyListeners();
   }
 

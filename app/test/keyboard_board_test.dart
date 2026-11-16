@@ -118,6 +118,10 @@ void main() {
   Future<void> flush(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pumpAndSettle();
+    // The save a change schedules (700 ms) writes the settings, which waits
+    // another 400 ms. This used to be waited out by accident: the toolbar's
+    // undo button animated as it switched on, and `pumpAndSettle` kept pumping.
+    await tester.pump(const Duration(seconds: 1));
   }
 
   testWidgets('Ctrl+Right carries a card into the next column',

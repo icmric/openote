@@ -759,7 +759,7 @@ class LIt extends L {
   String get navBinKindSection => 'Sezione';
 
   @override
-  String get navBinKindGroup => 'Gruppo di sezioni';
+  String get navBinKindGroup => 'Gruppo';
 
   @override
   String get navBinKindNotebook => 'Quaderno';
@@ -793,6 +793,14 @@ class LIt extends L {
 
   @override
   String get reviewTooltip => 'Rivedi la scrittura (F7)';
+
+  @override
+  String get reviewChecking => 'Controllo della scrittura…';
+
+  @override
+  String fixNoticeRevert(String word) {
+    return 'Ripristina «$word»';
+  }
 
   @override
   String reviewSubtitle(int count, String language) {
@@ -973,7 +981,7 @@ class LIt extends L {
   String get navNewSection => 'Nuova sezione';
 
   @override
-  String get navNewSectionGroup => 'Nuovo gruppo di sezioni';
+  String get navNewSectionGroup => 'Nuovo gruppo';
 
   @override
   String get navNoGroupTopLevel => '(Nessun gruppo — primo livello)';
