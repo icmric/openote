@@ -16,6 +16,7 @@ import '../editor/flashcard_view.dart';
 import '../study/flashcards.dart' show inlineCardRe;
 import '../editor/live_markdown_controller.dart' show kEditorCaretMargin;
 import '../ui/toast.dart';
+import 'word_mark.dart';
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -88,10 +89,16 @@ class MarkdownView extends StatefulWidget {
     this.onToggleTag,
     this.mathLinkTint,
     this.atomHost,
+    this.mark,
   });
 
   final String text;
   final TextStyle baseStyle;
+
+  /// **One word to light up**, by where it starts in [text] (the raw text): the
+  /// word Review writing is on. The fill is drawn behind the word as the page
+  /// shows it; see `word_mark.dart`. Null for nearly every block.
+  final ({TextRange range, String word, Color color})? mark;
 
   /// Called with the new full text when a checkbox line is toggled.
   final void Function(String newText)? onToggleCheckbox;
@@ -163,6 +170,7 @@ class _MarkdownViewState extends State<MarkdownView> {
   String? _builtText;
   TextStyle? _builtStyle;
   bool? _builtDark;
+  Object? _builtMark;
 
   String get text => widget.text;
   TextStyle get baseStyle => widget.baseStyle;
@@ -175,7 +183,8 @@ class _MarkdownViewState extends State<MarkdownView> {
     if (_built != null &&
         _builtText == text &&
         _builtStyle == baseStyle &&
-        _builtDark == dark) {
+        _builtDark == dark &&
+        _builtMark == widget.mark) {
       return _built!;
     }
     final built = _buildFresh(context, dark);
@@ -183,12 +192,32 @@ class _MarkdownViewState extends State<MarkdownView> {
     _builtText = text;
     _builtStyle = baseStyle;
     _builtDark = dark;
+    _builtMark = widget.mark;
     return built;
   }
 
   Widget _buildFresh(BuildContext context, bool dark) {
     final lines = text.split('\n');
     final children = <Widget>[];
+    // Which line the marked word is on, and which time it appears in that line.
+    var markLine = -1;
+    var markOccurrence = 0;
+    final mark = widget.mark;
+    if (mark != null && mark.range.start >= 0 && mark.range.end <= text.length) {
+      var off = 0;
+      for (var i = 0; i < lines.length; i++) {
+        final end = off + lines[i].length;
+        if (mark.range.start <= end) {
+          final into = mark.range.start - off;
+          if (text.substring(mark.range.start, mark.range.end) == mark.word) {
+            markLine = i;
+            markOccurrence = wholeWordCount(lines[i], mark.word, limit: into);
+          }
+          break;
+        }
+        off = end + 1;
+      }
+    }
     var inFence = false;
     final fenceBuf = <String>[];
 
@@ -230,7 +259,15 @@ class _MarkdownViewState extends State<MarkdownView> {
         i += table.consumed - 1; // the loop's own i++ consumes the last line
         continue;
       }
-      children.add(_withTagGutter(i, _renderLine(context, line, i, dark)));
+      var rendered = _renderLine(context, line, i, dark);
+      if (i == markLine) {
+        rendered = WordMark(
+            word: widget.mark!.word,
+            occurrence: markOccurrence,
+            color: widget.mark!.color,
+            child: rendered);
+      }
+      children.add(_withTagGutter(i, rendered));
     }
     if (inFence) flushFence();
 

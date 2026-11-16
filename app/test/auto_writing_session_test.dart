@@ -392,4 +392,38 @@ void main() {
     expect(c.text, 'I think its a ', reason: 'as typed, with the space kept');
     await settle(t);
   });
+
+  testWidgets('Redo is there after the fix is undone, and puts it back',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    expect(c.text, "we don't ");
+    app.undo();
+    await t.pump();
+    expect(c.text, 'we dont ');
+    expect(app.canRedo, isTrue, reason: 'whatever undo did, redo can do again');
+    app.redo();
+    await t.pump();
+    expect(c.text, "we don't ");
+    await settle(t);
+  });
+
+  testWidgets('and after the marker is pressed', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(t, const Locale('en', 'AU'));
+    final c = await edit(t, app, 'we dont');
+    await type(t, c, ' ');
+    await t.pump();
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('fix-notice')));
+    await t.pump();
+    expect(c.text, 'we dont ');
+    expect(app.canRedo, isTrue);
+    app.redo();
+    await t.pump();
+    expect(c.text, "we don't ");
+    await settle(t);
+  });
 }

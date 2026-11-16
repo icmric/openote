@@ -61,6 +61,8 @@ class LiveMarkdownEngine extends OnoteTextEditor {
       child: MarkdownView(
         text: deserialize(block.content),
         baseStyle: s.baseStyle,
+        // The word Review writing is on, lit up in the page.
+        mark: app.reviewMarkFor(block.id),
         onWikiLink: (label, id) => app.openWikiLink(label, id),
         // In-flow images (Data Model §5.1): resolve sha256: refs from the
         // notebook's content-addressed blob store.
@@ -1275,7 +1277,32 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.value = fix.before.copyWith(composing: TextRange.empty);
     onChanged(controller.text);
     _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+    _armRedo(
+        undone: fix.value, current: controller.value, key: fix.original.toLowerCase());
     return true;
+  }
+
+  /// After an automatic fix is taken back, Redo puts it back. The fix's undo is
+  /// not a step on the app's stack, so without this Redo was dead after it:
+  /// whatever undo has just done, redo has to be there to do it again. Only
+  /// while the text is exactly as the undo left it.
+  void _armRedo(
+      {required TextEditingValue undone,
+      required TextEditingValue current,
+      required String key}) {
+    app.autoFixRedo = () {
+      if (_disposed) return false;
+      final v = controller.value;
+      if (v.text != current.text ||
+          v.selection.baseOffset != current.selection.baseOffset) {
+        return false;
+      }
+      _keepAsTyped.remove(key);
+      controller.value = undone.copyWith(composing: TextRange.empty);
+      onChanged(controller.text);
+      _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+      return true;
+    };
   }
 
   // ── "I changed that word": the marker under an automatic fix ────────────
@@ -1391,6 +1418,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     }
     final caret = controller.selection.baseOffset;
     final delta = n.typed.length - n.put.length;
+    final before = controller.value;
     _keepAsTyped.add(n.keepKey);
     _lastFix = null;
     _dismissNotice();
@@ -1399,6 +1427,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       selection: TextSelection.collapsed(offset: caret >= n.end ? caret + delta : caret),
     );
     onChanged(controller.text);
+    _armRedo(undone: before, current: controller.value, key: n.keepKey);
     _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
     _focus.requestFocus();
   }

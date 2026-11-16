@@ -504,6 +504,35 @@ void main() {
     });
   });
 
+  group('the word being reviewed is lit up in the page', () {
+    tw('only while the panel is open, in the box it is in, and it follows the card',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await start(t, [box('a', 100, 'Cells recieve signals.'), box('b', 300, 'We seperated them.')],
+          mount: true, window: const Size(1600, 900));
+      await look(t);
+      await t.pump();
+      expect(app.reviewMarkFor('a'), isNull, reason: 'nothing while it is closed');
+
+      app.toggleReview();
+      await t.pumpAndSettle();
+      final first = app.reviewMarkFor('a');
+      expect(first, isNotNull);
+      expect(first!.word, 'recieve');
+      expect(first.range, const TextRange(start: 6, end: 13));
+      expect(app.reviewMarkFor('b'), isNull, reason: 'only the box it is in');
+
+      app.review.step(1);
+      await t.pumpAndSettle();
+      expect(app.reviewMarkFor('a'), isNull);
+      expect(app.reviewMarkFor('b')!.word, 'seperated');
+
+      app.closePanel();
+      await t.pumpAndSettle();
+      expect(app.reviewMarkFor('b'), isNull);
+    });
+  });
+
   group('where it sits and how wide', () {
     List<Block> one() => [box('a', 100, 'Cells recieve signals.')];
 

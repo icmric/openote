@@ -139,6 +139,12 @@ void main() {
       expect(again, g, reason: 'no second group is made');
       expect(app.node(s[2].id)!.parentId, g);
       expect(app.nodes.where((n) => n.kind == NodeKind.sectionGroup).length, 1);
+      // And it lands just below the row it was dropped on, not at the end.
+      final inGroup = [
+        for (final n in app.nodes)
+          if (n.kind == NodeKind.section && n.parentId == g) n.id
+      ];
+      expect(inGroup.indexOf(s[2].id), inGroup.indexOf(s[1].id) + 1);
       await settle(tester);
     });
 

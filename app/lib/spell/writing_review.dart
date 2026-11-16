@@ -111,6 +111,14 @@ class WritingReview extends ChangeNotifier {
   final AppState app;
   final WritingCheck _check;
 
+  /// The page lights up the word the card is on, and the boxes only redraw when
+  /// the app notifies, so a change here tells it too while the panel is open.
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    if (!_disposed && app.openPanel == SidePanelKind.review) app.refresh();
+  }
+
   /// How long to wait after the last edit before looking again. Long enough
   /// that typing is not interrupted, short enough that the count is current by
   /// the time anyone looks at it.

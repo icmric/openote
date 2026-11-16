@@ -71,6 +71,7 @@ import 'ui_scale.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
+import '../spell/review_marks.dart' show reviewColor;
 import '../spell/writing_review.dart';
 import '../study/flashcards.dart';
 import 'planner_state.dart';
@@ -5539,6 +5540,22 @@ class AppState extends ChangeNotifier
   @visibleForTesting
   WritingCheck? reviewChecker;
 
+  /// The word Review writing is on, for the text box [blockId] to light up in
+  /// the page; null for every other box, and for all of them while the panel is
+  /// closed. Looked up from the open card, so it follows it (next, accept,
+  /// ignore) with nothing to keep in step.
+  ({TextRange range, String word, Color color})? reviewMarkFor(String blockId) {
+    if (openPanel != SidePanelKind.review || _review == null) return null;
+    final item = _review!.current;
+    if (item == null || item.blockId != blockId) return null;
+    final f = item.finding;
+    return (
+      range: TextRange(start: f.start, end: f.end),
+      word: f.word,
+      color: reviewColor(item.category).withValues(alpha: .30),
+    );
+  }
+
   /// How wide the Review writing panel is, remembered. Dragged by its left
   /// edge, like the navigator's columns.
   double reviewPanelW = kReviewPanelDefault;
@@ -7843,7 +7860,12 @@ class AppState extends ChangeNotifier
   final List<String> _undo = [];
   final List<String> _redo = [];
   bool get canUndo => _undo.isNotEmpty;
-  bool get canRedo => _redo.isNotEmpty;
+  bool get canRedo => _redo.isNotEmpty || autoFixRedo != null;
+
+  /// Puts back the automatic fix that Ctrl+Z has just taken back (see
+  /// `_LiveMarkdownSession._armRedo`). Redo asks it first; it declines, and is
+  /// spent, once the text has moved on.
+  bool Function()? autoFixRedo;
 
   // ── Document engine (Rust core, optional) ─────────────────────────────
 
@@ -9564,7 +9586,9 @@ class AppState extends ChangeNotifier
     if (here != null && here.kind == NodeKind.section) {
       reorderNode(n.id, here.id, after: true, undoable: false);
     }
-    await addPage(sectionId: n.id);
+    // The section and its first page are one step: undo takes both away.
+    await addPage(sectionId: n.id, recordUndo: false);
+    pushCreateUndo(n.id);
   }
 
   void addSectionGroup() {
@@ -9578,6 +9602,7 @@ class AppState extends ChangeNotifier
     reloadNodes();
     // A name nobody chose is a name to change: open it for typing.
     groupToRename = g.id;
+    pushCreateUndo(g.id);
     notifyListeners();
   }
 
@@ -9655,7 +9680,7 @@ class AppState extends ChangeNotifier
     if (shape != null) importPage(notebookId!, newPageId, const <Block>[], shape);
   }
 
-  Future<void> addPage({String? sectionId}) async {
+  Future<void> addPage({String? sectionId, bool recordUndo = true}) async {
     sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
     if (sectionId == null) return;
@@ -9707,6 +9732,8 @@ class AppState extends ChangeNotifier
           paper: pageProps.paperSize, landscape: pageProps.landscape);
     }
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
+    // After the page switch, which clears the stack (see [deleteNode]).
+    if (recordUndo) pushCreateUndo(n.id);
     notifyListeners();
   }
 
@@ -9749,6 +9776,7 @@ class AppState extends ChangeNotifier
           paper: pageProps.paperSize, landscape: pageProps.landscape);
     }
     pendingTitleEdit = n.id;
+    pushCreateUndo(n.id);
     notifyListeners();
   }
 
@@ -9902,8 +9930,12 @@ class AppState extends ChangeNotifier
     if (moving == null || target == null || movingId == targetId) return;
     if (moving.kind != target.kind) return;
 
+    // The moving node is counted even when it comes from another parent (a
+    // section dragged into a group at a chosen row): it is re-parented below.
     final siblings = nodes
-        .where((s) => s.kind == moving.kind && s.parentId == target.parentId)
+        .where((s) =>
+            s.kind == moving.kind &&
+            (s.parentId == target.parentId || s.id == movingId))
         .toList();
     if (siblings.isEmpty) return;
 
@@ -10034,8 +10066,10 @@ class AppState extends ChangeNotifier
     if (notebookIsReadOnly(notebookId!)) return null;
     final existing = b.parentId;
     if (existing != null) {
-      pushUndo();
-      moveSectionToGroup(a.id, existing);
+      // Into the group AT the row it was dropped on (just below it), not at the
+      // group's far end: the drop said where, and a second drag to put it there
+      // was the complaint. [reorderNode] also moves it across groups.
+      reorderNode(a.id, b.id, after: true);
       return existing;
     }
     pushUndo();
@@ -10276,7 +10310,7 @@ class AppState extends ChangeNotifier
     }
   }
 
-  Future<void> deleteNode(String id) async {
+  Future<void> deleteNode(String id, {bool record = true}) async {
     // Deleting is a write like any other. A notebook we can only half read is
     // the last place to be removing things from — see [notebookIsReadOnly].
     if (notebookIsReadOnly(notebookId!)) return;
@@ -10300,7 +10334,7 @@ class AppState extends ChangeNotifier
     // AFTER the page switch, and it has to be: [selectPage] clears the undo
     // stack, so a step pushed before this line is the one thing Ctrl+Z would
     // never find — which is precisely the bug this exists to close.
-    pushNodeUndo(id);
+    if (record) pushNodeUndo(id);
     notifyListeners();
   }
 
@@ -10431,6 +10465,7 @@ class AppState extends ChangeNotifier
   }
 
   void pushUndo() {
+    autoFixRedo = null; // a fresh action ends what could be redone
     _undo.add(_snapshot());
     if (_undo.length > 100) _undo.removeAt(0);
     _redo.clear();
@@ -10458,6 +10493,37 @@ class AppState extends ChangeNotifier
   /// page". A page snapshot has no such key, so the two never collide.
   static const _kRestoreNode = 'restoreNode';
 
+  /// The mirror step: this node was just MADE, so undo takes it away (into the
+  /// recycle bin, where it can be got back) and redo brings it back.
+  static const _kCreatedNode = 'createdNode';
+
+  void pushCreateUndo(String nodeId) {
+    _undo.add(jsonEncode({_kCreatedNode: nodeId}));
+    if (_undo.length > 100) _undo.removeAt(0);
+    _redo.clear();
+  }
+
+  static String? _createdOf(String entry) {
+    if (!entry.startsWith('{"$_kCreatedNode"')) return null;
+    return (jsonDecode(entry) as Map<String, dynamic>)[_kCreatedNode] as String?;
+  }
+
+  /// Run a tree step that changes the open page, then put the stacks back as
+  /// they were around it: switching page clears them, and that must not cost
+  /// the person the rest of their undo history or their redo.
+  void _treeStep(Future<void> Function() step,
+      {required List<String> undo, required List<String> redo}) {
+    unawaited(step().then((_) {
+      _undo
+        ..clear()
+        ..addAll(undo);
+      _redo
+        ..clear()
+        ..addAll(redo);
+      notifyListeners();
+    }));
+  }
+
   /// Takes back the automatic fix the person has just been given, when there
   /// is one still to take back (see `_LiveMarkdownSession._undoAutoFix`).
   ///
@@ -10483,11 +10549,23 @@ class AppState extends ChangeNotifier
       unawaited(restoreDeleted(node));
       return;
     }
+    final made = _createdOf(entry);
+    if (made != null) {
+      _treeStep(() => deleteNode(made, record: false),
+          undo: [..._undo], redo: [..._redo, entry]);
+      return;
+    }
     _redo.add(_snapshot());
     _restore(entry);
   }
 
   void redo() {
+    final fixRedo = autoFixRedo;
+    autoFixRedo = null;
+    if (fixRedo != null && fixRedo()) {
+      notifyListeners();
+      return;
+    }
     if (_redo.isEmpty) return;
     final entry = _redo.removeLast();
     final node = _nodeOf(entry);
@@ -10505,6 +10583,23 @@ class AppState extends ChangeNotifier
           ..addAll(rest);
         notifyListeners();
       }));
+      return;
+    }
+    final made = _createdOf(entry);
+    if (made != null) {
+      _treeStep(() async {
+        await restoreDeleted(made);
+        // Back where the person can see it: a section opens on its first page.
+        final n = nodes.where((x) => x.id == made).firstOrNull;
+        final target = n == null
+            ? null
+            : n.kind == NodeKind.page
+                ? n.id
+                : n.kind == NodeKind.section
+                    ? pagesOf(n.id).firstOrNull?.id
+                    : null;
+        if (target != null) await selectPage(target);
+      }, undo: [..._undo, entry], redo: [..._redo]);
       return;
     }
     _undo.add(_snapshot());
