@@ -260,13 +260,23 @@ class _AppShellState extends State<AppShell> {
   /// **Paste** is here for the same reason: see [_pasteIntoEditor], which
   /// returns false to let the field's own paste run.
   Map<Type, Action<Intent>> _blockTextActions() => <Type, Action<Intent>>{
+        // Also for a title or rename field: right after a page, section or
+        // group is made the cursor is in its name, and Ctrl+Z there must do
+        // what the Undo button does. The field's own undo is nearer the focus
+        // and goes first while it has typing to take back; once it has none it
+        // declines and this runs.
         UndoTextIntent: _BlockTextAction<UndoTextIntent>(
-            _blockEditorFocused, (_) => _undoForBlock(redo: false)),
+            _anyTextFieldFocused, (_) => _undoForBlock(redo: false)),
         RedoTextIntent: _BlockTextAction<RedoTextIntent>(
-            _blockEditorFocused, (_) => _undoForBlock(redo: true)),
+            _anyTextFieldFocused, (_) => _undoForBlock(redo: true)),
         PasteTextIntent: _BlockTextAction<PasteTextIntent>(
             _blockEditorFocused, (_) => _pasteIntoEditor()),
       };
+
+  /// A block's editor, or any other text field in the window (not an equation,
+  /// which has its own history).
+  bool _anyTextFieldFocused() =>
+      _blockEditorFocused() || (_editableFocused() && !_mathFieldFocused());
 
   bool _undoForBlock({required bool redo}) {
     if (redo) {

@@ -5552,7 +5552,7 @@ class AppState extends ChangeNotifier
     return (
       range: TextRange(start: f.start, end: f.end),
       word: f.word,
-      color: reviewColor(item.category).withValues(alpha: .30),
+      color: reviewColor(item.category),
     );
   }
 

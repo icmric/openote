@@ -114,12 +114,19 @@ class _RenderWordMark extends RenderProxyBox {
           final boxes = p.getBoxesForSelection(
               TextSelection(baseOffset: i, extentOffset: i + _word.length));
           final to = p.getTransformTo(this);
-          final paint = Paint()..color = _color;
+          // A strong fill and a solid outline in the finding's colour, so the
+          // word stands out from the page at a glance, not just on looking.
+          final fill = Paint()..color = _color.withValues(alpha: .42);
+          final edge = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = _color;
           for (final b in boxes) {
-            final r = MatrixUtils.transformRect(to, b.toRect()).inflate(1.5);
-            context.canvas.drawRRect(
-                RRect.fromRectAndRadius(r.shift(offset), const Radius.circular(3)),
-                paint);
+            final r = MatrixUtils.transformRect(to, b.toRect()).inflate(3);
+            final rr = RRect.fromRectAndRadius(
+                r.shift(offset), const Radius.circular(5));
+            context.canvas.drawRRect(rr, fill);
+            context.canvas.drawRRect(rr, edge);
           }
           left = -1;
           break;
