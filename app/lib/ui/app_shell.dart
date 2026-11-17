@@ -2180,7 +2180,7 @@ class _StatusBar extends StatelessWidget {
                   SizedBox(width: 5),
                   Text(
                       failed
-                          ? problem.short
+                          ? problem.shortIn(L.of(context))
                           : saved
                               ? L.of(context).shellSavedOnDevice
                               : L.of(context).shellSaving,

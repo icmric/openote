@@ -28,6 +28,7 @@ import '../editor/onote_text_editor.dart';
 import '../export/block_clipboard.dart' show writeBlocksToSystemClipboard;
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
+import '../l10n/gen/app_localizations.dart' show L, lookupL;
 import '../model/block_metrics.dart';
 import '../model/history.dart';
 import '../model/inline_atom.dart';
@@ -238,20 +239,88 @@ class OpenNotebookResult {
 /// [toString] deliberately returns [message], so that any surface which
 /// interpolates a problem into a string still cannot leak an exception.
 class SaveProblem {
+  /// A problem in words given here. For the few that carry someone else's
+  /// sentence (the notebook list's lock) or exist only for a test.
   const SaveProblem(
-      {required this.short, required this.message, this.details});
+      {required String short, required String message, this.details})
+      : kind = null,
+        count = 0,
+        _short = short,
+        _message = message;
 
-  /// A few words for the status bar. No path, no exception.
-  final String short;
+  /// One of the problems Openote knows how to say in every language.
+  const SaveProblem.of(SaveProblemKind this.kind,
+      {this.count = 0, this.details, String? message})
+      : _short = null,
+        _message = message;
 
-  /// One to three plain sentences: what happened, what it costs, what to do.
-  final String message;
+  /// Which problem this is, when it is one [shortIn] and [messageIn] can
+  /// translate. Null for a problem built from words.
+  final SaveProblemKind? kind;
+
+  /// How many things it is about, for the kinds that count (missing pictures).
+  final int count;
+
+  final String? _short;
+  final String? _message;
 
   /// The exception, for the Advanced fold and for a bug report.
   final String? details;
 
+  /// A few words for the status bar. No path, no exception. In English; a
+  /// screen says [shortIn] instead.
+  String get short => shortIn(_english);
+
+  /// One to three plain sentences: what happened, what it costs, what to do.
+  /// In English, for logs and tests; a screen says [messageIn] instead.
+  String get message => messageIn(_english);
+
+  static final L _english = lookupL(const Locale('en'));
+
+  /// [short] in the language of [l].
+  String shortIn(L l) => switch (kind) {
+        null => _short!,
+        SaveProblemKind.notAdded => l.saveProblemNotAddedShort,
+        SaveProblemKind.notOnDrive => l.saveProblemNotOnDriveShort,
+        SaveProblemKind.notRecorded => l.saveProblemNotRecordedShort,
+        SaveProblemKind.pageNotSaved => l.saveProblemPageShort,
+        SaveProblemKind.picturesMissing => l.saveProblemPicturesShort,
+        SaveProblemKind.listLocked => l.saveProblemListLockedShort,
+        SaveProblemKind.madeByNewer => l.saveProblemNewerShort,
+        SaveProblemKind.listNotSaved => l.saveProblemListShort,
+      };
+
+  /// [message] in the language of [l]. A message given in words — the lock's
+  /// own sentence — is said as it was given.
+  String messageIn(L l) =>
+      _message ??
+      switch (kind!) {
+        SaveProblemKind.notAdded => l.saveProblemNotAdded,
+        SaveProblemKind.notOnDrive => l.saveProblemNotOnDrive,
+        SaveProblemKind.notRecorded => l.saveProblemNotRecorded,
+        SaveProblemKind.pageNotSaved => l.saveProblemPage,
+        SaveProblemKind.picturesMissing => l.saveProblemPictures(count),
+        SaveProblemKind.madeByNewer => l.saveProblemNewer,
+        SaveProblemKind.listNotSaved => l.saveProblemList,
+        // Always built with the lock's own sentence; never reached.
+        SaveProblemKind.listLocked => '',
+      };
+
   @override
   String toString() => message;
+}
+
+/// The problems [SaveProblem.of] can name, each with its words in every
+/// language in `lib/l10n`.
+enum SaveProblemKind {
+  notAdded,
+  notOnDrive,
+  notRecorded,
+  pageNotSaved,
+  picturesMissing,
+  listLocked,
+  madeByNewer,
+  listNotSaved,
 }
 
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
@@ -376,14 +445,8 @@ class AppState extends ChangeNotifier
       return hash;
     } catch (e) {
       debugPrint('[openote] could not store pasted/dropped bytes: $e');
-      _blobWriteError = SaveProblem(
-        short: "That didn't get added",
-        message: 'Openote could not save the picture or file you just added, '
-            'so it is not in your notebook.\n\n'
-            'Check that the disk is not full and that the notebook\'s folder '
-            'is not set to read-only, then paste or drop it again.',
-        details: '$e',
-      );
+      _blobWriteError =
+          SaveProblem.of(SaveProblemKind.notAdded, details: '$e');
       notifyListeners();
       return null;
     }
@@ -1036,12 +1099,8 @@ class AppState extends ChangeNotifier
   /// What was last said about sending this phone's changes to the Drive folder:
   /// null when all is well or nothing is waiting. The changes themselves are
   /// always safe on this phone first; this is only about the second copy.
-  static const SaveProblem _folderNotSent = SaveProblem(
-    short: 'Not on Drive yet',
-    message: 'Your changes are saved on this phone. They could not be sent to '
-        'the Drive folder just now (no connection, or the folder is not '
-        'reachable), and will be sent when it can be reached.',
-  );
+  static const SaveProblem _folderNotSent =
+      SaveProblem.of(SaveProblemKind.notOnDrive);
 
   /// Per notebook: did the last send fail?
   final Map<String, bool> _folderSendFailed = {};
@@ -1844,34 +1903,14 @@ class AppState extends ChangeNotifier
   /// this notification can never land mid-frame.
   void _noteLogProblem(String where, Object e) {
     debugPrint('[openote/sync] $where: $e');
-    _logError = SaveProblem(
-      short: 'Saved, but not recorded',
-      message: 'Openote saved your notes on this computer, but it could not '
-          "add the change to this notebook's history.\n\n"
-          'The history is the copy your other devices, your backups and your '
-          'shared folders read from, so those may fall behind until this '
-          'works again. Nothing you have written has been lost.\n\n'
-          "Check that the disk is not full, that the notebook's folder is not "
-          'set to read-only, and that a cloud app such as OneDrive or Google '
-          'Drive has finished with it. Openote tries again every time you '
-          'save.',
-      details: '$where\n$e',
-    );
+    _logError = SaveProblem.of(SaveProblemKind.notRecorded,
+        details: '$where\n$e');
     if (!_disposed) notifyListeners();
   }
 
   /// A page save that could not be written to the notebook file at all.
-  static SaveProblem _pageSaveFailed(Object e) => SaveProblem(
-        short: "Couldn't save — changes kept in memory",
-        message: 'Openote could not save this page to your computer.\n\n'
-            'Your changes are still on screen and Openote will try again the '
-            'next time you type or close the window. The first time you close '
-            'the window it stays open so you can fix this; if you close the '
-            'window again, Openote leaves without these changes.\n\n'
-            'Check that the disk is not full and that the notebook is not '
-            'open in another program.',
-        details: '$e',
-      );
+  static SaveProblem _pageSaveFailed(Object e) =>
+      SaveProblem.of(SaveProblemKind.pageNotSaved, details: '$e');
 
   /// In-flight background opens, so two callers don't replay the same log
   /// twice.
@@ -2269,20 +2308,9 @@ class AppState extends ChangeNotifier
       // computer's own copy of the picture is the one that's gone; a
       // reassurance that named the wrong copy was worse than none, because
       // it told someone with a genuinely lost picture not to worry about it.
-      _blobHole[nb] = SaveProblem(
-        short: 'Some pictures may be missing',
-        message: 'Openote keeps a second copy of every picture and drawing '
-            "inside this notebook's own folder, so your other devices and your "
-            'backups can show them too.\n\n'
-            'For ${proof.holes} of them, Openote could not find good bytes '
-            "anywhere on this computer — not in that second copy, and not in "
-            "the notebook's own working file either. Until they turn up "
-            '(from another device, a backup, or by adding the picture '
-            'again), it will show blank wherever it is used, on this '
-            'computer as well as any other.\n\n'
-            'Check that the disk is not full and that the folder is not set to '
-            'read-only, then close the notebook and open it again. Openote '
-            'tries again every time you open it.',
+      _blobHole[nb] = SaveProblem.of(
+        SaveProblemKind.picturesMissing,
+        count: proof.holes,
         details: '$nb\n$proof\n'
             'missing: ${_someHashes(proof.missing)}\n'
             'unrepairable: ${_someHashes(proof.damaged)}',
@@ -12371,10 +12399,8 @@ class AppState extends ChangeNotifier
         (nb == null ? null : _blobHole[nb]) ??
         (locked == null
             ? null
-            : SaveProblem(
-                short: 'Your notebook list is locked',
-                message: locked.message,
-                details: locked.details));
+            : SaveProblem.of(SaveProblemKind.listLocked,
+                message: locked.message, details: locked.details));
   }
 
   SaveProblem? _pageSaveError;
@@ -12423,14 +12449,8 @@ class AppState extends ChangeNotifier
         if (op.encryption != 'none') op.encryption
     }.toList()
       ..sort();
-    _logAhead[nb] = SaveProblem(
-      short: 'Read-only — made by a newer Openote',
-      message: 'This notebook has changes in it that were made by a newer '
-          'version of Openote, and this version cannot read them.\n\n'
-          'So Openote is showing you this notebook without changing it. '
-          'Everything in it is safe, and nothing you do here can damage it — '
-          'but anything you type now will not be kept.\n\n'
-          'Updating Openote to the latest version lets you edit it again.',
+    _logAhead[nb] = SaveProblem.of(
+      SaveProblemKind.madeByNewer,
       details: 'the log holds ${ahead.length} operation(s) this build cannot '
           'apply\n'
           'envelope version(s): ${versions.join(', ')} — this build writes '
@@ -12678,13 +12698,8 @@ class AppState extends ChangeNotifier
       await _repo.flushWorkspace(); // settle the debounced registry write
       _workspaceSaveError = null;
     } catch (e) {
-      _workspaceSaveError = SaveProblem(
-        short: "Couldn't save the notebook list",
-        message: 'Openote could not save your notebook list and settings. '
-            'The window will stay open the first time you close it. Check the '
-            'disk and try again, or close the window again to leave anyway.',
-        details: '$e',
-      );
+      _workspaceSaveError =
+          SaveProblem.of(SaveProblemKind.listNotSaved, details: '$e');
       notifyListeners();
       if (!force) rethrow;
     }

@@ -14,6 +14,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
@@ -32,9 +33,10 @@ class _SaveProblemDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final details = problem.details;
+    final l = L.of(context);
     return AlertDialog(
       icon: const Icon(Icons.error_outline, color: OnoteColors.danger),
-      title: Text(problem.short),
+      title: Text(problem.shortIn(l)),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
         child: DialogScrollBody(
@@ -42,14 +44,14 @@ class _SaveProblemDialog extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(problem.message),
+              Text(problem.messageIn(l)),
               if (details != null) ...[
                 const SizedBox(height: 4),
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,
                   shape: const Border(),
-                  title: const Text('Details (advanced)',
-                      style: TextStyle(fontSize: 12.5)),
+                  title: Text(l.commonDetailsAdvanced,
+                      style: const TextStyle(fontSize: 12.5)),
                   children: [
                     Align(
                       alignment: Alignment.centerLeft,
@@ -70,7 +72,7 @@ class _SaveProblemDialog extends StatelessWidget {
       ),
       actions: [
         FilledButton(
-            onPressed: () => Navigator.pop(context), child: const Text('OK')),
+            onPressed: () => Navigator.pop(context), child: Text(l.commonOk)),
       ],
     );
   }

@@ -3586,6 +3586,102 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Everything else'**
   String get eventKindOther;
+
+  /// Button that closes a message after reading it.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get commonOk;
+
+  /// Status bar: a pasted or dropped picture or file could not be saved. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'That didn\'t get added'**
+  String get saveProblemNotAddedShort;
+
+  /// Why a pasted or dropped picture or file is not in the notebook, and what to check.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote could not save the picture or file you just added, so it is not in your notebook.\n\nCheck that the disk is not full and that the notebook\'s folder is not set to read-only, then paste or drop it again.'**
+  String get saveProblemNotAdded;
+
+  /// Status bar on a phone: changes are not in the shared Drive folder yet. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Not on Drive yet'**
+  String get saveProblemNotOnDriveShort;
+
+  /// Changes are safe on the phone but not yet sent to the Drive folder.
+  ///
+  /// In en, this message translates to:
+  /// **'Your changes are saved on this phone. They could not be sent to the Drive folder just now (no connection, or the folder is not reachable), and will be sent when it can be reached.'**
+  String get saveProblemNotOnDrive;
+
+  /// Status bar: notes were saved but the notebook history was not updated. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved, but not recorded'**
+  String get saveProblemNotRecordedShort;
+
+  /// Notes were saved, but the history other devices and backups read from was not updated.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote saved your notes on this computer, but it could not add the change to this notebook\'s history.\n\nThe history is the copy your other devices, your backups and your shared folders read from, so those may fall behind until this works again. Nothing you have written has been lost.\n\nCheck that the disk is not full, that the notebook\'s folder is not set to read-only, and that a cloud app such as OneDrive or Google Drive has finished with it. Openote tries again every time you save.'**
+  String get saveProblemNotRecorded;
+
+  /// Status bar: a page could not be saved and the changes are only in memory. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save — changes kept in memory'**
+  String get saveProblemPageShort;
+
+  /// A page could not be saved; what happens when the window is closed, and what to check.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote could not save this page to your computer.\n\nYour changes are still on screen and Openote will try again the next time you type or close the window. The first time you close the window it stays open so you can fix this; if you close the window again, Openote leaves without these changes.\n\nCheck that the disk is not full and that the notebook is not open in another program.'**
+  String get saveProblemPage;
+
+  /// Status bar: some pictures could not be found anywhere. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Some pictures may be missing'**
+  String get saveProblemPicturesShort;
+
+  /// Some pictures could not be found on this computer; count is how many.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote keeps a second copy of every picture and drawing inside this notebook\'s own folder, so your other devices and your backups can show them too.\n\nFor {count} of them, Openote could not find good bytes anywhere on this computer — not in that second copy, and not in the notebook\'s own working file either. Until they turn up (from another device, a backup, or by adding the picture again), it will show blank wherever it is used, on this computer as well as any other.\n\nCheck that the disk is not full and that the folder is not set to read-only, then close the notebook and open it again. Openote tries again every time you open it.'**
+  String saveProblemPictures(int count);
+
+  /// Status bar: the list of notebooks is locked by something else. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Your notebook list is locked'**
+  String get saveProblemListLockedShort;
+
+  /// Status bar: the notebook is read-only because a newer version of the app changed it. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-only — made by a newer Openote'**
+  String get saveProblemNewerShort;
+
+  /// Explains why a notebook made by a newer version of the app can be read but not changed.
+  ///
+  /// In en, this message translates to:
+  /// **'This notebook has changes in it that were made by a newer version of Openote, and this version cannot read them.\n\nSo Openote is showing you this notebook without changing it. Everything in it is safe, and nothing you do here can damage it — but anything you type now will not be kept.\n\nUpdating Openote to the latest version lets you edit it again.'**
+  String get saveProblemNewer;
+
+  /// Status bar: the list of notebooks and settings could not be saved. Keep it short.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the notebook list'**
+  String get saveProblemListShort;
+
+  /// The list of notebooks and settings could not be saved, and what to do.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote could not save your notebook list and settings. The window will stay open the first time you close it. Check the disk and try again, or close the window again to leave anyway.'**
+  String get saveProblemList;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

@@ -2139,4 +2139,61 @@ class LEs extends L {
 
   @override
   String get eventKindOther => 'Todo lo demás';
+
+  @override
+  String get commonOk => 'Aceptar';
+
+  @override
+  String get saveProblemNotAddedShort => 'No se ha añadido';
+
+  @override
+  String get saveProblemNotAdded =>
+      'Openote no pudo guardar la imagen o el archivo que acabas de añadir, así que no está en tu cuaderno.\n\nComprueba que el disco no esté lleno y que la carpeta del cuaderno no sea de solo lectura, y vuelve a pegarlo o arrastrarlo.';
+
+  @override
+  String get saveProblemNotOnDriveShort => 'Aún no está en Drive';
+
+  @override
+  String get saveProblemNotOnDrive =>
+      'Tus cambios están guardados en este teléfono. No se han podido enviar a la carpeta de Drive ahora mismo (no hay conexión o no se puede acceder a la carpeta) y se enviarán en cuanto se pueda.';
+
+  @override
+  String get saveProblemNotRecordedShort => 'Guardado, pero no registrado';
+
+  @override
+  String get saveProblemNotRecorded =>
+      'Openote guardó tus notas en este ordenador, pero no pudo añadir el cambio al historial de este cuaderno.\n\nEl historial es la copia que leen tus otros dispositivos, tus copias de seguridad y tus carpetas compartidas, así que pueden quedarse atrás hasta que esto vuelva a funcionar. No se ha perdido nada de lo que has escrito.\n\nComprueba que el disco no esté lleno, que la carpeta del cuaderno no sea de solo lectura y que una app en la nube como OneDrive o Google Drive haya terminado con ella. Openote lo vuelve a intentar cada vez que guardas.';
+
+  @override
+  String get saveProblemPageShort => 'No guardado: cambios en memoria';
+
+  @override
+  String get saveProblemPage =>
+      'Openote no pudo guardar esta página en tu ordenador.\n\nTus cambios siguen en pantalla y Openote lo volverá a intentar la próxima vez que escribas o cierres la ventana. La primera vez que cierres la ventana, se quedará abierta para que puedas solucionarlo; si la vuelves a cerrar, Openote se cierra sin estos cambios.\n\nComprueba que el disco no esté lleno y que el cuaderno no esté abierto en otro programa.';
+
+  @override
+  String get saveProblemPicturesShort => 'Puede que falten imágenes';
+
+  @override
+  String saveProblemPictures(int count) {
+    return 'Openote guarda una segunda copia de cada imagen y dibujo dentro de la propia carpeta de este cuaderno, para que tus otros dispositivos y tus copias de seguridad también puedan mostrarlos.\n\nPara $count de ellos, Openote no encontró datos válidos en ningún sitio de este ordenador: ni en esa segunda copia ni en el archivo de trabajo del cuaderno. Hasta que aparezcan (desde otro dispositivo, una copia de seguridad o añadiendo la imagen de nuevo), se verán en blanco allí donde se usen, en este ordenador y en cualquier otro.\n\nComprueba que el disco no esté lleno y que la carpeta no sea de solo lectura, y luego cierra el cuaderno y vuelve a abrirlo. Openote lo vuelve a intentar cada vez que lo abres.';
+  }
+
+  @override
+  String get saveProblemListLockedShort =>
+      'Tu lista de cuadernos está bloqueada';
+
+  @override
+  String get saveProblemNewerShort => 'Solo lectura: de un Openote más nuevo';
+
+  @override
+  String get saveProblemNewer =>
+      'Este cuaderno tiene cambios hechos con una versión más nueva de Openote, y esta versión no puede leerlos.\n\nPor eso Openote te muestra el cuaderno sin modificarlo. Todo lo que contiene está a salvo y nada de lo que hagas aquí puede dañarlo, pero lo que escribas ahora no se guardará.\n\nSi actualizas Openote a la última versión, podrás volver a editarlo.';
+
+  @override
+  String get saveProblemListShort => 'No se guardó la lista de cuadernos';
+
+  @override
+  String get saveProblemList =>
+      'Openote no pudo guardar tu lista de cuadernos ni la configuración. La ventana seguirá abierta la primera vez que la cierres. Comprueba el disco y vuelve a intentarlo, o cierra la ventana otra vez para salir de todos modos.';
 }

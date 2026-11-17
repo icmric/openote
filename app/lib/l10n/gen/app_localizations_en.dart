@@ -2129,4 +2129,60 @@ class LEn extends L {
 
   @override
   String get eventKindOther => 'Everything else';
+
+  @override
+  String get commonOk => 'OK';
+
+  @override
+  String get saveProblemNotAddedShort => 'That didn\'t get added';
+
+  @override
+  String get saveProblemNotAdded =>
+      'Openote could not save the picture or file you just added, so it is not in your notebook.\n\nCheck that the disk is not full and that the notebook\'s folder is not set to read-only, then paste or drop it again.';
+
+  @override
+  String get saveProblemNotOnDriveShort => 'Not on Drive yet';
+
+  @override
+  String get saveProblemNotOnDrive =>
+      'Your changes are saved on this phone. They could not be sent to the Drive folder just now (no connection, or the folder is not reachable), and will be sent when it can be reached.';
+
+  @override
+  String get saveProblemNotRecordedShort => 'Saved, but not recorded';
+
+  @override
+  String get saveProblemNotRecorded =>
+      'Openote saved your notes on this computer, but it could not add the change to this notebook\'s history.\n\nThe history is the copy your other devices, your backups and your shared folders read from, so those may fall behind until this works again. Nothing you have written has been lost.\n\nCheck that the disk is not full, that the notebook\'s folder is not set to read-only, and that a cloud app such as OneDrive or Google Drive has finished with it. Openote tries again every time you save.';
+
+  @override
+  String get saveProblemPageShort => 'Couldn\'t save — changes kept in memory';
+
+  @override
+  String get saveProblemPage =>
+      'Openote could not save this page to your computer.\n\nYour changes are still on screen and Openote will try again the next time you type or close the window. The first time you close the window it stays open so you can fix this; if you close the window again, Openote leaves without these changes.\n\nCheck that the disk is not full and that the notebook is not open in another program.';
+
+  @override
+  String get saveProblemPicturesShort => 'Some pictures may be missing';
+
+  @override
+  String saveProblemPictures(int count) {
+    return 'Openote keeps a second copy of every picture and drawing inside this notebook\'s own folder, so your other devices and your backups can show them too.\n\nFor $count of them, Openote could not find good bytes anywhere on this computer — not in that second copy, and not in the notebook\'s own working file either. Until they turn up (from another device, a backup, or by adding the picture again), it will show blank wherever it is used, on this computer as well as any other.\n\nCheck that the disk is not full and that the folder is not set to read-only, then close the notebook and open it again. Openote tries again every time you open it.';
+  }
+
+  @override
+  String get saveProblemListLockedShort => 'Your notebook list is locked';
+
+  @override
+  String get saveProblemNewerShort => 'Read-only — made by a newer Openote';
+
+  @override
+  String get saveProblemNewer =>
+      'This notebook has changes in it that were made by a newer version of Openote, and this version cannot read them.\n\nSo Openote is showing you this notebook without changing it. Everything in it is safe, and nothing you do here can damage it — but anything you type now will not be kept.\n\nUpdating Openote to the latest version lets you edit it again.';
+
+  @override
+  String get saveProblemListShort => 'Couldn\'t save the notebook list';
+
+  @override
+  String get saveProblemList =>
+      'Openote could not save your notebook list and settings. The window will stay open the first time you close it. Check the disk and try again, or close the window again to leave anyway.';
 }

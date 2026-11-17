@@ -165,7 +165,7 @@ class _SaveMark extends StatelessWidget {
           ? Icon(icon, size: 18, color: colour)
           : IconTap(
               icon: icon,
-              label: problem.short,
+              label: problem.shortIn(L.of(context)),
               size: 20,
               width: 32,
               height: 44,

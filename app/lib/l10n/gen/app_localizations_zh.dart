@@ -2044,4 +2044,60 @@ class LZh extends L {
 
   @override
   String get eventKindOther => '其他所有';
+
+  @override
+  String get commonOk => '确定';
+
+  @override
+  String get saveProblemNotAddedShort => '没有添加成功';
+
+  @override
+  String get saveProblemNotAdded =>
+      'Openote 无法保存你刚添加的图片或文件，所以它不在你的笔记本里。\n\n请检查磁盘是否已满、笔记本所在文件夹是否设为只读，然后重新粘贴或拖入。';
+
+  @override
+  String get saveProblemNotOnDriveShort => '尚未发送到 Drive';
+
+  @override
+  String get saveProblemNotOnDrive =>
+      '你的更改已保存在这部手机上。暂时无法发送到 Drive 文件夹（没有网络，或无法访问该文件夹），等能访问时会自动发送。';
+
+  @override
+  String get saveProblemNotRecordedShort => '已保存，但未记录';
+
+  @override
+  String get saveProblemNotRecorded =>
+      'Openote 已把你的笔记保存在这台电脑上，但无法把这次更改写入此笔记本的历史记录。\n\n你的其他设备、备份和共享文件夹都从历史记录读取，因此在恢复正常之前它们可能会落后。你写的内容没有丢失。\n\n请检查磁盘是否已满、笔记本所在文件夹是否设为只读，以及 OneDrive 或 Google Drive 等云应用是否已处理完它。每次保存时 Openote 都会重试。';
+
+  @override
+  String get saveProblemPageShort => '未能保存 — 更改仍在内存中';
+
+  @override
+  String get saveProblemPage =>
+      'Openote 无法把此页面保存到你的电脑上。\n\n你的更改仍在屏幕上，下次你输入或关闭窗口时 Openote 会再试一次。第一次关闭窗口时，窗口会保持打开，方便你解决问题；如果再次关闭，Openote 将不保存这些更改直接退出。\n\n请检查磁盘是否已满，以及笔记本是否在其他程序中打开。';
+
+  @override
+  String get saveProblemPicturesShort => '部分图片可能丢失';
+
+  @override
+  String saveProblemPictures(int count) {
+    return 'Openote 会在此笔记本自己的文件夹里为每张图片和绘图保留第二份副本，好让你的其他设备和备份也能显示它们。\n\n其中有 $count 个，Openote 在这台电脑上的任何地方都找不到完好的数据——第二份副本里没有，笔记本自己的工作文件里也没有。在它们重新出现之前（来自其他设备、备份，或重新添加图片），凡是用到它们的地方都会显示为空白，这台电脑和其他电脑都一样。\n\n请检查磁盘是否已满、文件夹是否设为只读，然后关闭笔记本再重新打开。每次打开时 Openote 都会重试。';
+  }
+
+  @override
+  String get saveProblemListLockedShort => '你的笔记本列表已锁定';
+
+  @override
+  String get saveProblemNewerShort => '只读 — 由更新版 Openote 创建';
+
+  @override
+  String get saveProblemNewer =>
+      '此笔记本包含由更新版本的 Openote 做出的更改，当前版本无法读取。\n\n因此 Openote 会在不改动它的情况下显示此笔记本。其中的内容都很安全，你在这里的任何操作都不会损坏它——但你现在输入的内容不会被保留。\n\n把 Openote 更新到最新版本后即可再次编辑。';
+
+  @override
+  String get saveProblemListShort => '无法保存笔记本列表';
+
+  @override
+  String get saveProblemList =>
+      'Openote 无法保存你的笔记本列表和设置。第一次关闭窗口时，窗口会保持打开。请检查磁盘后重试，或再次关闭窗口直接退出。';
 }

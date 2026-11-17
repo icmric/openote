@@ -2148,4 +2148,60 @@ class LDe extends L {
 
   @override
   String get eventKindOther => 'Alles andere';
+
+  @override
+  String get commonOk => 'OK';
+
+  @override
+  String get saveProblemNotAddedShort => 'Das wurde nicht hinzugefügt';
+
+  @override
+  String get saveProblemNotAdded =>
+      'Openote konnte das Bild oder die Datei, die Sie gerade hinzugefügt haben, nicht speichern; es ist daher nicht in Ihrem Notizbuch.\n\nPrüfen Sie, ob der Datenträger voll ist und ob der Ordner des Notizbuchs schreibgeschützt ist, und fügen Sie es dann erneut ein oder ziehen Sie es erneut hinein.';
+
+  @override
+  String get saveProblemNotOnDriveShort => 'Noch nicht in Drive';
+
+  @override
+  String get saveProblemNotOnDrive =>
+      'Ihre Änderungen sind auf diesem Telefon gespeichert. Sie konnten gerade nicht an den Drive-Ordner gesendet werden (keine Verbindung oder der Ordner ist nicht erreichbar) und werden gesendet, sobald er erreichbar ist.';
+
+  @override
+  String get saveProblemNotRecordedShort => 'Gespeichert, aber nicht erfasst';
+
+  @override
+  String get saveProblemNotRecorded =>
+      'Openote hat Ihre Notizen auf diesem Computer gespeichert, konnte die Änderung aber nicht in den Verlauf dieses Notizbuchs aufnehmen.\n\nAus dem Verlauf lesen Ihre anderen Geräte, Ihre Sicherungen und Ihre geteilten Ordner. Sie können daher zurückfallen, bis das wieder funktioniert. Nichts, was Sie geschrieben haben, ist verloren.\n\nPrüfen Sie, ob der Datenträger voll ist, ob der Ordner des Notizbuchs schreibgeschützt ist und ob eine Cloud-App wie OneDrive oder Google Drive damit fertig ist. Openote versucht es bei jedem Speichern erneut.';
+
+  @override
+  String get saveProblemPageShort => 'Nicht gespeichert — noch im Speicher';
+
+  @override
+  String get saveProblemPage =>
+      'Openote konnte diese Seite nicht auf Ihrem Computer speichern.\n\nIhre Änderungen sind noch auf dem Bildschirm, und Openote versucht es erneut, wenn Sie das nächste Mal tippen oder das Fenster schließen. Beim ersten Schließen bleibt das Fenster offen, damit Sie das Problem beheben können; schließen Sie es erneut, beendet sich Openote ohne diese Änderungen.\n\nPrüfen Sie, ob der Datenträger voll ist und ob das Notizbuch in einem anderen Programm geöffnet ist.';
+
+  @override
+  String get saveProblemPicturesShort => 'Einige Bilder fehlen möglicherweise';
+
+  @override
+  String saveProblemPictures(int count) {
+    return 'Openote bewahrt von jedem Bild und jeder Zeichnung eine zweite Kopie im eigenen Ordner dieses Notizbuchs auf, damit Ihre anderen Geräte und Ihre Sicherungen sie ebenfalls anzeigen können.\n\nFür $count davon konnte Openote nirgends auf diesem Computer intakte Daten finden — weder in dieser zweiten Kopie noch in der Arbeitsdatei des Notizbuchs. Bis sie wieder auftauchen (von einem anderen Gerät, aus einer Sicherung oder indem Sie das Bild erneut hinzufügen), bleiben sie überall leer, wo sie verwendet werden, auf diesem Computer wie auf jedem anderen.\n\nPrüfen Sie, ob der Datenträger voll ist und ob der Ordner schreibgeschützt ist, und schließen und öffnen Sie das Notizbuch dann erneut. Openote versucht es bei jedem Öffnen erneut.';
+  }
+
+  @override
+  String get saveProblemListLockedShort => 'Ihre Notizbuchliste ist gesperrt';
+
+  @override
+  String get saveProblemNewerShort => 'Schreibgeschützt — von neuerem Openote';
+
+  @override
+  String get saveProblemNewer =>
+      'Dieses Notizbuch enthält Änderungen, die mit einer neueren Version von Openote gemacht wurden, und diese Version kann sie nicht lesen.\n\nDeshalb zeigt Openote Ihnen dieses Notizbuch, ohne es zu verändern. Alles darin ist sicher, und nichts, was Sie hier tun, kann es beschädigen — aber was Sie jetzt eingeben, wird nicht behalten.\n\nWenn Sie Openote auf die neueste Version aktualisieren, können Sie es wieder bearbeiten.';
+
+  @override
+  String get saveProblemListShort => 'Notizbuchliste nicht gespeichert';
+
+  @override
+  String get saveProblemList =>
+      'Openote konnte Ihre Notizbuchliste und Einstellungen nicht speichern. Beim ersten Schließen bleibt das Fenster offen. Prüfen Sie den Datenträger und versuchen Sie es erneut, oder schließen Sie das Fenster noch einmal, um trotzdem zu beenden.';
 }

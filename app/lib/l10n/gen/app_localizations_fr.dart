@@ -2147,4 +2147,60 @@ class LFr extends L {
 
   @override
   String get eventKindOther => 'Tout le reste';
+
+  @override
+  String get commonOk => 'OK';
+
+  @override
+  String get saveProblemNotAddedShort => 'Cet ajout n’a pas abouti';
+
+  @override
+  String get saveProblemNotAdded =>
+      'Openote n’a pas pu enregistrer l’image ou le fichier que vous venez d’ajouter : il n’est donc pas dans votre carnet.\n\nVérifiez que le disque n’est pas plein et que le dossier du carnet n’est pas en lecture seule, puis collez-le ou déposez-le à nouveau.';
+
+  @override
+  String get saveProblemNotOnDriveShort => 'Pas encore sur Drive';
+
+  @override
+  String get saveProblemNotOnDrive =>
+      'Vos modifications sont enregistrées sur ce téléphone. Elles n’ont pas pu être envoyées au dossier Drive pour l’instant (pas de connexion, ou dossier inaccessible) et le seront dès qu’il sera accessible.';
+
+  @override
+  String get saveProblemNotRecordedShort => 'Enregistré, mais pas consigné';
+
+  @override
+  String get saveProblemNotRecorded =>
+      'Openote a enregistré vos notes sur cet ordinateur, mais n’a pas pu ajouter la modification à l’historique de ce carnet.\n\nL’historique est la copie que lisent vos autres appareils, vos sauvegardes et vos dossiers partagés : ils peuvent donc prendre du retard tant que le problème persiste. Rien de ce que vous avez écrit n’est perdu.\n\nVérifiez que le disque n’est pas plein, que le dossier du carnet n’est pas en lecture seule et qu’une application cloud comme OneDrive ou Google Drive en a terminé avec lui. Openote réessaie à chaque enregistrement.';
+
+  @override
+  String get saveProblemPageShort => 'Non enregistré — gardé en mémoire';
+
+  @override
+  String get saveProblemPage =>
+      'Openote n’a pas pu enregistrer cette page sur votre ordinateur.\n\nVos modifications sont toujours à l’écran et Openote réessaiera la prochaine fois que vous taperez ou fermerez la fenêtre. La première fois que vous fermez la fenêtre, elle reste ouverte pour vous permettre de régler le problème ; si vous la fermez à nouveau, Openote quitte sans ces modifications.\n\nVérifiez que le disque n’est pas plein et que le carnet n’est pas ouvert dans un autre programme.';
+
+  @override
+  String get saveProblemPicturesShort => 'Des images manquent peut-être';
+
+  @override
+  String saveProblemPictures(int count) {
+    return 'Openote conserve une seconde copie de chaque image et de chaque dessin dans le dossier propre à ce carnet, pour que vos autres appareils et vos sauvegardes puissent aussi les afficher.\n\nPour $count d’entre eux, Openote n’a trouvé de données intactes nulle part sur cet ordinateur — ni dans cette seconde copie, ni dans le fichier de travail du carnet. Tant qu’ils ne réapparaissent pas (depuis un autre appareil, une sauvegarde, ou en ajoutant l’image à nouveau), ils resteront vides partout où ils sont utilisés, sur cet ordinateur comme sur les autres.\n\nVérifiez que le disque n’est pas plein et que le dossier n’est pas en lecture seule, puis fermez le carnet et rouvrez-le. Openote réessaie à chaque ouverture.';
+  }
+
+  @override
+  String get saveProblemListLockedShort => 'Liste des carnets verrouillée';
+
+  @override
+  String get saveProblemNewerShort => 'Lecture seule — Openote plus récent';
+
+  @override
+  String get saveProblemNewer =>
+      'Ce carnet contient des modifications faites par une version plus récente d’Openote, que cette version ne sait pas lire.\n\nOpenote vous montre donc ce carnet sans le modifier. Tout son contenu est en sécurité et rien de ce que vous faites ici ne peut l’abîmer — mais ce que vous tapez maintenant ne sera pas conservé.\n\nMettez Openote à jour vers la dernière version pour pouvoir le modifier à nouveau.';
+
+  @override
+  String get saveProblemListShort => 'Liste des carnets non enregistrée';
+
+  @override
+  String get saveProblemList =>
+      'Openote n’a pas pu enregistrer votre liste de carnets et vos réglages. La fenêtre restera ouverte la première fois que vous la fermerez. Vérifiez le disque et réessayez, ou fermez à nouveau la fenêtre pour quitter quand même.';
 }

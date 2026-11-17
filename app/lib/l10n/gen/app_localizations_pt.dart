@@ -2140,4 +2140,61 @@ class LPt extends L {
 
   @override
   String get eventKindOther => 'Todo o resto';
+
+  @override
+  String get commonOk => 'OK';
+
+  @override
+  String get saveProblemNotAddedShort => 'Isso não foi adicionado';
+
+  @override
+  String get saveProblemNotAdded =>
+      'O Openote não conseguiu salvar a imagem ou o arquivo que você acabou de adicionar, então ele não está no seu caderno.\n\nVerifique se o disco não está cheio e se a pasta do caderno não está como somente leitura, depois cole ou arraste de novo.';
+
+  @override
+  String get saveProblemNotOnDriveShort => 'Ainda não está no Drive';
+
+  @override
+  String get saveProblemNotOnDrive =>
+      'Suas alterações estão salvas neste celular. Não foi possível enviá-las para a pasta do Drive agora (sem conexão, ou a pasta não está acessível); elas serão enviadas quando a pasta puder ser acessada.';
+
+  @override
+  String get saveProblemNotRecordedShort => 'Salvo, mas não registrado';
+
+  @override
+  String get saveProblemNotRecorded =>
+      'O Openote salvou suas notas neste computador, mas não conseguiu adicionar a alteração ao histórico deste caderno.\n\nO histórico é a cópia que seus outros dispositivos, seus backups e suas pastas compartilhadas leem, então eles podem ficar para trás até isso voltar a funcionar. Nada do que você escreveu foi perdido.\n\nVerifique se o disco não está cheio, se a pasta do caderno não está como somente leitura e se um app de nuvem como o OneDrive ou o Google Drive já terminou de usá-la. O Openote tenta de novo toda vez que você salva.';
+
+  @override
+  String get saveProblemPageShort => 'Não salvo: alterações na memória';
+
+  @override
+  String get saveProblemPage =>
+      'O Openote não conseguiu salvar esta página no seu computador.\n\nSuas alterações continuam na tela e o Openote vai tentar de novo na próxima vez que você digitar ou fechar a janela. Na primeira vez que você fechar a janela, ela continua aberta para você resolver isso; se fechar de novo, o Openote sai sem essas alterações.\n\nVerifique se o disco não está cheio e se o caderno não está aberto em outro programa.';
+
+  @override
+  String get saveProblemPicturesShort => 'Algumas imagens podem estar faltando';
+
+  @override
+  String saveProblemPictures(int count) {
+    return 'O Openote guarda uma segunda cópia de cada imagem e desenho dentro da própria pasta deste caderno, para que seus outros dispositivos e seus backups também possam mostrá-los.\n\nPara $count deles, o Openote não encontrou dados íntegros em nenhum lugar deste computador — nem nessa segunda cópia, nem no arquivo de trabalho do caderno. Até que apareçam (de outro dispositivo, de um backup ou adicionando a imagem de novo), eles vão aparecer em branco onde forem usados, neste computador e em qualquer outro.\n\nVerifique se o disco não está cheio e se a pasta não está como somente leitura, depois feche o caderno e abra de novo. O Openote tenta de novo toda vez que você o abre.';
+  }
+
+  @override
+  String get saveProblemListLockedShort =>
+      'Sua lista de cadernos está bloqueada';
+
+  @override
+  String get saveProblemNewerShort => 'Só leitura: de um Openote mais novo';
+
+  @override
+  String get saveProblemNewer =>
+      'Este caderno tem alterações feitas por uma versão mais nova do Openote, e esta versão não consegue lê-las.\n\nPor isso o Openote está mostrando este caderno sem alterá-lo. Tudo nele está seguro e nada do que você fizer aqui pode danificá-lo — mas o que você digitar agora não será mantido.\n\nAtualize o Openote para a versão mais recente para poder editá-lo de novo.';
+
+  @override
+  String get saveProblemListShort => 'A lista de cadernos não foi salva';
+
+  @override
+  String get saveProblemList =>
+      'O Openote não conseguiu salvar sua lista de cadernos e as configurações. A janela vai continuar aberta na primeira vez que você fechá-la. Verifique o disco e tente de novo, ou feche a janela outra vez para sair mesmo assim.';
 }
