@@ -42,6 +42,9 @@ import 'package:openote/ui/device_class.dart' show debugTouchPlatform;
 import 'package:openote/ui/notebook_manager.dart';
 import 'package:openote/ui/onboarding.dart';
 import 'package:openote/ui/phone_shell.dart';
+import 'package:openote/ui/protect_dialog.dart';
+import 'package:openote/ui/settings_dialog.dart';
+import 'package:openote/ui/sync_dialog.dart';
 import 'package:openote/ui/ui_scale_host.dart';
 
 import 'support/sqlite.dart';
@@ -607,6 +610,30 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await device(t, e.key, e.value.$1, b: e.value.$2, act: e.value.$3);
     });
+  }
+
+  // ── Desktop dialogs (#41, #42) ─────────────────────────────────────────────
+  //
+  // The two reports were about dialogs: buttons drawn too thin to aim at, and a
+  // cramped Sync window whose scroll bar sat on its controls. Rendered with a
+  // mouse rather than touch, at the reporter's own window size and a small
+  // laptop's, so the comfort pass can be looked at rather than assumed.
+  final dialogs = <String, Future<void> Function(WidgetTester, AppState, BuildContext)>{
+    'notebooks': (t, app, c) async => unawaited(showNotebookManager(c, app)),
+    'sync': (t, app, c) async => unawaited(showSyncDialog(c, app)),
+    'settings': (t, app, c) async => unawaited(showSettingsDialog(c, app)),
+    'lock': (t, app, c) async =>
+        unawaited(askNewPasscode(c, 'Week 3')),
+  };
+  for (final d in dialogs.entries) {
+    for (final size in const [Size(1920, 1025), Size(1366, 768)]) {
+      testWidgets('dialog ${d.key} ${size.width.toInt()}', (t) async {
+        if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        await device(t, 'dialog_${d.key}_${size.width.toInt()}', size,
+            touch: false, act: d.value);
+      });
+    }
   }
 
   // ── The marker under a word the app corrected ──────────────────────────────

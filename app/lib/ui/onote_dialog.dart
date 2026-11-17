@@ -85,6 +85,12 @@ class _DialogScrollBodyState extends State<DialogScrollBody> {
   @override
   Widget build(BuildContext context) => Scrollbar(
         controller: _scroll,
+        // Shown whenever there is more to scroll. A desktop bar otherwise
+        // appears only once scrolling starts, and then the one cue that a
+        // dialog goes on is its last line cut in half — seen on the Sync
+        // dialog at 1366 by 768. It has a gutter of its own, so it covers
+        // nothing; a dialog that fits draws no bar at all.
+        thumbVisibility: true,
         child: SingleChildScrollView(
           controller: _scroll,
           padding: const EdgeInsets.only(right: kDialogScrollGutter),
