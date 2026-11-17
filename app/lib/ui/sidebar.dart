@@ -19,6 +19,7 @@ import 'planner_format.dart';
 import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'open_notebook.dart';
 import 'toast.dart';
 
 Color _sectionColor(String? token, bool dark) => sectionColorFor(token, dark);
@@ -423,7 +424,9 @@ class _SidebarState extends State<Sidebar> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _SectionsHeader(app: app),
-                Expanded(child: _sectionsColumn(context)),
+                Expanded(
+                    child: _CreateOnEmpty(
+                        app: app, child: _sectionsColumn(context))),
               ],
             ),
           ),
@@ -486,7 +489,10 @@ class _SidebarState extends State<Sidebar> {
           ),
         ),
         Expanded(
-          child: _DropAtEnd(
+          child: _CreateOnEmpty(
+            app: app,
+            section: section,
+            child: _DropAtEnd(
             app: app,
             kind: NodeKind.page,
             child: pages.isEmpty
@@ -500,6 +506,7 @@ class _SidebarState extends State<Sidebar> {
                     padding: const EdgeInsets.only(bottom: 12),
                     children: pages,
                   ),
+          ),
           ),
         ),
       ],
@@ -2863,6 +2870,80 @@ void _keyboardEnteredRow(AppState app) {
 /// which is the same thing the double-click does — the row owns that state, so
 /// the menu asks it rather than reaching for it. Required, so a new kind of
 /// row cannot quietly ship without it.
+/// **Right-click on the empty part of a list: make something.** #43.
+///
+/// *"OneNote has a menu when you right-click in the section list — New
+/// Section, New Section Group, New Notebook…, Open Notebook… — and it is
+/// tidier."* Right-clicking empty space did nothing at all, in either list,
+/// so the menu people's hands already reach for was not there. The plus
+/// buttons stay: folding them into this would put a click in front of the
+/// commonest action, and this is a second route, not a replacement.
+///
+/// [section] is the section whose pages are showing; New page is offered only
+/// when there is one, and it goes there.
+Future<void> showNavCreateMenu(BuildContext context, AppState app,
+    {required Offset position, TreeNode? section}) async {
+  final l = L.of(context);
+  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final action = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+      position.dx,
+      position.dy,
+      overlay == null ? position.dx : overlay.size.width - position.dx,
+      position.dy,
+    ),
+    items: [
+      if (section != null)
+        _nodeItem('page', Icons.note_add_outlined, l.navMenuNewPage),
+      _nodeItem('section', Icons.add_box_outlined, l.navNewSection),
+      _nodeItem('group', Icons.create_new_folder_outlined, l.navNewSectionGroup),
+      const PopupMenuDivider(),
+      _nodeItem('notebook', Icons.menu_book_outlined, '${l.nbNewTitle}…'),
+      _nodeItem('open', Icons.folder_open_outlined, '${l.openFolderTitle}…'),
+    ],
+  );
+  if (!context.mounted) return;
+  switch (action) {
+    case 'page':
+      await app.addPage(sectionId: section!.id);
+    case 'section':
+      await app.addSection();
+    case 'group':
+      app.addSectionGroup();
+    case 'notebook':
+      final title = await promptForText(context,
+          title: l.nbNewTitle, okLabel: l.nbCreate, hintText: l.nbNameHint);
+      if (title != null) await app.createNotebook(title);
+    case 'open':
+      if (messenger != null) {
+        await openNotebookFromFolder(context, app, messenger: messenger);
+      }
+  }
+}
+
+/// The empty part of a navigator list, made to answer a right-click with
+/// [showNavCreateMenu]. A row inside still answers with its own menu: the
+/// row's recogniser is the deeper one, so it wins the press. Not a long press
+/// as well, which would race the rows' touch drag to reorder; a touch screen
+/// has the plus buttons.
+class _CreateOnEmpty extends StatelessWidget {
+  const _CreateOnEmpty({required this.app, this.section, required this.child});
+
+  final AppState app;
+  final TreeNode? section;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapUp: (d) => showNavCreateMenu(context, app,
+            position: d.globalPosition, section: section),
+        child: child,
+      );
+}
+
 Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     {required bool canIndent,
     required Offset position,
