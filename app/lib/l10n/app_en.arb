@@ -3714,5 +3714,456 @@
   "examSet": "Set",
   "@examSet": {
     "description": "Button that saves the exam date."
+  },
+  "weekdaysShort": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+  "@weekdaysShort": {
+    "description": "The seven short weekday names, Monday to Sunday, separated by commas with no spaces."
+  },
+  "weekdayInitials": "M,T,W,T,F,S,S",
+  "@weekdayInitials": {
+    "description": "One-letter weekday headings for a month grid, Monday to Sunday, separated by commas."
+  },
+  "dateDayFull": "{weekday} {day} {month}",
+  "@dateDayFull": {
+    "description": "A heading date: weekday and month are short names, day a number.",
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      },
+      "day": {
+        "type": "String"
+      },
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "planMonthYear": "{month} {year}",
+  "@planMonthYear": {
+    "description": "The month grid heading.",
+    "placeholders": {
+      "month": {
+        "type": "String"
+      },
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "whenInDays": "{count, plural, =1{in 1 day} other{in {count} days}}",
+  "@whenInDays": {
+    "description": "How far off a dated item is, in days.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agendaOverdue": "Overdue",
+  "@agendaOverdue": {
+    "description": "Planner heading: late items."
+  },
+  "agendaToday": "Today",
+  "@agendaToday": {
+    "description": "Planner heading."
+  },
+  "agendaTomorrow": "Tomorrow",
+  "@agendaTomorrow": {
+    "description": "Planner heading."
+  },
+  "agendaThisWeek": "This week",
+  "@agendaThisWeek": {
+    "description": "Planner heading: the rest of the next seven days."
+  },
+  "agendaLater": "Later",
+  "@agendaLater": {
+    "description": "Planner heading."
+  },
+  "agendaDone": "Done",
+  "@agendaDone": {
+    "description": "Planner heading: finished items."
+  },
+  "planShowList": "Show the list",
+  "@planShowList": {
+    "description": "Tooltip: switch from the month grid to the list."
+  },
+  "planShowMonth": "Show the month",
+  "@planShowMonth": {
+    "description": "Tooltip: show the month grid."
+  },
+  "planRemindersAway": "{count, plural, =1{1 reminder while you were away} other{{count} reminders while you were away}}",
+  "@planRemindersAway": {
+    "description": "Banner: reminders that came due while the app was closed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "planRemindersHeading": "{count, plural, =1{A reminder} other{{count} reminders}}",
+  "@planRemindersHeading": {
+    "description": "Banner: reminders that are due now.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "planDoneAll": "Done with all of these",
+  "@planDoneAll": {
+    "description": "Tooltip: dismiss every reminder in the banner."
+  },
+  "planTimetableError": "Timetable: {error}. Showing the last copy.",
+  "@planTimetableError": {
+    "description": "The timetable could not be refreshed; error is technical.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "planCalendarNotes": "{count, plural, =1{1 note about this calendar} other{{count} notes about this calendar}}",
+  "@planCalendarNotes": {
+    "description": "Link to notes about what could not be read from the calendar.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "planShowAll": "Show all",
+  "@planShowAll": {
+    "description": "Link: leave the picked day and show everything."
+  },
+  "planNothingOnDay": "Nothing on this day.",
+  "@planNothingOnDay": {
+    "description": "Nothing on the picked day."
+  },
+  "planDoneReminder": "Done with this reminder",
+  "@planDoneReminder": {
+    "description": "Tooltip: dismiss this reminder."
+  },
+  "planEmptyHeadline": "Nothing dated yet.",
+  "@planEmptyHeadline": {
+    "description": "The planner has nothing in it."
+  },
+  "planEmptyBody": "Everything with a date shows up here — exam dates, to-dos you give a deadline, reminders, and your timetable if you subscribe to one.",
+  "@planEmptyBody": {
+    "description": "What shows up in the planner."
+  },
+  "planSetExam": "Set an exam date",
+  "@planSetExam": {
+    "description": "Action: set an exam date."
+  },
+  "planAddReminder": "Add a reminder",
+  "@planAddReminder": {
+    "description": "Action: add a reminder."
+  },
+  "planSubscribe": "Subscribe to a timetable",
+  "@planSubscribe": {
+    "description": "Action: subscribe to a timetable."
+  },
+  "planAddDate": "Add a date",
+  "@planAddDate": {
+    "description": "Tooltip of the add menu."
+  },
+  "planAddDateMenu": "Add a date…",
+  "@planAddDateMenu": {
+    "description": "The add button."
+  },
+  "planMenuReminder": "Reminder…",
+  "@planMenuReminder": {
+    "description": "Add menu item."
+  },
+  "planMenuExam": "Exam date…",
+  "@planMenuExam": {
+    "description": "Add menu item."
+  },
+  "planMenuTask": "Due date on this page…",
+  "@planMenuTask": {
+    "description": "Add menu item: give a tagged line on this page a due date."
+  },
+  "planMenuSubscribe": "Subscribe to a timetable…",
+  "@planMenuSubscribe": {
+    "description": "Add and settings menu item."
+  },
+  "planSettings": "Planner settings",
+  "@planSettings": {
+    "description": "Tooltip of the settings menu."
+  },
+  "planChangeTimetable": "Change the timetable…",
+  "@planChangeTimetable": {
+    "description": "Settings menu item."
+  },
+  "planAlerts": "Alerts before classes…",
+  "@planAlerts": {
+    "description": "Settings menu item."
+  },
+  "planRemoveTimetable": "Remove the timetable",
+  "@planRemoveTimetable": {
+    "description": "Settings menu item."
+  },
+  "planCalendarNotesMenu": "Notes about this calendar…",
+  "@planCalendarNotesMenu": {
+    "description": "Settings menu item."
+  },
+  "planTimetable": "Timetable",
+  "@planTimetable": {
+    "description": "Name for a timetable that has none of its own."
+  },
+  "planRefreshError": "{name} — {error}. Refresh",
+  "@planRefreshError": {
+    "description": "Tooltip: the timetable failed to refresh; click to try again.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "planRefresh": "Refresh {name}",
+  "@planRefresh": {
+    "description": "Tooltip: refresh the timetable.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "planRefreshUpdated": "Refresh {name} (updated {when})",
+  "@planRefreshUpdated": {
+    "description": "Tooltip: refresh the timetable; when is how long ago it was fetched.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "planGoToNote": "Go to the note",
+  "@planGoToNote": {
+    "description": "Row menu item."
+  },
+  "planMoveToday": "Move to today",
+  "@planMoveToday": {
+    "description": "Row menu item."
+  },
+  "planMoveTomorrow": "Move to tomorrow",
+  "@planMoveTomorrow": {
+    "description": "Row menu item."
+  },
+  "planMoveWeek": "Move on a week",
+  "@planMoveWeek": {
+    "description": "Row menu item: move the date a week later."
+  },
+  "planPickDateMenu": "Pick a date…",
+  "@planPickDateMenu": {
+    "description": "Row menu item."
+  },
+  "planDeleteReminder": "Delete reminder",
+  "@planDeleteReminder": {
+    "description": "Row menu item."
+  },
+  "planClearDate": "Clear the date",
+  "@planClearDate": {
+    "description": "Row menu item."
+  },
+  "planReadOnly": "From your calendar — read-only",
+  "@planReadOnly": {
+    "description": "Row menu: a calendar row cannot be changed."
+  },
+  "planWhichSection": "Which section?",
+  "@planWhichSection": {
+    "description": "Dialog title: choose the section for an exam date."
+  },
+  "planTagFirst": "Tag a line on this page first — then it can have a due date.",
+  "@planTagFirst": {
+    "description": "Toast: no tagged line to give a due date to."
+  },
+  "planWhichLine": "Which line gets the due date?",
+  "@planWhichLine": {
+    "description": "Dialog title: choose the tagged line to date."
+  },
+  "planEmptyLine": "(empty line)",
+  "@planEmptyLine": {
+    "description": "A tagged line with no text."
+  },
+  "planDueDate": "Due date",
+  "@planDueDate": {
+    "description": "Date picker heading."
+  },
+  "planReminderSet": "Reminder set for {time} {when}. Openote will nudge you if it is open — and tell you if it wasn’t.",
+  "@planReminderSet": {
+    "description": "Toast after setting a reminder: time is a clock time, when is today, tomorrow or in N days.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "planTimetableAdded": "Timetable added. It refreshes when Openote opens.",
+  "@planTimetableAdded": {
+    "description": "Toast after subscribing."
+  },
+  "planCouldNotLoad": "Could not load that calendar: {error}",
+  "@planCouldNotLoad": {
+    "description": "Toast: the calendar address did not work.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "planAboutCalendar": "About this calendar",
+  "@planAboutCalendar": {
+    "description": "Dialog title."
+  },
+  "planAboutCalendarBody": "Openote reads the common parts of a calendar file. Anything it could not read — or could not read exactly — is listed here rather than dropped silently. Times are shown in your computer’s time zone.",
+  "@planAboutCalendarBody": {
+    "description": "Explains the notes about a calendar."
+  },
+  "planPickDate": "Pick a date",
+  "@planPickDate": {
+    "description": "Date picker heading."
+  },
+  "planSnooze": "Snooze",
+  "@planSnooze": {
+    "description": "Tooltip of the snooze menu."
+  },
+  "planSnooze10": "10 minutes",
+  "@planSnooze10": {
+    "description": "Snooze choice."
+  },
+  "planSnoozeHour": "An hour",
+  "@planSnoozeHour": {
+    "description": "Snooze choice."
+  },
+  "planSnoozeEvening": "This evening (3 hours)",
+  "@planSnoozeEvening": {
+    "description": "Snooze choice."
+  },
+  "planSnoozeTomorrow": "Tomorrow",
+  "@planSnoozeTomorrow": {
+    "description": "Snooze choice."
+  },
+  "planRemindMe": "Remind me",
+  "@planRemindMe": {
+    "description": "Reminder dialog title and button."
+  },
+  "planReminderHint": "Come back to the proof of 2.7",
+  "@planReminderHint": {
+    "description": "Example reminder text in the empty field."
+  },
+  "planIn30": "In 30 min",
+  "@planIn30": {
+    "description": "Reminder preset."
+  },
+  "planInHour": "In an hour",
+  "@planInHour": {
+    "description": "Reminder preset."
+  },
+  "planThisEvening": "This evening",
+  "@planThisEvening": {
+    "description": "Reminder preset."
+  },
+  "planTomorrowMorning": "Tomorrow morning",
+  "@planTomorrowMorning": {
+    "description": "Reminder preset."
+  },
+  "planNudgeNote": "Openote nudges you while it is open. If it was closed when the time came, the reminder is waiting when you next open it.",
+  "@planNudgeNote": {
+    "description": "Reminders only interrupt while the app is open."
+  },
+  "planSubscribeTitle": "Subscribe to a calendar",
+  "@planSubscribeTitle": {
+    "description": "Dialog title."
+  },
+  "planSubscribeBody": "Paste the calendar address from your university timetable, Google Calendar, Outlook or Apple Calendar. It usually ends in .ics, and it is the only thing Openote ever sees — there is no sign-in and no access to your account.",
+  "@planSubscribeBody": {
+    "description": "Where to find a calendar address."
+  },
+  "planReadOnlyNote": "Read-only, one direction: Openote shows your timetable beside your notes and never writes anything back to it.",
+  "@planReadOnlyNote": {
+    "description": "The timetable is never written to."
+  },
+  "planSubscribeButton": "Subscribe",
+  "@planSubscribeButton": {
+    "description": "Button."
+  },
+  "planNow": "Now",
+  "@planNow": {
+    "description": "Small label: the event happening now. Keep it very short."
+  },
+  "planNext": "Next",
+  "@planNext": {
+    "description": "Small label: the next event. Keep it very short."
+  },
+  "planThen": "Then",
+  "@planThen": {
+    "description": "Small label: the event after the current one. Keep it very short."
+  },
+  "planUntitledEvent": "(untitled event)",
+  "@planUntitledEvent": {
+    "description": "An event with no name."
+  },
+  "planJoin": "Join {provider}",
+  "@planJoin": {
+    "description": "Button: join an online class; provider is e.g. Zoom.",
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "planInMinutes": "in {minutes} min",
+  "@planInMinutes": {
+    "description": "An event starts soon.",
+    "placeholders": {
+      "minutes": {
+        "type": "String"
+      }
+    }
+  },
+  "planAtTime": "at {time}",
+  "@planAtTime": {
+    "description": "An event starts at a clock time.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "planUntil": "until {time}",
+  "@planUntil": {
+    "description": "An event in progress ends at a clock time.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "planCouldNotOpenLink": "Couldn't open that link: {url}",
+  "@planCouldNotOpenLink": {
+    "description": "Toast.",
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "planPrevMonth": "Previous month",
+  "@planPrevMonth": {
+    "description": "Tooltip."
+  },
+  "planNextMonth": "Next month",
+  "@planNextMonth": {
+    "description": "Tooltip."
   }
 }

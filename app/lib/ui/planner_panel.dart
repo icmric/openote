@@ -22,6 +22,8 @@ library;
 import 'touch_long_press.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
+import '../l10n/planner_words.dart';
 import '../model/models.dart';
 import '../core/platform_open.dart';
 import '../planner/agenda.dart';
@@ -80,7 +82,9 @@ class _PlannerPanelState extends State<PlannerPanel> {
                   : Icons.calendar_month_outlined,
               size: OnoteIcon.sm),
           visualDensity: VisualDensity.compact,
-          tooltip: _showMonth ? 'Show the list' : 'Show the month',
+          tooltip: _showMonth
+              ? L.of(context).planShowList
+              : L.of(context).planShowMonth,
           onPressed: () => setState(() {
             _showMonth = !_showMonth;
             if (!_showMonth) _pickedDay = null;
@@ -147,11 +151,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
             Expanded(
               child: Text(
                 away
-                    ? '${alerts.length} reminder${alerts.length == 1 ? '' : 's'} '
-                        'while you were away'
-                    : alerts.length == 1
-                        ? 'Reminder'
-                        : '${alerts.length} reminders',
+                    ? L.of(context).planRemindersAway(alerts.length)
+                    : L.of(context).planRemindersHeading(alerts.length),
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -161,7 +162,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             IconButton(
               icon: const Icon(Icons.done_all, size: 16),
               visualDensity: VisualDensity.compact,
-              tooltip: 'Done with all of these',
+              tooltip: L.of(context).planDoneAll,
               // **Dismisses, rather than merely hiding.** This button used to
               // call `clearAlerts`, which emptied the on-screen list and left
               // every reminder live — so the badge stayed lit, the row stayed
@@ -175,7 +176,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
               child:
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
-                  child: Text('${r.title}  ·  ${formatClock(r.at)}',
+                  child: Text('${r.title}  ·  ${clockIn(L.of(context), r.at)}',
                       style: const TextStyle(fontSize: 12, height: 1.35)),
                 ),
                 if (r.source == AlertSource.reminder)
@@ -193,7 +194,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                   constraints: const BoxConstraints(
                       minWidth: OnoteSize.hitTarget,
                       minHeight: OnoteSize.hitTarget),
-                  tooltip: 'Done',
+                  tooltip: L.of(context).commonDone,
                   onPressed: () => planner.dismissAlert(r.id),
                 ),
               ]),
@@ -218,7 +219,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         if (planner.calendar?.lastError case final err?)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: Text('Timetable: $err. Showing the last copy.',
+            child: Text(L.of(context).planTimetableError(err),
                 style: TextStyle(
                     fontSize: 11, color: context.surfaces.textSecondary)),
           ),
@@ -233,9 +234,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
               mouseCursor: WidgetStateMouseCursor.clickable,
               onTap: _showWarnings,
               child: Text(
-                  '${planner.calendarWarnings.length} note'
-                  '${planner.calendarWarnings.length == 1 ? '' : 's'} about '
-                  'this calendar',
+                  L.of(context)
+                      .planCalendarNotes(planner.calendarWarnings.length),
                   style: TextStyle(
                       fontSize: 11,
                       color: Theme.of(context).colorScheme.primary)),
@@ -253,7 +253,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
           child: Row(children: [
-            Text(formatDayFull(day),
+            Text(dayFullIn(L.of(context), day),
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -265,7 +265,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
               onTap: () => setState(() => _pickedDay = null),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text('Show all',
+                child: Text(L.of(context).planShowAll,
                     style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
               ),
             ),
@@ -274,7 +274,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         if (items.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Text('Nothing on this day.',
+            child: Text(L.of(context).planNothingOnDay,
                 style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
           )
         else
@@ -288,7 +288,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 3),
       child: Row(children: [
-        Text(bucket.title.toUpperCase(),
+        Text(bucket.titleIn(L.of(context)).toUpperCase(),
             style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -300,7 +300,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         // actual date is worth the pixels.
         if (isToday) ...[
           const Spacer(),
-          Text(formatDayFull(now),
+          Text(dayFullIn(L.of(context), now),
               style: TextStyle(
                   fontSize: 11, color: context.surfaces.textSecondary)),
         ],
@@ -347,7 +347,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
           const SizedBox(width: 6),
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: Text(plannerWhen(it, now),
+            child: Text(plannerWhenIn(L.of(context), it, now),
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
@@ -366,7 +366,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
               padding: const EdgeInsets.only(left: 2),
               child: IconButton(
                 icon: const Icon(Icons.check, size: OnoteIcon.sm),
-                tooltip: 'Done with this reminder',
+                tooltip: L.of(context).planDoneReminder,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(
@@ -422,22 +422,20 @@ class _PlannerPanelState extends State<PlannerPanel> {
   }
 
   Widget _empty(BuildContext context, DateTime now) => PanelEmpty(
-        headline: 'Nothing dated yet.',
-        body: 'Everything with a date shows up here — exam dates, to-dos you '
-            'give a deadline, reminders, and your timetable if you subscribe '
-            'to one.',
+        headline: L.of(context).planEmptyHeadline,
+        body: L.of(context).planEmptyBody,
         actions: [
           PanelAction(
               icon: Icons.flag_outlined,
-              label: 'Set an exam date',
+              label: L.of(context).planSetExam,
               onTap: _addExam),
           PanelAction(
               icon: Icons.notifications_none,
-              label: 'Add a reminder',
+              label: L.of(context).planAddReminder,
               onTap: () => _addReminder(now)),
           PanelAction(
               icon: Icons.calendar_month_outlined,
-              label: 'Subscribe to a timetable',
+              label: L.of(context).planSubscribe,
               onTap: _subscribe),
         ],
       );
@@ -446,6 +444,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   Widget _footer(BuildContext context, DateTime now) {
     final sub = planner.calendar;
+    final l = L.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
       child: Row(children: [
@@ -453,22 +452,22 @@ class _PlannerPanelState extends State<PlannerPanel> {
         // own render box, where a hand-rolled position computed from the
         // panel's context would drop the menu at the panel's corner instead.
         PopupMenuButton<String>(
-          tooltip: 'Add a date',
+          tooltip: l.planAddDate,
           position: PopupMenuPosition.over,
           onSelected: (v) => _onAdd(v, now),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'reminder', child: Text('Reminder…')),
-            PopupMenuItem(value: 'exam', child: Text('Exam date…')),
-            PopupMenuItem(value: 'task', child: Text('Due date on this page…')),
-            PopupMenuDivider(),
-            PopupMenuItem(value: 'ics', child: Text('Subscribe to a timetable…')),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'reminder', child: Text(l.planMenuReminder)),
+            PopupMenuItem(value: 'exam', child: Text(l.planMenuExam)),
+            PopupMenuItem(value: 'task', child: Text(l.planMenuTask)),
+            const PopupMenuDivider(),
+            PopupMenuItem(value: 'ics', child: Text(l.planMenuSubscribe)),
           ],
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.add, size: 16),
-              SizedBox(width: 5),
-              Text('Add a date…', style: TextStyle(fontSize: 12)),
+              const Icon(Icons.add, size: 16),
+              const SizedBox(width: 5),
+              Text(l.planAddDateMenu, style: const TextStyle(fontSize: 12)),
             ]),
           ),
         ),
@@ -482,12 +481,12 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     child: CircularProgressIndicator(strokeWidth: 1.8))
                 : const Icon(Icons.sync, size: 16),
             visualDensity: VisualDensity.compact,
-            tooltip: _calendarTooltip(sub, now),
+            tooltip: _calendarTooltip(l, sub, now),
             onPressed:
                 planner.isRefreshingCalendar ? null : planner.refreshCalendar,
           ),
         PopupMenuButton<String>(
-          tooltip: 'Planner settings',
+          tooltip: l.planSettings,
           icon: const Icon(Icons.tune, size: 16),
           iconSize: 15,
           position: PopupMenuPosition.over,
@@ -496,36 +495,40 @@ class _PlannerPanelState extends State<PlannerPanel> {
             PopupMenuItem(
                 value: 'ics',
                 child: Text(planner.calendar == null
-                    ? 'Subscribe to a timetable…'
-                    : 'Change the timetable…')),
+                    ? l.planMenuSubscribe
+                    : l.planChangeTimetable)),
             if (planner.calendar != null) ...[
-              const PopupMenuItem(
-                  value: 'alerts', child: Text('Alerts before classes…')),
-              const PopupMenuItem(
-                  value: 'unsub', child: Text('Remove the timetable')),
+              PopupMenuItem(value: 'alerts', child: Text(l.planAlerts)),
+              PopupMenuItem(value: 'unsub', child: Text(l.planRemoveTimetable)),
             ],
             if (planner.calendarWarnings.isNotEmpty)
-              const PopupMenuItem(
-                  value: 'warnings',
-                  child: Text('Notes about this calendar…')),
+              PopupMenuItem(
+                  value: 'warnings', child: Text(l.planCalendarNotesMenu)),
           ],
         ),
       ]),
     );
   }
 
-  String _calendarTooltip(CalendarSubscription sub, DateTime now) {
-    final name = sub.name.isEmpty ? 'Timetable' : sub.name;
-    if (sub.lastError != null) return '$name — ${sub.lastError}. Refresh';
+  String _calendarTooltip(L l, CalendarSubscription sub, DateTime now) {
+    final name = sub.name.isEmpty ? l.planTimetable : sub.name;
+    if (sub.lastError != null) {
+      return l.planRefreshError(name, '${sub.lastError}');
+    }
     final at = sub.fetchedAt;
-    if (at == null) return 'Refresh $name';
-    return 'Refresh $name (updated ${relativeWhen(DatedItem(
-      id: '',
-      kind: DatedKind.event,
-      title: '',
-      when: at,
-      allDay: false,
-    ), now)})';
+    if (at == null) return l.planRefresh(name);
+    return l.planRefreshUpdated(
+        name,
+        relativeWhenIn(
+            l,
+            DatedItem(
+              id: '',
+              kind: DatedKind.event,
+              title: '',
+              when: at,
+              allDay: false,
+            ),
+            now));
   }
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -548,33 +551,32 @@ class _PlannerPanelState extends State<PlannerPanel> {
   Future<void> _rowMenu(DatedItem it, Offset at, DateTime now) async {
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final l = L.of(context);
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
           at & const Size(1, 1), Offset.zero & overlay.size),
       items: [
         if (it.pageId != null)
-          const PopupMenuItem(value: 'open', child: Text('Go to the note')),
+          PopupMenuItem(value: 'open', child: Text(l.planGoToNote)),
         if (planner.canRedate(it)) ...[
-          const PopupMenuItem(value: 'today', child: Text('Move to today')),
-          const PopupMenuItem(
-              value: 'tomorrow', child: Text('Move to tomorrow')),
-          const PopupMenuItem(value: 'week', child: Text('Move on a week')),
-          const PopupMenuItem(value: 'pick', child: Text('Pick a date…')),
+          PopupMenuItem(value: 'today', child: Text(l.planMoveToday)),
+          PopupMenuItem(value: 'tomorrow', child: Text(l.planMoveTomorrow)),
+          PopupMenuItem(value: 'week', child: Text(l.planMoveWeek)),
+          PopupMenuItem(value: 'pick', child: Text(l.planPickDateMenu)),
           const PopupMenuDivider(),
           PopupMenuItem(
               value: 'clear',
               child: Text(it.kind == DatedKind.reminder
-                  ? 'Delete reminder'
-                  : 'Clear the date')),
+                  ? l.planDeleteReminder
+                  : l.planClearDate)),
         ] else
           // Said, not hidden. A calendar row with no menu at all reads as a
           // bug; a menu that explains why it cannot be edited is the answer to
           // "Openote never writes to anyone's calendar".
-          const PopupMenuItem(
+          PopupMenuItem(
             enabled: false,
-            child: Text('From your calendar — read-only',
-                style: TextStyle(fontSize: 12)),
+            child: Text(l.planReadOnly, style: const TextStyle(fontSize: 12)),
           ),
       ],
     );
@@ -646,14 +648,15 @@ class _PlannerPanelState extends State<PlannerPanel> {
       showOnoteDialog<TreeNode>(
         context: context,
         builder: (ctx) => SimpleDialog(
-          title: const Text('Which section?', style: TextStyle(fontSize: 15)),
+          title: Text(L.of(ctx).planWhichSection,
+              style: const TextStyle(fontSize: 15)),
           children: [
             for (final s in sections)
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(ctx, s),
                 child: Row(children: [
                   Expanded(
-                      child: Text(s.title.isEmpty ? 'Untitled' : s.title,
+                      child: Text(s.title.isEmpty ? L.of(ctx).navUntitled : s.title,
                           style: const TextStyle(fontSize: 13))),
                   if (app.study.examDate(s.id) != null)
                     const Icon(Icons.flag_outlined,
@@ -676,16 +679,15 @@ class _PlannerPanelState extends State<PlannerPanel> {
     ];
     if (candidates.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showToast(const SnackBar(
-          content: Text('Tag a line on this page first — then it can have a '
-              'due date.')));
+      ScaffoldMessenger.of(context)
+          .showToast(SnackBar(content: Text(L.of(context).planTagFirst)));
       return;
     }
     final chosen = await showOnoteDialog<TaggedLine>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Which line gets the due date?',
-            style: TextStyle(fontSize: 15)),
+        title: Text(L.of(ctx).planWhichLine,
+            style: const TextStyle(fontSize: 15)),
         children: [
           for (final t in candidates)
             SimpleDialogOption(
@@ -694,7 +696,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                 Icon(t.tag.kind.icon, size: 16, color: t.tag.kind.color),
                 const SizedBox(width: 7),
                 Expanded(
-                    child: Text(t.text.isEmpty ? '(empty line)' : t.text,
+                    child: Text(t.text.isEmpty ? L.of(ctx).planEmptyLine : t.text,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13))),
@@ -707,7 +709,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final d = await _pickDay(
         initial: DateTime(now.year, now.month, now.day + 7),
         now: now,
-        help: 'Due date');
+        help: L.of(context).planDueDate);
     if (d == null) return;
     app.setTagDue(chosen.blockId, chosen.tag.line, chosen.tag.kind, d,
         pageId: chosen.pageId);
@@ -731,10 +733,18 @@ class _PlannerPanelState extends State<PlannerPanel> {
       pageId: page?.id,
     );
     if (!mounted) return;
+    final l = L.of(context);
+    final day = relativeWhenIn(
+        l,
+        DatedItem(
+            id: '',
+            kind: DatedKind.reminder,
+            title: '',
+            when: r.at,
+            allDay: true),
+        now);
     ScaffoldMessenger.of(context).showToast(SnackBar(
-        content: Text('Reminder set for ${formatClock(r.at)} '
-            '${relativeWhen(DatedItem(id: '', kind: DatedKind.reminder, title: '', when: r.at, allDay: true), now)}. '
-            'Openote will nudge you if it is open — and tell you if it wasn’t.')));
+        content: Text(l.planReminderSet(clockIn(l, r.at), day))));
   }
 
   Future<void> _subscribe() async {
@@ -748,27 +758,23 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final err = planner.calendar?.lastError;
     ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text(err == null
-            ? 'Timetable added. It refreshes when Openote opens.'
-            : 'Could not load that calendar: $err')));
+            ? L.of(context).planTimetableAdded
+            : L.of(context).planCouldNotLoad(err))));
   }
 
   Future<void> _showWarnings() => showOnoteDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('About this calendar',
-              style: TextStyle(fontSize: 15)),
+          title: Text(L.of(ctx).planAboutCalendar,
+              style: const TextStyle(fontSize: 15)),
           content: SizedBox(
             width: 460,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                      'Openote reads the common parts of a calendar file. '
-                      'Anything it could not read — or could not read exactly '
-                      '— is listed here rather than dropped silently. Times '
-                      'are shown in your computer’s time zone.',
-                      style: TextStyle(fontSize: 12, height: 1.45)),
+                  Text(L.of(ctx).planAboutCalendarBody,
+                      style: const TextStyle(fontSize: 12, height: 1.45)),
                   const SizedBox(height: 10),
                   for (final w in planner.calendarWarnings)
                     Padding(
@@ -782,7 +788,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(L.of(ctx).commonClose)),
           ],
         ),
       );
@@ -799,8 +806,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
       initialDate: initial.isBefore(first) ? first : initial,
       firstDate: first,
       lastDate: DateTime(now.year + 5, now.month, now.day),
-      helpText: help ?? 'Pick a date',
-      confirmText: 'Set',
+      helpText: help ?? L.of(context).planPickDate,
+      confirmText: L.of(context).examSet,
     );
   }
 }
@@ -815,16 +822,18 @@ class _SnoozeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<int>(
-        tooltip: 'Snooze',
+        tooltip: L.of(context).planSnooze,
         padding: EdgeInsets.zero,
         iconSize: 14,
         icon: const Icon(Icons.snooze, size: 16),
         onSelected: (m) => onSnooze(Duration(minutes: m)),
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 10, child: Text('10 minutes')),
-          PopupMenuItem(value: 60, child: Text('An hour')),
-          PopupMenuItem(value: 60 * 3, child: Text('This evening (3 hours)')),
-          PopupMenuItem(value: 60 * 24, child: Text('Tomorrow')),
+        itemBuilder: (_) => [
+          PopupMenuItem(value: 10, child: Text(L.of(context).planSnooze10)),
+          PopupMenuItem(value: 60, child: Text(L.of(context).planSnoozeHour)),
+          PopupMenuItem(
+              value: 60 * 3, child: Text(L.of(context).planSnoozeEvening)),
+          PopupMenuItem(
+              value: 60 * 24, child: Text(L.of(context).planSnoozeTomorrow)),
         ],
       );
 }
@@ -914,8 +923,9 @@ class _ReminderDialogState extends State<_ReminderDialog> {
       Navigator.pop(context, (text: t, at: _at));
     }
 
+    final l = L.of(context);
     return AlertDialog(
-      title: const Text('Remind me', style: TextStyle(fontSize: 15)),
+      title: Text(l.planRemindMe, style: const TextStyle(fontSize: 15)),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -926,8 +936,8 @@ class _ReminderDialogState extends State<_ReminderDialog> {
               controller: _text,
               autofocus: true,
               style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                hintText: 'Come back to the proof of 2.7',
+              decoration: InputDecoration(
+                hintText: l.planReminderHint,
                 isDense: true,
               ),
               onChanged: (_) => setState(() {}),
@@ -935,23 +945,23 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             ),
             const SizedBox(height: 14),
             Wrap(spacing: 6, runSpacing: 6, children: [
-              _chip('In 30 min', () => _shift(const Duration(minutes: 30))),
-              _chip('In an hour', () => _shift(const Duration(hours: 1))),
-              _chip('This evening', () => _setTimeOfDay(19, 0)),
-              _chip('Tomorrow morning',
+              _chip(l.planIn30, () => _shift(const Duration(minutes: 30))),
+              _chip(l.planInHour, () => _shift(const Duration(hours: 1))),
+              _chip(l.planThisEvening, () => _setTimeOfDay(19, 0)),
+              _chip(l.planTomorrowMorning,
                   () => _setTimeOfDay(9, 0, dayOffset: 1)),
             ]),
             const SizedBox(height: 12),
             Row(children: [
               TextButton.icon(
                 icon: const Icon(Icons.event, size: 16),
-                label: Text(relativeWhen(when, widget.now),
+                label: Text(relativeWhenIn(l, when, widget.now),
                     style: const TextStyle(fontSize: 12)),
                 onPressed: _pickDate,
               ),
               TextButton.icon(
                 icon: const Icon(Icons.schedule, size: 16),
-                label: Text(formatClock(_at),
+                label: Text(clockIn(l, _at),
                     style: const TextStyle(fontSize: 12)),
                 onPressed: _pickTime,
               ),
@@ -961,8 +971,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             // student wrongly believes will interrupt them is worse than no
             // reminder at all (v0.5 §1).
             Text(
-              'Openote nudges you while it is open. If it was closed when the '
-              'time came, the reminder is waiting when you next open it.',
+              l.planNudgeNote,
               style: TextStyle(fontSize: 11, height: 1.4,
                   color: context.surfaces.textSecondary),
             ),
@@ -971,10 +980,11 @@ class _ReminderDialogState extends State<_ReminderDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: Text(l.commonCancel)),
         FilledButton(
           onPressed: _text.text.trim().isEmpty ? null : submit,
-          child: const Text('Remind me'),
+          child: Text(l.planRemindMe),
         ),
       ],
     );
@@ -996,6 +1006,9 @@ class _CalendarDialog extends StatefulWidget {
   State<_CalendarDialog> createState() => _CalendarDialogState();
 }
 
+/// What a calendar address looks like, in every language.
+const _icsExample = 'https://…/timetable.ics';
+
 class _CalendarDialogState extends State<_CalendarDialog> {
   late final _url = TextEditingController(text: widget.existing ?? '');
 
@@ -1007,20 +1020,17 @@ class _CalendarDialogState extends State<_CalendarDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Subscribe to a calendar',
-            style: TextStyle(fontSize: 15)),
+        title: Text(L.of(context).planSubscribeTitle,
+            style: const TextStyle(fontSize: 15)),
         content: SizedBox(
           width: 520,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Paste the calendar address from your university timetable, '
-                'Google Calendar, Outlook or Apple Calendar. It usually ends '
-                'in .ics, and it is the only thing Openote ever sees — there '
-                'is no sign-in and no access to your account.',
-                style: TextStyle(fontSize: 12, height: 1.45),
+              Text(
+                L.of(context).planSubscribeBody,
+                style: const TextStyle(fontSize: 12, height: 1.45),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -1028,7 +1038,7 @@ class _CalendarDialogState extends State<_CalendarDialog> {
                 autofocus: true,
                 style: const TextStyle(fontSize: 13),
                 decoration: const InputDecoration(
-                  hintText: 'https://…/timetable.ics',
+                  hintText: _icsExample,
                   isDense: true,
                 ),
                 onChanged: (_) => setState(() {}),
@@ -1038,8 +1048,7 @@ class _CalendarDialogState extends State<_CalendarDialog> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Read-only, one direction: Openote shows your timetable beside '
-                'your notes and never writes anything back to it.',
+                L.of(context).planReadOnlyNote,
                 style: TextStyle(
                     fontSize: 11, height: 1.4, color: context.surfaces.textSecondary),
               ),
@@ -1049,12 +1058,12 @@ class _CalendarDialogState extends State<_CalendarDialog> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+              child: Text(L.of(context).commonCancel)),
           FilledButton(
             onPressed: _url.text.trim().isEmpty
                 ? null
                 : () => Navigator.pop(context, _url.text.trim()),
-            child: const Text('Subscribe'),
+            child: Text(L.of(context).planSubscribeButton),
           ),
         ],
       );
@@ -1097,12 +1106,18 @@ class _UpNext extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (current != null)
-            _EventLine(label: 'Now', event: current, now: now, emphasis: true),
+            _EventLine(
+                label: L.of(context).planNow,
+                event: current,
+                now: now,
+                emphasis: true),
           if (current != null && next != null)
             const SizedBox(height: OnoteSpace.x3),
           if (next != null)
             _EventLine(
-                label: current == null ? 'Next' : 'Then',
+                label: current == null
+                    ? L.of(context).planNext
+                    : L.of(context).planThen,
                 event: next,
                 now: now,
                 emphasis: current == null),
@@ -1143,13 +1158,15 @@ class _EventLine extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              event.summary.isEmpty ? '(untitled event)' : event.summary,
+              event.summary.isEmpty
+                  ? L.of(context).planUntitledEvent
+                  : event.summary,
               style: (emphasis ? OnoteType.uiStrong : OnoteType.ui)
                   .copyWith(color: s.textPrimary),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            Text(_detail(kind),
+            Text(_detail(L.of(context), kind),
                 style: OnoteType.caption.copyWith(color: s.textSecondary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
@@ -1173,26 +1190,26 @@ class _EventLine extends StatelessWidget {
                 textStyle: OnoteType.small,
               ),
               onPressed: () => _join(context, join),
-              child: Text('Join ${join.provider}'),
+              child: Text(L.of(context).planJoin(join.provider)),
             ),
           ),
         ),
     ]);
   }
 
-  String _detail(EventKind kind) {
+  String _detail(L l, EventKind kind) {
     final parts = <String>[];
     final mins = event.start.difference(now).inMinutes;
     if (mins > 0) {
       parts.add(mins < 60
-          ? 'in $mins min'
-          : 'at ${formatClock(event.start)}');
+          ? l.planInMinutes('$mins')
+          : l.planAtTime(clockIn(l, event.start)));
     } else if (event.end != null) {
-      parts.add('until ${formatClock(event.end!)}');
+      parts.add(l.planUntil(clockIn(l, event.end!)));
     } else {
-      parts.add(formatClock(event.start));
+      parts.add(clockIn(l, event.start));
     }
-    if (kind != EventKind.other) parts.add(kind.label);
+    if (kind != EventKind.other) parts.add(eventKindLabel(l, kind));
     if (event.location.isNotEmpty) parts.add(event.location);
     return parts.join(' · ');
   }
@@ -1201,7 +1218,7 @@ class _EventLine extends StatelessWidget {
     final ok = await PlatformOpen.url(join.url);
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showToast(
-          SnackBar(content: Text("Couldn't open that link: ${join.url}")));
+          SnackBar(content: Text(L.of(context).planCouldNotOpenLink(join.url))));
     }
   }
 }

@@ -51,6 +51,8 @@ const _converted = [
   'lib/ui/mcp_dialog.dart',
   'lib/ui/study_panel.dart',
   'lib/ui/exam_date.dart',
+  'lib/ui/planner_panel.dart',
+  'lib/ui/month_grid.dart',
 ];
 
 void main() {

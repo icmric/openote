@@ -8,6 +8,7 @@ import '../export/print_page.dart';
 import '../model/models.dart';
 import '../planner/agenda.dart';
 import '../l10n/l10n.dart';
+import '../l10n/planner_words.dart';
 import '../l10n/study_words.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
@@ -16,7 +17,6 @@ import 'exam_date.dart';
 import 'notebook_manager.dart';
 import 'protect_dialog.dart';
 import 'sync_dot.dart';
-import 'planner_format.dart';
 import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
@@ -1379,7 +1379,7 @@ class _ComingUp extends StatelessWidget {
                               it.done ? TextDecoration.lineThrough : null)),
                 ),
                 const SizedBox(width: 6),
-                Text(plannerWhen(it, now),
+                Text(plannerWhenIn(L.of(context), it, now),
                     style: TextStyle(
                         fontSize: 11,
                         color: bucketFor(it, now) == AgendaBucket.overdue

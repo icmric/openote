@@ -2661,4 +2661,322 @@ class LZh extends L {
 
   @override
   String get examSet => '设置';
+
+  @override
+  String get weekdaysShort => '周一,周二,周三,周四,周五,周六,周日';
+
+  @override
+  String get weekdayInitials => '一,二,三,四,五,六,日';
+
+  @override
+  String dateDayFull(String weekday, String day, String month) {
+    return '$month$day日 $weekday';
+  }
+
+  @override
+  String planMonthYear(String month, String year) {
+    return '$year年$month';
+  }
+
+  @override
+  String whenInDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 天后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get agendaOverdue => '已逾期';
+
+  @override
+  String get agendaToday => '今天';
+
+  @override
+  String get agendaTomorrow => '明天';
+
+  @override
+  String get agendaThisWeek => '本周';
+
+  @override
+  String get agendaLater => '以后';
+
+  @override
+  String get agendaDone => '已完成';
+
+  @override
+  String get planShowList => '显示列表';
+
+  @override
+  String get planShowMonth => '显示月历';
+
+  @override
+  String planRemindersAway(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '你离开期间有 $count 条提醒',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String planRemindersHeading(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 条提醒',
+      one: '1 条提醒',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get planDoneAll => '全部完成';
+
+  @override
+  String planTimetableError(String error) {
+    return '课表：$error。显示的是上一份副本。';
+  }
+
+  @override
+  String planCalendarNotes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '关于此日历的 $count 条说明',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get planShowAll => '显示全部';
+
+  @override
+  String get planNothingOnDay => '这一天没有安排。';
+
+  @override
+  String get planDoneReminder => '完成此提醒';
+
+  @override
+  String get planEmptyHeadline => '还没有带日期的内容。';
+
+  @override
+  String get planEmptyBody => '所有带日期的内容都会显示在这里——考试日期、有截止日期的待办、提醒，以及你订阅的课表。';
+
+  @override
+  String get planSetExam => '设置考试日期';
+
+  @override
+  String get planAddReminder => '添加提醒';
+
+  @override
+  String get planSubscribe => '订阅课表';
+
+  @override
+  String get planAddDate => '添加日期';
+
+  @override
+  String get planAddDateMenu => '添加日期…';
+
+  @override
+  String get planMenuReminder => '提醒…';
+
+  @override
+  String get planMenuExam => '考试日期…';
+
+  @override
+  String get planMenuTask => '本页的截止日期…';
+
+  @override
+  String get planMenuSubscribe => '订阅课表…';
+
+  @override
+  String get planSettings => '计划设置';
+
+  @override
+  String get planChangeTimetable => '更换课表…';
+
+  @override
+  String get planAlerts => '上课前提醒…';
+
+  @override
+  String get planRemoveTimetable => '移除课表';
+
+  @override
+  String get planCalendarNotesMenu => '关于此日历的说明…';
+
+  @override
+  String get planTimetable => '课表';
+
+  @override
+  String planRefreshError(String name, String error) {
+    return '$name — $error。刷新';
+  }
+
+  @override
+  String planRefresh(String name) {
+    return '刷新 $name';
+  }
+
+  @override
+  String planRefreshUpdated(String name, String when) {
+    return '刷新 $name（$when更新）';
+  }
+
+  @override
+  String get planGoToNote => '转到笔记';
+
+  @override
+  String get planMoveToday => '移到今天';
+
+  @override
+  String get planMoveTomorrow => '移到明天';
+
+  @override
+  String get planMoveWeek => '推迟一周';
+
+  @override
+  String get planPickDateMenu => '选择日期…';
+
+  @override
+  String get planDeleteReminder => '删除提醒';
+
+  @override
+  String get planClearDate => '清除日期';
+
+  @override
+  String get planReadOnly => '来自你的日历——只读';
+
+  @override
+  String get planWhichSection => '哪个分区？';
+
+  @override
+  String get planTagFirst => '请先在本页标记一行——之后它才能有截止日期。';
+
+  @override
+  String get planWhichLine => '哪一行设置截止日期？';
+
+  @override
+  String get planEmptyLine => '（空行）';
+
+  @override
+  String get planDueDate => '截止日期';
+
+  @override
+  String planReminderSet(String time, String when) {
+    return '已设置 $when $time 的提醒。Openote 打开时会提醒你——没打开的话也会告诉你。';
+  }
+
+  @override
+  String get planTimetableAdded => '已添加课表。每次打开 Openote 时都会刷新。';
+
+  @override
+  String planCouldNotLoad(String error) {
+    return '无法加载该日历：$error';
+  }
+
+  @override
+  String get planAboutCalendar => '关于此日历';
+
+  @override
+  String get planAboutCalendarBody =>
+      'Openote 会读取日历文件的常见部分。无法读取或无法准确读取的内容会列在这里，而不是悄悄丢掉。时间按你电脑的时区显示。';
+
+  @override
+  String get planPickDate => '选择日期';
+
+  @override
+  String get planSnooze => '稍后提醒';
+
+  @override
+  String get planSnooze10 => '10 分钟';
+
+  @override
+  String get planSnoozeHour => '一小时';
+
+  @override
+  String get planSnoozeEvening => '今晚（3 小时）';
+
+  @override
+  String get planSnoozeTomorrow => '明天';
+
+  @override
+  String get planRemindMe => '提醒我';
+
+  @override
+  String get planReminderHint => '回头看 2.7 的证明';
+
+  @override
+  String get planIn30 => '30 分钟后';
+
+  @override
+  String get planInHour => '一小时后';
+
+  @override
+  String get planThisEvening => '今晚';
+
+  @override
+  String get planTomorrowMorning => '明天早上';
+
+  @override
+  String get planNudgeNote => 'Openote 打开时会提醒你。如果到时它是关着的，提醒会在你下次打开时等着你。';
+
+  @override
+  String get planSubscribeTitle => '订阅日历';
+
+  @override
+  String get planSubscribeBody =>
+      '粘贴你的大学课表、Google 日历、Outlook 或 Apple 日历中的日历地址。它通常以 .ics 结尾，也是 Openote 唯一能看到的东西——无需登录，也不会访问你的账户。';
+
+  @override
+  String get planReadOnlyNote => '只读、单向：Openote 在你的笔记旁显示课表，从不向它写入任何内容。';
+
+  @override
+  String get planSubscribeButton => '订阅';
+
+  @override
+  String get planNow => '现在';
+
+  @override
+  String get planNext => '接下来';
+
+  @override
+  String get planThen => '然后';
+
+  @override
+  String get planUntitledEvent => '（无标题日程）';
+
+  @override
+  String planJoin(String provider) {
+    return '加入 $provider';
+  }
+
+  @override
+  String planInMinutes(String minutes) {
+    return '$minutes 分钟后';
+  }
+
+  @override
+  String planAtTime(String time) {
+    return '$time';
+  }
+
+  @override
+  String planUntil(String time) {
+    return '到 $time';
+  }
+
+  @override
+  String planCouldNotOpenLink(String url) {
+    return '无法打开该链接：$url';
+  }
+
+  @override
+  String get planPrevMonth => '上个月';
+
+  @override
+  String get planNextMonth => '下个月';
 }

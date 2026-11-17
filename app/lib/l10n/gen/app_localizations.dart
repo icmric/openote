@@ -4450,6 +4450,528 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Set'**
   String get examSet;
+
+  /// The seven short weekday names, Monday to Sunday, separated by commas with no spaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Mon,Tue,Wed,Thu,Fri,Sat,Sun'**
+  String get weekdaysShort;
+
+  /// One-letter weekday headings for a month grid, Monday to Sunday, separated by commas.
+  ///
+  /// In en, this message translates to:
+  /// **'M,T,W,T,F,S,S'**
+  String get weekdayInitials;
+
+  /// A heading date: weekday and month are short names, day a number.
+  ///
+  /// In en, this message translates to:
+  /// **'{weekday} {day} {month}'**
+  String dateDayFull(String weekday, String day, String month);
+
+  /// The month grid heading.
+  ///
+  /// In en, this message translates to:
+  /// **'{month} {year}'**
+  String planMonthYear(String month, String year);
+
+  /// How far off a dated item is, in days.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in 1 day} other{in {count} days}}'**
+  String whenInDays(int count);
+
+  /// Planner heading: late items.
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get agendaOverdue;
+
+  /// Planner heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get agendaToday;
+
+  /// Planner heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
+  String get agendaTomorrow;
+
+  /// Planner heading: the rest of the next seven days.
+  ///
+  /// In en, this message translates to:
+  /// **'This week'**
+  String get agendaThisWeek;
+
+  /// Planner heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get agendaLater;
+
+  /// Planner heading: finished items.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get agendaDone;
+
+  /// Tooltip: switch from the month grid to the list.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the list'**
+  String get planShowList;
+
+  /// Tooltip: show the month grid.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the month'**
+  String get planShowMonth;
+
+  /// Banner: reminders that came due while the app was closed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 reminder while you were away} other{{count} reminders while you were away}}'**
+  String planRemindersAway(int count);
+
+  /// Banner: reminders that are due now.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{A reminder} other{{count} reminders}}'**
+  String planRemindersHeading(int count);
+
+  /// Tooltip: dismiss every reminder in the banner.
+  ///
+  /// In en, this message translates to:
+  /// **'Done with all of these'**
+  String get planDoneAll;
+
+  /// The timetable could not be refreshed; error is technical.
+  ///
+  /// In en, this message translates to:
+  /// **'Timetable: {error}. Showing the last copy.'**
+  String planTimetableError(String error);
+
+  /// Link to notes about what could not be read from the calendar.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note about this calendar} other{{count} notes about this calendar}}'**
+  String planCalendarNotes(int count);
+
+  /// Link: leave the picked day and show everything.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all'**
+  String get planShowAll;
+
+  /// Nothing on the picked day.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing on this day.'**
+  String get planNothingOnDay;
+
+  /// Tooltip: dismiss this reminder.
+  ///
+  /// In en, this message translates to:
+  /// **'Done with this reminder'**
+  String get planDoneReminder;
+
+  /// The planner has nothing in it.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing dated yet.'**
+  String get planEmptyHeadline;
+
+  /// What shows up in the planner.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything with a date shows up here — exam dates, to-dos you give a deadline, reminders, and your timetable if you subscribe to one.'**
+  String get planEmptyBody;
+
+  /// Action: set an exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Set an exam date'**
+  String get planSetExam;
+
+  /// Action: add a reminder.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a reminder'**
+  String get planAddReminder;
+
+  /// Action: subscribe to a timetable.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscribe to a timetable'**
+  String get planSubscribe;
+
+  /// Tooltip of the add menu.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a date'**
+  String get planAddDate;
+
+  /// The add button.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a date…'**
+  String get planAddDateMenu;
+
+  /// Add menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminder…'**
+  String get planMenuReminder;
+
+  /// Add menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam date…'**
+  String get planMenuExam;
+
+  /// Add menu item: give a tagged line on this page a due date.
+  ///
+  /// In en, this message translates to:
+  /// **'Due date on this page…'**
+  String get planMenuTask;
+
+  /// Add and settings menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscribe to a timetable…'**
+  String get planMenuSubscribe;
+
+  /// Tooltip of the settings menu.
+  ///
+  /// In en, this message translates to:
+  /// **'Planner settings'**
+  String get planSettings;
+
+  /// Settings menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Change the timetable…'**
+  String get planChangeTimetable;
+
+  /// Settings menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Alerts before classes…'**
+  String get planAlerts;
+
+  /// Settings menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the timetable'**
+  String get planRemoveTimetable;
+
+  /// Settings menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes about this calendar…'**
+  String get planCalendarNotesMenu;
+
+  /// Name for a timetable that has none of its own.
+  ///
+  /// In en, this message translates to:
+  /// **'Timetable'**
+  String get planTimetable;
+
+  /// Tooltip: the timetable failed to refresh; click to try again.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} — {error}. Refresh'**
+  String planRefreshError(String name, String error);
+
+  /// Tooltip: refresh the timetable.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh {name}'**
+  String planRefresh(String name);
+
+  /// Tooltip: refresh the timetable; when is how long ago it was fetched.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh {name} (updated {when})'**
+  String planRefreshUpdated(String name, String when);
+
+  /// Row menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to the note'**
+  String get planGoToNote;
+
+  /// Row menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to today'**
+  String get planMoveToday;
+
+  /// Row menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to tomorrow'**
+  String get planMoveTomorrow;
+
+  /// Row menu item: move the date a week later.
+  ///
+  /// In en, this message translates to:
+  /// **'Move on a week'**
+  String get planMoveWeek;
+
+  /// Row menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a date…'**
+  String get planPickDateMenu;
+
+  /// Row menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete reminder'**
+  String get planDeleteReminder;
+
+  /// Row menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear the date'**
+  String get planClearDate;
+
+  /// Row menu: a calendar row cannot be changed.
+  ///
+  /// In en, this message translates to:
+  /// **'From your calendar — read-only'**
+  String get planReadOnly;
+
+  /// Dialog title: choose the section for an exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Which section?'**
+  String get planWhichSection;
+
+  /// Toast: no tagged line to give a due date to.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag a line on this page first — then it can have a due date.'**
+  String get planTagFirst;
+
+  /// Dialog title: choose the tagged line to date.
+  ///
+  /// In en, this message translates to:
+  /// **'Which line gets the due date?'**
+  String get planWhichLine;
+
+  /// A tagged line with no text.
+  ///
+  /// In en, this message translates to:
+  /// **'(empty line)'**
+  String get planEmptyLine;
+
+  /// Date picker heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get planDueDate;
+
+  /// Toast after setting a reminder: time is a clock time, when is today, tomorrow or in N days.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminder set for {time} {when}. Openote will nudge you if it is open — and tell you if it wasn’t.'**
+  String planReminderSet(String time, String when);
+
+  /// Toast after subscribing.
+  ///
+  /// In en, this message translates to:
+  /// **'Timetable added. It refreshes when Openote opens.'**
+  String get planTimetableAdded;
+
+  /// Toast: the calendar address did not work.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load that calendar: {error}'**
+  String planCouldNotLoad(String error);
+
+  /// Dialog title.
+  ///
+  /// In en, this message translates to:
+  /// **'About this calendar'**
+  String get planAboutCalendar;
+
+  /// Explains the notes about a calendar.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote reads the common parts of a calendar file. Anything it could not read — or could not read exactly — is listed here rather than dropped silently. Times are shown in your computer’s time zone.'**
+  String get planAboutCalendarBody;
+
+  /// Date picker heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a date'**
+  String get planPickDate;
+
+  /// Tooltip of the snooze menu.
+  ///
+  /// In en, this message translates to:
+  /// **'Snooze'**
+  String get planSnooze;
+
+  /// Snooze choice.
+  ///
+  /// In en, this message translates to:
+  /// **'10 minutes'**
+  String get planSnooze10;
+
+  /// Snooze choice.
+  ///
+  /// In en, this message translates to:
+  /// **'An hour'**
+  String get planSnoozeHour;
+
+  /// Snooze choice.
+  ///
+  /// In en, this message translates to:
+  /// **'This evening (3 hours)'**
+  String get planSnoozeEvening;
+
+  /// Snooze choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
+  String get planSnoozeTomorrow;
+
+  /// Reminder dialog title and button.
+  ///
+  /// In en, this message translates to:
+  /// **'Remind me'**
+  String get planRemindMe;
+
+  /// Example reminder text in the empty field.
+  ///
+  /// In en, this message translates to:
+  /// **'Come back to the proof of 2.7'**
+  String get planReminderHint;
+
+  /// Reminder preset.
+  ///
+  /// In en, this message translates to:
+  /// **'In 30 min'**
+  String get planIn30;
+
+  /// Reminder preset.
+  ///
+  /// In en, this message translates to:
+  /// **'In an hour'**
+  String get planInHour;
+
+  /// Reminder preset.
+  ///
+  /// In en, this message translates to:
+  /// **'This evening'**
+  String get planThisEvening;
+
+  /// Reminder preset.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow morning'**
+  String get planTomorrowMorning;
+
+  /// Reminders only interrupt while the app is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote nudges you while it is open. If it was closed when the time came, the reminder is waiting when you next open it.'**
+  String get planNudgeNote;
+
+  /// Dialog title.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscribe to a calendar'**
+  String get planSubscribeTitle;
+
+  /// Where to find a calendar address.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the calendar address from your university timetable, Google Calendar, Outlook or Apple Calendar. It usually ends in .ics, and it is the only thing Openote ever sees — there is no sign-in and no access to your account.'**
+  String get planSubscribeBody;
+
+  /// The timetable is never written to.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-only, one direction: Openote shows your timetable beside your notes and never writes anything back to it.'**
+  String get planReadOnlyNote;
+
+  /// Button.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscribe'**
+  String get planSubscribeButton;
+
+  /// Small label: the event happening now. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'Now'**
+  String get planNow;
+
+  /// Small label: the next event. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get planNext;
+
+  /// Small label: the event after the current one. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'Then'**
+  String get planThen;
+
+  /// An event with no name.
+  ///
+  /// In en, this message translates to:
+  /// **'(untitled event)'**
+  String get planUntitledEvent;
+
+  /// Button: join an online class; provider is e.g. Zoom.
+  ///
+  /// In en, this message translates to:
+  /// **'Join {provider}'**
+  String planJoin(String provider);
+
+  /// An event starts soon.
+  ///
+  /// In en, this message translates to:
+  /// **'in {minutes} min'**
+  String planInMinutes(String minutes);
+
+  /// An event starts at a clock time.
+  ///
+  /// In en, this message translates to:
+  /// **'at {time}'**
+  String planAtTime(String time);
+
+  /// An event in progress ends at a clock time.
+  ///
+  /// In en, this message translates to:
+  /// **'until {time}'**
+  String planUntil(String time);
+
+  /// Toast.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open that link: {url}'**
+  String planCouldNotOpenLink(String url);
+
+  /// Tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous month'**
+  String get planPrevMonth;
+
+  /// Tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Next month'**
+  String get planNextMonth;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

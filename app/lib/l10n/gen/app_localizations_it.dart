@@ -2791,4 +2791,330 @@ class LIt extends L {
 
   @override
   String get examSet => 'Imposta';
+
+  @override
+  String get weekdaysShort => 'lun,mar,mer,gio,ven,sab,dom';
+
+  @override
+  String get weekdayInitials => 'L,M,M,G,V,S,D';
+
+  @override
+  String dateDayFull(String weekday, String day, String month) {
+    return '$weekday $day $month';
+  }
+
+  @override
+  String planMonthYear(String month, String year) {
+    return '$month $year';
+  }
+
+  @override
+  String whenInDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'tra $count giorni',
+      one: 'tra 1 giorno',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get agendaOverdue => 'In ritardo';
+
+  @override
+  String get agendaToday => 'Oggi';
+
+  @override
+  String get agendaTomorrow => 'Domani';
+
+  @override
+  String get agendaThisWeek => 'Questa settimana';
+
+  @override
+  String get agendaLater => 'Più avanti';
+
+  @override
+  String get agendaDone => 'Fatto';
+
+  @override
+  String get planShowList => 'Mostra l’elenco';
+
+  @override
+  String get planShowMonth => 'Mostra il mese';
+
+  @override
+  String planRemindersAway(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count promemoria mentre eri via',
+      one: '1 promemoria mentre eri via',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String planRemindersHeading(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count promemoria',
+      one: 'Un promemoria',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get planDoneAll => 'Fatto con tutti';
+
+  @override
+  String planTimetableError(String error) {
+    return 'Orario: $error. Viene mostrata l’ultima copia.';
+  }
+
+  @override
+  String planCalendarNotes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count note su questo calendario',
+      one: '1 nota su questo calendario',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get planShowAll => 'Mostra tutto';
+
+  @override
+  String get planNothingOnDay => 'Niente in questo giorno.';
+
+  @override
+  String get planDoneReminder => 'Fatto con questo promemoria';
+
+  @override
+  String get planEmptyHeadline => 'Ancora niente con una data.';
+
+  @override
+  String get planEmptyBody =>
+      'Tutto ciò che ha una data compare qui: date d’esame, attività con scadenza, promemoria e il tuo orario se ti iscrivi a uno.';
+
+  @override
+  String get planSetExam => 'Imposta una data d’esame';
+
+  @override
+  String get planAddReminder => 'Aggiungi un promemoria';
+
+  @override
+  String get planSubscribe => 'Iscriviti a un orario';
+
+  @override
+  String get planAddDate => 'Aggiungi una data';
+
+  @override
+  String get planAddDateMenu => 'Aggiungi una data…';
+
+  @override
+  String get planMenuReminder => 'Promemoria…';
+
+  @override
+  String get planMenuExam => 'Data dell’esame…';
+
+  @override
+  String get planMenuTask => 'Scadenza su questa pagina…';
+
+  @override
+  String get planMenuSubscribe => 'Iscriviti a un orario…';
+
+  @override
+  String get planSettings => 'Impostazioni del planner';
+
+  @override
+  String get planChangeTimetable => 'Cambia l’orario…';
+
+  @override
+  String get planAlerts => 'Avvisi prima delle lezioni…';
+
+  @override
+  String get planRemoveTimetable => 'Rimuovi l’orario';
+
+  @override
+  String get planCalendarNotesMenu => 'Note su questo calendario…';
+
+  @override
+  String get planTimetable => 'Orario';
+
+  @override
+  String planRefreshError(String name, String error) {
+    return '$name: $error. Aggiorna';
+  }
+
+  @override
+  String planRefresh(String name) {
+    return 'Aggiorna $name';
+  }
+
+  @override
+  String planRefreshUpdated(String name, String when) {
+    return 'Aggiorna $name (aggiornato $when)';
+  }
+
+  @override
+  String get planGoToNote => 'Vai alla nota';
+
+  @override
+  String get planMoveToday => 'Sposta a oggi';
+
+  @override
+  String get planMoveTomorrow => 'Sposta a domani';
+
+  @override
+  String get planMoveWeek => 'Sposta di una settimana';
+
+  @override
+  String get planPickDateMenu => 'Scegli una data…';
+
+  @override
+  String get planDeleteReminder => 'Elimina promemoria';
+
+  @override
+  String get planClearDate => 'Rimuovi la data';
+
+  @override
+  String get planReadOnly => 'Dal tuo calendario: sola lettura';
+
+  @override
+  String get planWhichSection => 'Quale sezione?';
+
+  @override
+  String get planTagFirst =>
+      'Prima etichetta una riga di questa pagina: poi potrà avere una scadenza.';
+
+  @override
+  String get planWhichLine => 'Quale riga riceve la scadenza?';
+
+  @override
+  String get planEmptyLine => '(riga vuota)';
+
+  @override
+  String get planDueDate => 'Scadenza';
+
+  @override
+  String planReminderSet(String time, String when) {
+    return 'Promemoria alle $time $when. Openote ti avviserà se è aperto, e ti dirà se non lo era.';
+  }
+
+  @override
+  String get planTimetableAdded =>
+      'Orario aggiunto. Si aggiorna quando Openote si apre.';
+
+  @override
+  String planCouldNotLoad(String error) {
+    return 'Impossibile caricare quel calendario: $error';
+  }
+
+  @override
+  String get planAboutCalendar => 'Informazioni su questo calendario';
+
+  @override
+  String get planAboutCalendarBody =>
+      'Openote legge le parti comuni di un file di calendario. Quello che non è riuscito a leggere, o non esattamente, è elencato qui invece di essere scartato in silenzio. Gli orari sono mostrati nel fuso orario del tuo computer.';
+
+  @override
+  String get planPickDate => 'Scegli una data';
+
+  @override
+  String get planSnooze => 'Posticipa';
+
+  @override
+  String get planSnooze10 => '10 minuti';
+
+  @override
+  String get planSnoozeHour => 'Un’ora';
+
+  @override
+  String get planSnoozeEvening => 'Stasera (3 ore)';
+
+  @override
+  String get planSnoozeTomorrow => 'Domani';
+
+  @override
+  String get planRemindMe => 'Ricordamelo';
+
+  @override
+  String get planReminderHint => 'Riprendere la dimostrazione del 2.7';
+
+  @override
+  String get planIn30 => 'Tra 30 min';
+
+  @override
+  String get planInHour => 'Tra un’ora';
+
+  @override
+  String get planThisEvening => 'Stasera';
+
+  @override
+  String get planTomorrowMorning => 'Domani mattina';
+
+  @override
+  String get planNudgeNote =>
+      'Openote ti avvisa mentre è aperto. Se era chiuso all’ora stabilita, il promemoria ti aspetta alla prossima apertura.';
+
+  @override
+  String get planSubscribeTitle => 'Iscriviti a un calendario';
+
+  @override
+  String get planSubscribeBody =>
+      'Incolla l’indirizzo del calendario del tuo orario universitario, di Google Calendar, Outlook o Calendario di Apple. Di solito finisce con .ics ed è l’unica cosa che Openote vede: nessun accesso e nessun permesso sul tuo account.';
+
+  @override
+  String get planReadOnlyNote =>
+      'Sola lettura, in una sola direzione: Openote mostra il tuo orario accanto alle note e non vi scrive mai nulla.';
+
+  @override
+  String get planSubscribeButton => 'Iscriviti';
+
+  @override
+  String get planNow => 'Ora';
+
+  @override
+  String get planNext => 'Poi';
+
+  @override
+  String get planThen => 'Dopo';
+
+  @override
+  String get planUntitledEvent => '(evento senza titolo)';
+
+  @override
+  String planJoin(String provider) {
+    return 'Partecipa su $provider';
+  }
+
+  @override
+  String planInMinutes(String minutes) {
+    return 'tra $minutes min';
+  }
+
+  @override
+  String planAtTime(String time) {
+    return 'alle $time';
+  }
+
+  @override
+  String planUntil(String time) {
+    return 'fino alle $time';
+  }
+
+  @override
+  String planCouldNotOpenLink(String url) {
+    return 'Impossibile aprire quel link: $url';
+  }
+
+  @override
+  String get planPrevMonth => 'Mese precedente';
+
+  @override
+  String get planNextMonth => 'Mese successivo';
 }

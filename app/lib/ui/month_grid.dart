@@ -15,6 +15,9 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
+import '../l10n/planner_words.dart';
+
 import '../planner/agenda.dart';
 import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
@@ -68,7 +71,7 @@ class _MonthGridState extends State<MonthGrid> {
           IconButton(
             icon: const Icon(Icons.chevron_left, size: 16),
             visualDensity: VisualDensity.compact,
-            tooltip: 'Previous month',
+            tooltip: L.of(context).planPrevMonth,
             onPressed: () => _step(-1),
           ),
           Expanded(
@@ -76,7 +79,7 @@ class _MonthGridState extends State<MonthGrid> {
               onTap: () => setState(() =>
                   _month = DateTime(widget.now.year, widget.now.month)),
               child: Text(
-                '${monthName(_month.month)} ${_month.year}',
+                monthYearIn(L.of(context), _month.month, _month.year),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w600),
@@ -86,13 +89,13 @@ class _MonthGridState extends State<MonthGrid> {
           IconButton(
             icon: const Icon(Icons.chevron_right, size: 16),
             visualDensity: VisualDensity.compact,
-            tooltip: 'Next month',
+            tooltip: L.of(context).planNextMonth,
             onPressed: () => _step(1),
           ),
         ]),
         Row(
           children: [
-            for (final d in const ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+            for (final d in weekdayInitialsIn(L.of(context)))
               Expanded(
                 child: Center(
                   child: Text(d,
