@@ -37,7 +37,7 @@ class _SaveProblemDialog extends StatelessWidget {
       title: Text(problem.short),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
-        child: SingleChildScrollView(
+        child: DialogScrollBody(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

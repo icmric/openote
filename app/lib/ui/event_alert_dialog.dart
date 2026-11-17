@@ -50,7 +50,7 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
       title: const Text('Alerts before classes', style: OnoteType.title),
       content: SizedBox(
         width: 470,
-        child: SingleChildScrollView(
+        child: DialogScrollBody(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

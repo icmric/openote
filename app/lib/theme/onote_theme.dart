@@ -252,7 +252,12 @@ ThemeData onoteTheme(Brightness brightness) {
         shape: const WidgetStatePropertyAll(
             RoundedRectangleBorder(borderRadius: OnoteRadius.mdAll)),
         splashFactory: NoSplash.splashFactory,
-        visualDensity: VisualDensity.compact,
+        // **Standard, not the app's compact density.** #41: "the height of
+        // their hitbox is too small". Compact takes 8 px off the minimum, so
+        // the 28 px asked for above was drawn 20 px tall — Material kept the
+        // clickable box at 40, but nobody aims at a box they cannot see. The
+        // rest of the app stays compact; buttons are drawn at their own size.
+        visualDensity: VisualDensity.standard,
       );
 
   return ThemeData(

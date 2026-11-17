@@ -21,6 +21,7 @@ import '../core/platform_open.dart';
 import '../editor/live_markdown_controller.dart';
 import '../theme/tokens.dart';
 import 'toast.dart';
+import 'onote_dialog.dart';
 
 /// What the dialog came back with.
 class LinkChoice {
@@ -168,7 +169,7 @@ class _LinkDialogState extends State<_LinkDialog> {
       title: Text(_editing ? 'Edit link' : 'Link'),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
+        child: DialogScrollBody(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

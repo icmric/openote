@@ -209,6 +209,10 @@ void main() {
       await openDialog(t);
       final line = 'Listening on port $port, on this computer only.';
       expect(find.text(line), findsNothing, reason: 'folded away at first');
+      // Reached the way a person reaches it: the list scrolls, and with
+      // buttons drawn at their full height (#41) it no longer fits unscrolled.
+      await t.ensureVisible(find.text('Other AI tools (advanced)'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Other AI tools (advanced)'));
       await t.pumpAndSettle();
       expect(find.text(line), findsOneWidget);

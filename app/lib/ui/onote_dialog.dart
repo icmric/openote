@@ -53,6 +53,46 @@ Future<T?> showOnoteDialog<T>({
   );
 }
 
+/// Room kept free at the right of a scrolling dialog body for its scroll bar:
+/// the theme's 8 px bar, its 2 px margin, and a little air either side.
+const double kDialogScrollGutter = 14;
+
+/// The body of a dialog whose content can be taller than the dialog.
+///
+/// #42: *"the scrollbar collides with the controls"*. The app's scroll bar is
+/// drawn OVER what it scrolls, and a dialog's switches and buttons run right to
+/// its edge, so the bar sat on top of *Pull changes automatically* and the
+/// *Use* buttons. Every dialog that scrolls had the same overlap; this keeps a
+/// gutter for the bar in one place instead of in each of them.
+class DialogScrollBody extends StatefulWidget {
+  const DialogScrollBody({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<DialogScrollBody> createState() => _DialogScrollBodyState();
+}
+
+class _DialogScrollBodyState extends State<DialogScrollBody> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scrollbar(
+        controller: _scroll,
+        child: SingleChildScrollView(
+          controller: _scroll,
+          padding: const EdgeInsets.only(right: kDialogScrollGutter),
+          child: widget.child,
+        ),
+      );
+}
+
 /// A one-field prompt — "New notebook", "Save as template". Returns the
 /// trimmed text, or null when it was cancelled or left empty.
 ///

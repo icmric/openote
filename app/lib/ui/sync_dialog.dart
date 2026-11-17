@@ -135,6 +135,13 @@ class _Disclosure extends StatelessWidget {
   }
 }
 
+/// How tall the Sync dialog's body may grow in a window [windowHeight] tall:
+/// most of it, less the title and the buttons, and never less than enough to
+/// read a group without scrolling.
+@visibleForTesting
+double syncDialogBodyHeight(double windowHeight) =>
+    (windowHeight * 0.8 - 170).clamp(260.0, double.infinity).toDouble();
+
 class _SyncDialog extends StatefulWidget {
   const _SyncDialog({required this.app, required this.notebookId});
   final AppState app;
@@ -523,14 +530,18 @@ class _SyncDialogState extends State<_SyncDialog> {
         ),
       ]),
       content: SizedBox(
-        width: 480,
+        // #42: "small and crowded". 480 by 460 was a small part of a
+        // 1920 by 1025 window, so the width grew and the height became a share
+        // of the window: a big screen shows the whole thing, a small one
+        // scrolls. A phone's narrower dialog clamps the width on its own.
+        width: 560,
         // **Bounded.** This was a SingleChildScrollView with no height
         // constraint, so on a synced notebook with git on, two backups and the
         // storage figures open it measured well over a viewport — the dialog
         // filled the window and every answer was somewhere in a long scroll.
-        // 460 is the number the notebook manager already uses.
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 460),
+          constraints: BoxConstraints(
+              maxHeight: syncDialogBodyHeight(MediaQuery.sizeOf(context).height)),
           // **Listening.** Nothing here subscribed to AppState: every value it
           // reads — the status, gitStatus, gitBusy — was a snapshot refreshed
           // only by an explicit setState after a click. A sync that finished
@@ -538,7 +549,7 @@ class _SyncDialogState extends State<_SyncDialog> {
           // updated the state and left this dialog showing the old one.
           child: ListenableBuilder(
             listenable: app,
-            builder: (context, _) => SingleChildScrollView(
+            builder: (context, _) => DialogScrollBody(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1459,7 +1470,7 @@ class _StorageSectionState extends State<_StorageSection> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Update how this notebook is stored?'),
-        content: const SingleChildScrollView(
+        content: const DialogScrollBody(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

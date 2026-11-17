@@ -85,7 +85,7 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
       ]),
       content: SizedBox(
         width: 460,
-        child: SingleChildScrollView(
+        child: DialogScrollBody(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
