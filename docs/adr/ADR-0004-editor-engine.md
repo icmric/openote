@@ -41,11 +41,11 @@ Measured against the demo scope below, using the shipped engine. Pinned by
 |---|-----------|--------|
 | 1 | 20 containers, 19 read-only + 1 live following focus | **Met.** One session is opened for the focused block and disposed on exit; the other 19 render through `buildReadOnly`. Asserted directly. |
 | 2 | Live Markdown-as-you-type (`# `, `**bold**`, `- `, `[[wiki-link]]`, `==highlight==`) | **Met.** Markers collapse when the caret leaves the construct and reveal when it re-enters — `LiveMarkdownController._buildLine`/`_inline`. Also `~~strike~~`, `++underline++`, `` `code` ``, quotes, numbered lists, tasks, dividers. |
-| 3 | Inline math chip, atom-like caret, de-build on backspace-into | **Partly met — open work.** `$…$` and `$$…$$` render through `flutter_math_fork` in the read-only view, and inline maths survives import. In the *live* field the caret still walks the source character by character; it is not an atom. Tracked as TEXT-1b. |
+| 3 | Inline math chip, atom-like caret, de-build on backspace-into | **Met, by a different route (checked 17 November 2026).** In the live field an equation is drawn as one object standing in for its opening `$`, the rest of its source held at a hairline, so it stays maths while the sentence around it is edited. An arrow key at either edge steps *inside* it in one press, and out past the far `$` at the other end (`inline_math_inplace_test`, "one arrow press from before an equation is inside it"); Backspace at the right edge steps in rather than de-building it to source, which was chosen over the criterion's wording because a de-built fraction is unrecognisable. *Was:* "In the live field the caret still walks the source character by character; it is not an atom." |
 | 4 | Byte-stable round-trip to Data Model §5 JSON | **Partly met — open work.** The stored string round-trips byte-for-byte, but storage is still the interim Markdown string in `content['text']`, not the structured `{nodes:[…]}` model of §5.1. The conversion now has exactly one place to land: `OnoteTextEditor.serialize`/`deserialize` and `textStorageKey`. |
 | 5 | CJK IME pass on Linux + Windows | **Not done.** The field is a stock Flutter `TextField`, so platform IME behaviour is inherited rather than reimplemented, but it is untested on both targets. Tracked as a Phase-2 verification task. |
 
-Criteria 3–5 are **not** claimed as met. They are the same work under any engine —
+Criteria 4 and 5 are **not** claimed as met (3 is, since November 2026). They are the same work under any engine —
 adopting `appflowy_editor` would not have delivered 4 or 5 either — so they do
 not distinguish the options, and they are cheaper to finish on an engine we can
 edit than on one we would have to fork.

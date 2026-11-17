@@ -264,7 +264,12 @@ reverse.
 
 Both are [ADR-0004](../adr/ADR-0004-editor-engine.md)'s, and both are small.
 
-**The opening `$` of an inline equation is still a character the caret steps
+**Resolved; found 17 November.** Measured again with the equation editor watched
+as well as the offset: from just before the `$`, one press opens the equation, the
+caret walks inside it, and the next press after its end leaves past the closing
+`$` — the "3, 3, 3" below was that walk, recorded without seeing the equation open.
+Pinned in `inline_math_inplace_test`; ADR-0004's table updated. *Was:* **the opening
+`$` of an inline equation is still a character the caret steps
 onto**, so one press of an arrow key moves nothing you can see. Criterion 3 asked
 for the equation to behave as a single atom, and arrowing into one now hands over
 to the equation editor properly — this last step is what is left of it. Measured on

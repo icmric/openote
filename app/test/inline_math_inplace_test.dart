@@ -427,4 +427,39 @@ void main() {
       app.cancelPendingSave();
     });
   });
+
+  // ADR-0004 criterion 3, backlog §1.10: "the opening `$` of an inline
+  // equation is still a character the caret steps onto, so one press of an
+  // arrow key moves nothing you can see", measured as offsets 1, 2, 3, 3, 3…
+  // Measured again on 17 November with the equation editor watched as well:
+  // 1, 2, then the editor is OPEN from the third press on, and the caret
+  // walks inside the equation until it leaves after the closing `$`. The
+  // "3, 3, 3" was that walk, recorded without seeing the equation open.
+  testWidgets('one arrow press from before an equation is inside it',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (app, _) = await openEditing(tester, r'a $x^2$ b');
+    app.activeEditor!.controller.selection =
+        const TextSelection.collapsed(offset: 2); // just before the `$`
+    await settle(tester);
+    expect(find.byType(EquationEditor), findsNothing, reason: 'precondition');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await settle(tester);
+    expect(find.byType(EquationEditor), findsOneWidget,
+        reason: 'no stop on the dollar sign: the first press is inside');
+
+    // And on through it: it opens once, and leaves after the closing `$`.
+    var presses = 0;
+    while (find.byType(EquationEditor).evaluate().isNotEmpty && presses < 12) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await settle(tester);
+      presses++;
+    }
+    expect(find.byType(EquationEditor), findsNothing);
+    expect(app.activeEditor!.controller.selection.baseOffset,
+        r'a $x^2$'.length,
+        reason: 'out the far side, after the closing dollar');
+    app.cancelPendingSave();
+  });
 }
