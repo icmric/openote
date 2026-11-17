@@ -26,7 +26,9 @@ import '../store/repository.dart'
 import '../sync/cloud_folders.dart';
 import '../sync/github_api.dart';
 import '../sync/mirrors.dart';
+import '../sync/saf_folder.dart' show SafFolder, safAvailable;
 import '../theme/onote_theme.dart';
+import 'device_class.dart' show isTouchPlatform;
 import 'notebook_manager.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
@@ -97,13 +99,19 @@ class _Disclosure extends StatelessWidget {
             child: Row(children: [
               Icon(icon, size: 16, color: s.textSecondary),
               const SizedBox(width: 8),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600)),
+              Flexible(
+                flex: 3,
+                child: Text(title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
               const SizedBox(width: 8),
               // Flexible, because a remote address and a folder name are both
               // user data of unbounded length in a fixed-width dialog.
               Flexible(
+                flex: 2,
                 child: Text(subtitle,
                     style: TextStyle(fontSize: 12, color: s.textSecondary),
                     overflow: TextOverflow.ellipsis,
@@ -292,6 +300,199 @@ class _SyncDialogState extends State<_SyncDialog> {
     }
   }
 
+  // ── Google Drive, on a phone ─────────────────────────────────────────────
+
+  /// Whether this is a phone or tablet, where the cloud is a Drive folder
+  /// reached through Android's own picker (no sign-in).
+  bool get _onPhone => safAvailable && isTouchPlatform;
+
+  static const String _driveButton = 'put in drive';
+  static const String _nowButton = 'send now';
+
+  /// What the work in progress is on, in words.
+  String? _stage;
+
+  /// Pick a folder in Drive and put this notebook in it. The card above the
+  /// button says what to choose, so there is no second screen of explanation
+  /// before Android's own.
+  Future<void> _putInDrive() async {
+    String? tree;
+    try {
+      tree = await SafFolder.pick();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not open the folder picker on this phone.');
+      }
+      return;
+    }
+    if (tree == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _busyButton = _driveButton;
+      _error = null;
+      _stage = 'Starting…';
+    });
+    String? problem;
+    try {
+      problem = await app.putNotebookInFolder(tree, onProgress: (s) {
+        if (mounted) setState(() => _stage = s);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyButton = null;
+          _stage = null;
+        });
+      }
+    }
+    if (!mounted) return;
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    ScaffoldMessenger.of(context).showToast(const SnackBar(
+        duration: Duration(seconds: 6),
+        content: Text('Done. This notebook is in your Google Drive and will '
+            'keep itself up to date.')));
+  }
+
+  /// Look for the other devices' changes and send this phone's, now.
+  Future<void> _sendNow() async {
+    setState(() {
+      _busy = true;
+      _busyButton = _nowButton;
+      _error = null;
+    });
+    try {
+      await app.pullFolderNow();
+      await app.pushFolderNow();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyButton = null;
+        });
+      }
+    }
+  }
+
+  /// The one card a phone shows for the cloud: how to put the notebook in Drive,
+  /// or that it is there and whether it is up to date.
+  Widget _driveCard(SyncStatus status) {
+    final s = context.surfaces;
+    final linked = app.isFolderNotebook(nb);
+    Widget working(String text) => Row(children: [
+          const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
+        ]);
+
+    if (!linked) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(children: [
+              Icon(Icons.cloud_upload_outlined, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                  child: Text('Keep this notebook in Google Drive',
+                      style: OnoteType.uiStrong)),
+            ]),
+            const SizedBox(height: 6),
+            const Text(
+              'Choose a folder in your Google Drive and tap "Use this folder". '
+              'Openote makes a folder for this notebook inside it and keeps it '
+              'up to date, so you can open it on your computer or another '
+              'phone. No sign-in.',
+              style: TextStyle(fontSize: 13, height: 1.45),
+            ),
+            const SizedBox(height: 10),
+            if (_busyButton == _driveButton)
+              working(_stage ?? 'Working…')
+            else
+              FilledButton.icon(
+                onPressed: _busy ? null : _putInDrive,
+                icon: const Icon(Icons.folder_open_outlined, size: 18),
+                label: const Text('Choose a Drive folder'),
+              ),
+          ],
+        ),
+      );
+    }
+
+    final failed = app.folderSendFailed(nb);
+    final checked = app.folderCheckedAt(nb);
+    final name = app.folderName(nb);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: (failed ? OnoteColors.danger : OnoteColors.success)
+            .withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(failed ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
+                size: 18,
+                color: failed ? OnoteColors.danger : OnoteColors.success),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(failed ? 'Not on Drive yet' : 'In Google Drive',
+                    style: OnoteType.uiStrong)),
+          ]),
+          if (name != null) ...[
+            const SizedBox(height: 2),
+            Text(name,
+                style: TextStyle(fontSize: 12, color: s.textSecondary),
+                overflow: TextOverflow.ellipsis),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            failed
+                ? 'Your changes are safe on this phone. They will be sent as '
+                    'soon as Drive can be reached.'
+                : checked == null
+                    ? 'Checking Drive…'
+                    : 'Everything on this phone is in Drive. '
+                        '${_ago(checked, '', 'Checked')}',
+            style: const TextStyle(fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            status.hasOtherDevices
+                ? '${status.devices} devices have edited this notebook in the '
+                    'last month.'
+                : 'To open it on your computer: open the notebook list there '
+                    'and choose Open. Openote finds it in your Google Drive '
+                    'folder.',
+            style: TextStyle(fontSize: 12, height: 1.35, color: s.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          if (_busyButton == _nowButton)
+            working('Checking Drive…')
+          else
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _sendNow,
+              icon: const Icon(Icons.sync, size: 18),
+              label: const Text('Check Drive now'),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _addMirror({required bool backup}) async {
     final dir = await getDirectoryPath(
         confirmButtonText: backup ? 'Back up here' : 'Mirror here');
@@ -307,13 +508,19 @@ class _SyncDialogState extends State<_SyncDialog> {
     final path = app.notebookPath(nb);
     // A notebook synced through git is still not in a cloud folder, so the
     // folder chooser is still the answer to a question it has not been asked.
-    final showChooser = !status.isFolderSynced || _changing;
+    final drive = _onPhone;
+    final showChooser = !drive && (!status.isFolderSynced || _changing);
 
     return AlertDialog(
       title: Row(children: [
         Icon(status.icon, size: 18, color: status.isSynced ? OnoteColors.success : null),
         const SizedBox(width: 8),
-        Text(status.isSynced ? 'Syncing' : 'Sync this notebook'),
+        // Given only the room that is left, so a narrow screen shortens the
+        // words rather than running them off the side.
+        Flexible(
+          child: Text(status.isSynced ? 'Syncing' : 'Sync this notebook',
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
       ]),
       content: SizedBox(
         width: 480,
@@ -341,10 +548,14 @@ class _SyncDialogState extends State<_SyncDialog> {
               // git started counting as synced, a git-only notebook reached it
               // with no folder to name. Same null assertion that took the
               // status chip down.
-              if (status.isFolderSynced) _linkedCard(status, path),
-              if (status.isFolderSynced) const SizedBox(height: 4),
-              _containerInCloudCard(),
-              if (!status.isFolderSynced)
+              // On a phone the cloud is a folder in Google Drive reached through
+              // Android's own picker, so the card for that stands where the
+              // computer's folder chooser would.
+              if (drive) _driveCard(status),
+              if (!drive && status.isFolderSynced) _linkedCard(status, path),
+              if (!drive && status.isFolderSynced) const SizedBox(height: 4),
+              if (!drive) _containerInCloudCard(),
+              if (!drive && !status.isFolderSynced)
                 const Text(
                   'Openote syncs through a folder your cloud already keeps in '
                   'step — no account, no sign-in, and no access to the rest of '
@@ -404,6 +615,10 @@ class _SyncDialogState extends State<_SyncDialog> {
               // prose above the fold, which is what "very cluttered and hard
               // to read" describes. One opens at a time.
               const Divider(height: 22),
+              // Git and extra copies go to places a phone has no way to reach
+              // (a program, a folder path), so on a phone they are not offered
+              // rather than offered and failing.
+              if (!drive)
               _Disclosure(
                 icon: Icons.commit,
                 title: 'Sync with git',
@@ -424,6 +639,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                     () => _open = _open == _Pane.git ? null : _Pane.git),
                 child: _GitSection(app: app),
               ),
+              if (!drive)
               _Disclosure(
                 icon: Icons.folder_copy_outlined,
                 title: 'Extra copies',
@@ -512,6 +728,7 @@ class _SyncDialogState extends State<_SyncDialog> {
               // and it stopped being true the moment git and the GitHub API
               // shipped. A privacy claim that has quietly become false is
               // worse than no claim at all.
+              if (!drive)
               const Text(
                 'Running your own server? Point Syncthing, Nextcloud, or an '
                 'rsync job at the same folder — anything that copies files '
@@ -531,19 +748,26 @@ class _SyncDialogState extends State<_SyncDialog> {
         // though the manager is the surface that owns it. One Row, because
         // AlertDialog.actions is an OverflowBar and a Spacer there throws.
         Row(children: [
-          TextButton.icon(
-            icon: const Icon(Icons.library_add_outlined, size: 18),
-            label: const Text('Add a notebook…'),
-            onPressed: _busy
-                ? null
-                : () async {
-                    final navigator = Navigator.of(context);
-                    final ctx = context;
-                    navigator.pop();
-                    if (ctx.mounted) await showNotebookManager(ctx, app);
-                  },
+          // Given the room that is left, so that on a phone the two buttons share
+          // the width instead of running off the side of the dialog.
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.library_add_outlined, size: 18),
+                label: const Text('Add a notebook…',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        final navigator = Navigator.of(context);
+                        final ctx = context;
+                        navigator.pop();
+                        if (ctx.mounted) await showNotebookManager(ctx, app);
+                      },
+              ),
+            ),
           ),
-          const Spacer(),
           TextButton(
             onPressed: _busy ? null : () => Navigator.of(context).pop(),
             child: const Text('Close'),

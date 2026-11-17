@@ -39,7 +39,18 @@ The notebook shows as synced (`SyncStatus.driveFolder`, "Google Drive"), not "th
 - **Opening an existing notebook was only possible from the first-run screen.** "Open" is now a button in the notebook list on every device: on a computer it lists notebooks already in Google Drive, OneDrive and the like (up to three folders down) and lets you choose a folder; on a phone it says what to choose, opens the folder picker, then finds the notebooks inside whatever was chosen and asks which. No `.onote` container is needed beside the folder.
 - **A notebook taken off the phone and opened again** gets its own earlier history back from the folder (a longer local log is still never replaced), instead of being stuck behind a refusal to push.
 
-**Not built:** putting a notebook that exists only on the phone into a Drive folder (that needs the manifest written, which is the one file the rule above forbids it to touch, so it wants its own design), and the desktop Sync dialog's chooser on Android (the phone has no status bar to reach it from).
+**Putting a notebook made on the phone into Drive (built 18 Nov).** Settings, Sync, on a phone: one card, "Keep this notebook in Google Drive", one button, "Choose a Drive folder". The system picker opens; whatever folder is chosen, Openote makes `<notebook name>.onotebook` inside it and fills it once (`sync/folder_publish.dart`, `AppState.putNotebookInFolder`): `manifest.json`, `ops/`, every log in it, `blobs/` with each picture whose bytes are its name, and the small `.onotelink` file a computer double-clicks. Then the notebook is recorded as living there (`folderSync:<nb>`, already read in, since there is no one else's history to wait for) and the ordinary send takes over. The card turns into "In Google Drive", with the folder's name, when it was last checked, and a "Check Drive now" button. The rules are the send's, adapted to making something new:
+
+- It only creates: a file is written only if the folder has none of that name, and nothing is replaced, moved or deleted. (The push still never writes `manifest.json`; this writes it once, into a folder it has just made.)
+- It never writes into a folder it did not make for this notebook. A folder whose manifest names this very notebook is an earlier try that was cut short and is carried on in; any other folder with the same name is left alone and `Name (2).onotebook` is made beside it.
+- The picked folder must not itself be a notebook (it has an `ops` folder): refused, in words, nothing written.
+- A folder that cannot be reached leaves the notebook as it was (not linked to anything), with a sentence saying so; trying again carries on.
+
+On a phone the Sync dialog no longer shows what a phone cannot use (the folder chooser for a computer's Drive client, git, extra copies). Tests: `test/folder_publish_test.dart` (the whole path, including a second device opening the result), `test/sync_drive_card_test.dart` (the card, through the real folder wrapper over a stand-in for the native side).
+
+**Opening a Drive notebook straight from a cold start** now does what switching to it does: the folder is looked at, the half-minute round of looking and sending starts, and the screens say "Opening this notebook…" meanwhile. It did none of those before; only switching notebooks did. The half-minute round also follows whichever notebook is open (it was tied to the first one it started for), and a look at the folder gives up after 90 seconds instead of holding up every later one.
+
+**Not built:** the Markdown-folder import on a phone.
 
 **Test copy:** `Openote test copy/Honours (copy).onotebook` on the owner's personal Drive: logs, pictures and manifest copied from the real notebook, which was only read. **Try writing on the copy first, never on the real notebook.**
 

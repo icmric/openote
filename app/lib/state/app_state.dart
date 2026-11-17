@@ -79,6 +79,7 @@ import 'study_state.dart';
 import '../sync/device_identity.dart';
 import '../sync/device_seq.dart';
 import '../sync/folder_bridge.dart';
+import '../sync/folder_publish.dart';
 import '../sync/folder_watch.dart';
 import '../sync/saf_folder.dart';
 import '../sync/op.dart';
@@ -1077,6 +1078,7 @@ class AppState extends ChangeNotifier
       if (nb == notebookId) await flushSave();
       final r = await bridge.push();
       folderPushSummary = r.toString();
+      _folderCheckedAt[nb] = DateTime.now();
       if (r.anything) debugPrint('[openote/folder] pushed: $r');
       if (_folderSendFailed.remove(nb) == true) notifyListeners();
     } catch (e) {
@@ -1097,14 +1099,110 @@ class AppState extends ChangeNotifier
   }
 
   /// While a Drive-folder notebook is open: look for the other devices' changes
-  /// and send ours, every half minute. Started once, by the first pull.
-  void _startFolderTicker(String nb) {
+  /// and send ours, every half minute. Started once, by the first pull, and it
+  /// follows whichever notebook is open then: it used to be tied to the first one
+  /// it was started for, so with two Drive notebooks the second was never looked
+  /// at between edits.
+  void _startFolderTicker() {
     if (_folderTicker != null || _disposed) return;
     _folderTicker = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_disposed) return;
+      final nb = notebookId;
+      if (nb == null || !isFolderNotebook(nb)) return;
       await _pullFolder(nb, force: true);
       await pushFolderNow(nb);
     });
+  }
+
+  /// Whether the last send of [nb]'s changes to its Drive folder failed.
+  bool folderSendFailed(String nb) => _folderSendFailed[nb] == true;
+
+  /// When [nb]'s Drive folder was last reached and found to have everything this
+  /// phone has (or was given it). Null until the first time.
+  DateTime? folderCheckedAt(String nb) => _folderCheckedAt[nb];
+  final Map<String, DateTime> _folderCheckedAt = {};
+
+  /// What the Drive folder is called, when it is known (a notebook made here and
+  /// put in Drive), for the sync card.
+  String? folderName(String nb) {
+    final raw = _repo.getSetting(_folderKey(nb));
+    final n = raw is Map ? raw['name'] : null;
+    return n is String && n.isNotEmpty ? n : null;
+  }
+
+  /// **Put the open notebook, which lives on this phone, into a Drive folder.**
+  ///
+  /// [tree] is what Android's folder picker returned. A folder for the notebook
+  /// is made inside it and filled (see `folder_publish.dart`), the notebook is
+  /// recorded as living there, and from then on it is kept up to date the same
+  /// way a notebook opened from Drive is. Returns null on success, or a message
+  /// to show. Never throws. The notebook on this phone is not changed.
+  Future<String?> putNotebookInFolder(
+    String tree, {
+    void Function(String stage)? onProgress,
+    @visibleForTesting FolderApi? pickedForTest,
+    @visibleForTesting FolderApi Function(String root)? atRootForTest,
+  }) async {
+    if (pickedForTest == null && !safAvailable) {
+      return 'This is only on Android.';
+    }
+    final nb = notebookId;
+    final ref = nb == null
+        ? null
+        : _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    if (nb == null || ref == null) {
+      return 'Open the notebook you want to keep in Drive first.';
+    }
+    if (isFolderNotebook(nb)) return 'This notebook is already in Google Drive.';
+    try {
+      onProgress?.call('Saving your changes…');
+      await flushSave();
+      final logDir = Directory(ref.logDirPath);
+      final store = OpLogStore(logDir)
+        ..ensureInitialised(notebookId: nb, title: ref.title);
+      final local = store.readManifest();
+      final shared = local['notebookId'] is String &&
+              (local['notebookId'] as String).isNotEmpty
+          ? local['notebookId'] as String
+          : nb;
+      final published = await publishNotebookToFolder(
+        pickedForTest ?? SafFolder(tree),
+        logDir: logDir,
+        title: ref.title,
+        notebookId: shared,
+        // The notebook's current name, in case it was renamed since the folder
+        // for it was first made on this phone.
+        manifest: {...local, 'notebookId': shared, 'title': ref.title},
+        onStage: onProgress,
+      );
+      _repo.setSetting(_folderKey(nb), {
+        'tree': tree,
+        'root': published.root,
+        'notebookId': shared,
+        'name': published.name,
+        // Made here: there is no one else's history to read in first.
+        'folded': true,
+      });
+      _folderBridges[nb] = FolderBridge(
+          folder: atRootForTest != null
+              ? atRootForTest(published.root)
+              : SafFolder(tree, root: published.root),
+          logDirPath: ref.logDirPath,
+          ownDevice: localDeviceId());
+      _folderPulledAt[nb] = DateTime.now();
+      _folderSendFailed.remove(nb);
+      _folderCheckedAt[nb] = DateTime.now();
+      _startFolderTicker();
+      _invalidateSyncStatus();
+      notifyListeners();
+      return null;
+    } on PublishProblem catch (e) {
+      return e.message;
+    } catch (e) {
+      debugPrint('[openote/folder] could not publish: $e');
+      return 'Could not put the notebook in that folder. Check that this phone '
+          'is online and that you allowed access, then try again.';
+    }
   }
 
   bool isFolderNotebook(String nb) => _repo.getSetting(_folderKey(nb)) is Map;
@@ -1165,9 +1263,11 @@ class AppState extends ChangeNotifier
       return;
     }
     _folderPulledAt[nb] = DateTime.now();
-    _startFolderTicker(nb);
+    _startFolderTicker();
     try {
-      final r = await bridge.pull();
+      // A time limit: a provider that never answers must not keep a notebook
+      // "opening" for ever, nor hold up every pull that comes after it.
+      final r = await bridge.pull().timeout(const Duration(seconds: 90));
       folderPullSummary = r.toString();
       debugPrint('[openote/folder] pulled: $r');
     } catch (e) {
@@ -8439,10 +8539,31 @@ class AppState extends ChangeNotifier
     // and it was most of "the app is locked up for the first few seconds
     // after launching".
     unawaited(warmRecorder(notebookId!));
+    // **A notebook in a Drive folder is brought up to date on launch, the way
+    // switching to it does.** Only switching did: opening the app straight onto
+    // one looked at the folder never (the first pull is what starts the half
+    // minute round of looking and sending), and showed nothing to say it was
+    // being read. Marked as opening before the first frame, so the screens say
+    // so. Left to the notebooks in a Drive folder: that is where the first look
+    // is a trip to another server.
+    final nbStart = notebookId!;
+    final startsInFolder = isFolderNotebook(nbStart);
+    if (startsInFolder) _foldWhenWarm(nbStart);
     // Watch for other devices once the notebook is open.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startWatching());
-    await selectPage(_pageToOpenIn(notebookId!,
+    final firstPage = selectPage(_pageToOpenIn(nbStart,
         orElse: _repo.getSetting('lastPage') as String?));
+    if (startsInFolder && _needsFirstFold(nbStart)) {
+      // A joined notebook that was never read in all the way (the app was closed
+      // in the middle of joining) waits for that to finish before it shows a
+      // page, and the launch must not wait on a server for it: the screens show
+      // "opening" meanwhile.
+      unawaited(firstPage.catchError((Object e) {
+        debugPrint('[openote/folder] first page: $e');
+      }));
+    } else {
+      await firstPage;
+    }
   }
 
   // ── Per-page view memory (§7a.5) ───────────────────────────────────────
