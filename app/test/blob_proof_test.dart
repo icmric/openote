@@ -314,7 +314,46 @@ void main() {
       expect(proof.tidied, 2);
     });
 
-test('the file is written with the .blob suffix, and found without it',
+// Backlog §1.12: the copies a repair left BEFORE the tidy existed. On the
+    // owner's notebook, 17 files — `<hash> (1).pdf` to `(8).pdf` — beside
+    // canonical files that were already fine, so no later open had anything
+    // to repair and the tidy, which only ran after a repair, never looked.
+    test('copies left by an earlier repair are cleared once per notebook',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_leftover_');
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(17, size: 128);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'application/pdf', bytes.length, bytes);
+      final f = logOf(repo, nb).blobFile(hash);
+      final copy = File('${f.path} (3).pdf')..writeAsBytesSync(bytes);
+      // A file that only LOOKS like a copy: the right name, other bytes.
+      final impostor = File('${f.path} (4).pdf')
+        ..writeAsBytesSync(picture(18, size: 128));
+
+      final plain = await r.proveBlobs();
+      expect(plain.repaired, isEmpty, reason: 'nothing needed repairing');
+      expect(copy.existsSync(), isTrue,
+          reason: 'which is why these were never looked for');
+
+      await app.proveBlobsPatiently(nb);
+      expect(copy.existsSync(), isFalse,
+          reason: 'the one full look clears a verified duplicate');
+      expect(impostor.existsSync(), isTrue,
+          reason: 'and never a file whose bytes are not the blob');
+      expect(f.existsSync(), isTrue);
+      expect(sha256Hex(f.readAsBytesSync()), hash);
+
+      // Once: a healthy notebook does not list its folder on every open.
+      final again = File('${f.path} (5).pdf')..writeAsBytesSync(bytes);
+      await app.proveBlobsPatiently(nb);
+      expect(again.existsSync(), isTrue,
+          reason: 'the full look is not repeated; a new stray comes with a '
+              'repair, which tidies on its own');
+    });
+
+    test('the file is written with the .blob suffix, and found without it',
         () async {
       // The suffix is the fix: Drive renames extensionless files, so the
       // canonical name now carries one. Verified by hand on 2026-10-01 —

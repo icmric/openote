@@ -531,6 +531,7 @@ class SyncRecorder {
   /// and any repair.
   Future<BlobProof> proveBlobs({
     Uint8List? Function(String hash)? read,
+    bool tidyAll = false,
   }) async {
     // Per proof, so a test can count this run's batches without having to
     // remember to reset first.
@@ -639,7 +640,13 @@ class SyncRecorder {
     // notebook that repaired nothing has nothing to tidy from: stray copies
     // only exist where a cloud client has been renaming, and renaming is what
     // puts a hash in `repaired` in the first place.
-    final tidied = repaired.isEmpty
+    //
+    // **Except for copies a repair left before this tidy existed** (backlog
+    // §1.12): 17 files on the owner's notebook, all from one repair, and with
+    // nothing left to repair no later open would ever look for them — nor
+    // retry a copy a cloud client had locked. [tidyAll] is the one look for
+    // those, which the app asks for once per notebook.
+    final tidied = repaired.isEmpty && !tidyAll
         ? 0
         : store.tidyRenamedCopies(
             [...present, ...repaired].where((h) => !damaged.contains(h)));

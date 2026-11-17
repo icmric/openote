@@ -2314,9 +2314,28 @@ class AppState extends ChangeNotifier
   Future<void> proveBlobsPatiently(String nb) async {
     final r = _recorders[nb];
     if (r == null) return;
+    // Once per notebook, the proof also clears copies a cloud client left
+    // under other names (`<hash> (1).pdf`), not only after it has had to
+    // repair something: copies left by a repair before the tidy existed were
+    // otherwise kept for ever (backlog §1.12). Remembered, so a healthy
+    // notebook never lists its blobs folder again.
+    final tidied = _blobCopiesTidied;
+    final tidyAll = !tidied.contains(nb);
     _noteBlobProof(
-        nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
+        nb,
+        await r.proveBlobs(
+            read: (h) => _repo.containerBlob(nb, h), tidyAll: tidyAll),
         mayRetry: true);
+    if (tidyAll) _repo.setSetting(_kBlobCopiesTidied, [...tidied, nb]);
+  }
+
+  static const _kBlobCopiesTidied = 'blobCopiesTidied';
+
+  /// Notebooks whose blobs folder has had its one full look for renamed
+  /// copies.
+  Set<String> get _blobCopiesTidied {
+    final raw = _repo.getSetting(_kBlobCopiesTidied);
+    return raw is List ? {for (final e in raw) if (e is String) e} : {};
   }
 
   /// The gate for the rest of the v0.17 storage work, exposed so a migration —
