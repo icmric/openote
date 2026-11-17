@@ -1,3 +1,4 @@
+import 'save_where.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -52,7 +53,7 @@ Future<String?> exportPagePdf(AppState app) async {
   image.dispose(); // release the GPU-backed capture; bytes are copied out
   if (byteData == null) return null;
 
-  final location = await getSaveLocation(
+  final location = await chooseSaveLocation(
     suggestedName: '${safeFilename(page.title, fallback: 'page')}.pdf',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'PDF', extensions: ['pdf'])
@@ -62,7 +63,7 @@ Future<String?> exportPagePdf(AppState app) async {
 
   await File(location.path).writeAsBytes(
       await _wrapCapture(page.title, byteData.buffer.asUint8List(), imgW, imgH));
-  return location.path;
+  return finishSave(location.path);
 }
 
 Future<Uint8List> _wrapCapture(

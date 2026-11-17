@@ -534,5 +534,16 @@
   "settingsEnglishUS": "Inglês (Estados Unidos)",
   "settingsEnglishCA": "Inglês (Canadá)",
   "settingsEnglishIN": "Inglês (Índia)",
-  "settingsWritingEnglishOnly": "Por enquanto, gramática, correção de erros de digitação e maiúsculas só funcionam em inglês. Em outros idiomas ficam desativadas."
+  "settingsWritingEnglishOnly": "Por enquanto, gramática, correção de erros de digitação e maiúsculas só funcionam em inglês. Em outros idiomas ficam desativadas.",
+  "barTabWrite": "Escrever",
+  "insertNotYet": "Ainda não",
+  "barHideKeyboard": "Ocultar o teclado",
+  "pageSheetBlank": "Em branco",
+  "pageSheetGrid": "Grade",
+  "pageSheetDots": "Pontos",
+  "pageSheetRuled": "Pautada",
+  "pageSheetPaper": "Papel",
+  "pageSheetCanvas": "Tela",
+  "pageSheetSnap": "Ajustar",
+  "pageSheetFit": "Encaixar"
 }

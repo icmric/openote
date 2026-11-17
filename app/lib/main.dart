@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'core/pen_buttons.dart';
 import 'l10n/l10n.dart';
 import 'dart:io' show exit;
@@ -169,6 +170,11 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       // this the last edits before a window close were silently lost — and the
       // SQLite handles never got a clean close (no WAL checkpoint).
       _lifecycle = AppLifecycleListener(
+        // A phone leaves the app without asking: send what is waiting for the
+        // Drive folder now, not on the next timer; and look for what changed
+        // elsewhere when it comes back.
+        onInactive: () => unawaited(app.pushFolderNow()),
+        onResume: () => unawaited(app.pullFolderNow()),
         onExitRequested: () async {
           // Saves first. If that fails, the window stays open ONCE, with the
           // reason in the status bar; a second, deliberate close leaves.

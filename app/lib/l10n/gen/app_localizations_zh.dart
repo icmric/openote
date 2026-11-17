@@ -1833,4 +1833,37 @@ class LZh extends L {
   @override
   String get settingsWritingEnglishOnly =>
       '语法、拼写自动更正和大小写目前只适用于英语。其他语言下这些功能保持关闭。';
+
+  @override
+  String get barTabWrite => '书写';
+
+  @override
+  String get insertNotYet => '暂不支持';
+
+  @override
+  String get barHideKeyboard => '收起键盘';
+
+  @override
+  String get pageSheetBlank => '空白';
+
+  @override
+  String get pageSheetGrid => '方格';
+
+  @override
+  String get pageSheetDots => '点阵';
+
+  @override
+  String get pageSheetRuled => '横线';
+
+  @override
+  String get pageSheetPaper => '纸张';
+
+  @override
+  String get pageSheetCanvas => '画布';
+
+  @override
+  String get pageSheetSnap => '吸附';
+
+  @override
+  String get pageSheetFit => '适应';
 }

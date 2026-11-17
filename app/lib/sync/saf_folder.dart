@@ -46,6 +46,10 @@ abstract class FolderApi {
   /// Create [name] in [parent] (the chosen folder when null), or replace its
   /// whole content if it is there. Returns the file's document id.
   Future<String> write({String? parent, required String name, required Uint8List bytes});
+
+  /// A folder called [name] in [parent] (the chosen folder when null): the one
+  /// that is there, or a new one. Returns its document id.
+  Future<String> makeDir({String? parent, required String name});
 }
 
 /// Whether this build can reach a folder this way at all.
@@ -84,6 +88,13 @@ class SafFolder implements FolderApi {
       {String? parent, required String name, required Uint8List bytes}) async {
     final r = await _ch.invokeMethod<String>(
         'write', {'tree': tree, 'parent': parent, 'name': name, 'bytes': bytes});
+    return r!;
+  }
+
+  @override
+  Future<String> makeDir({String? parent, required String name}) async {
+    final r = await _ch.invokeMethod<String>(
+        'mkdir', {'tree': tree, 'parent': parent, 'name': name});
     return r!;
   }
 }

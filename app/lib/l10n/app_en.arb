@@ -2590,5 +2590,49 @@
   "settingsWritingEnglishOnly": "Grammar, typo fixes and capital letters work in English for now. In any other language they stay off.",
   "@settingsWritingEnglishOnly": {
     "description": "Supporting line under the writing switches. Says plainly that grammar, typo fixes and capitals only work in English for now."
+  },
+  "barTabWrite": "Write",
+  "@barTabWrite": {
+    "description": "Phone only: the name of the first tab at the foot of the screen (writing text). The desktop calls the same tab Home."
+  },
+  "insertNotYet": "Not yet",
+  "@insertNotYet": {
+    "description": "Small word under a greyed-out item that this device cannot do yet. Keep it very short."
+  },
+  "barHideKeyboard": "Put the keyboard away",
+  "@barHideKeyboard": {
+    "description": "Spoken label (not shown) of the button on the phone that puts the on-screen keyboard away."
+  },
+  "pageSheetBlank": "Blank",
+  "@pageSheetBlank": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetGrid": "Grid",
+  "@pageSheetGrid": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetDots": "Dots",
+  "@pageSheetDots": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetRuled": "Ruled",
+  "@pageSheetRuled": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetPaper": "Paper",
+  "@pageSheetPaper": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetCanvas": "Canvas",
+  "@pageSheetCanvas": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetSnap": "Snap",
+  "@pageSheetSnap": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
+  },
+  "pageSheetFit": "Fit",
+  "@pageSheetFit": {
+    "description": "Short name of a tile in the phone's Page sheet (under its icon). One word."
   }
 }

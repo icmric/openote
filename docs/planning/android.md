@@ -10,29 +10,38 @@ groundwork and the plan, so the next steps start from what is true.
 | Android project (`app/android/`) | Tracked in git. Gradle 8.14 and Android Gradle Plugin 8.11: AGP 9 needs Gradle 9, which the clipboard plugin's build step (`irondash_engine_context`, cargokit) cannot run on. `kotlin.jvm.target.validation.mode=warning` because `flutter_js` has mismatched Java and Kotlin targets |
 | Rust libraries | `bash app/tool/build_android_libs.sh` builds `onote_core` and `onote_text` for arm64 (or `x86_64` for an emulator), with 16 KB page alignment (`-Wl,-z,max-page-size=16384`, checked: LOAD alignment 0x4000). Output goes to `android/app/src/main/jniLibs/<abi>/`, **not in git**: it must be run once on each machine that builds the app |
 | Loading | `onote_core` already falls back to the bare library name, which Android resolves. `onote_text` gained an Android branch |
-| Phone layout | Below 600 px wide (`isPhoneWidth`, `ui/phone_shell.dart`): slim top bar, the page filling the screen, the tools strip and four icon tabs at the foot (`CommandBar._phoneBar`), the navigator as a drawer (notebook, section, page), everything inside the safe area. Wider windows and tablets keep the desktop layout |
-| Icon | The Openote icon is generated for Android, but as the square icon on white. **Open:** an adaptive icon, purple background with the ring as foreground |
+| Phone layout | `DeviceClass.phone` (`ui/device_class.dart`: on a touch device the SHORTER side under 600, so a phone held sideways is still a phone; on a computer the width). Slim top bar with a save mark (tick, arrows, or a pressable red warning) and the Review chip; the page filling the screen; the tools strip and four icon tabs at the foot (Write, Insert, Draw, Page: Insert and Page are sheets, Insert has an Export tile that opens the Export sheet); the navigator as a drawer (notebook with its sync dot, search or jump to, sections with page counts, Recent and favourites, recycle bin, settings; long-press a row for its menu); everything inside the safe area; sideways the bottom becomes one row with the four tabs as icons |
+| Tablet layout | `DeviceClass.tablet`: the desktop layout drawn at 135% (`kTabletBoost`, in `UiScaleHost`, on top of the chosen size) so every target is finger-sized; held upright the navigator folds to a rail (`TabletRail`: menu, search, recent, bin) that opens the same drawer a phone has; Review writing becomes a sheet by the existing room rule |
+| Touch | Long press with a finger is the right-click on blocks, pictures, board cards, portals and planner rows (`ui/touch_long_press.dart`; a mouse or a pen does not trigger it). A finger scrolls and a stylus draws already (`TouchDrawing.auto`) |
+| Saving and exporting | Android has no Save dialog for an ordinary app, so every export, "Save a copy" of a picture or attachment, and the study-deck export go through the system's Save-as screen, which can save to Drive (`export/save_where.dart`, `saveFile` in `MainActivity.kt`; several files, such as a page with pictures or a whole notebook, are zipped). Not covered: saving a video (video is off on Android) and the Markdown-folder import (its folder picker returns an address, not a path) |
+| Icon | Adaptive: the purple gradient behind, the ring and its dot in front inside the safe zone, plus a single-colour version for Android 13's themed icons (`res/mipmap-*/ic_launcher_{background,foreground,monochrome}.png`, `mipmap-anydpi-v26`). The old square PNG stays for Android 7 and 8 |
 | Release build | `flutter build apk --release --target-platform android-arm64` works (about 104 MB), signed with the debug key, fine for sideloading to test |
 
-## Stage 1 of Drive sync: built (17 Nov), to be tried on a phone
+## Drive sync: reading and writing, built (17 Nov), to be tried on a phone
 
 **"Open from a Drive folder"** is in the notebook list on Android. It picks a folder with the system picker, copies the other devices' logs and the manifest into this device's own sync directory (`sync/folder_bridge.dart`, `sync/saf_folder.dart`, `MainActivity.kt`), and opens the notebook through the same adopt-and-replay path a git join uses (`AppState.joinNotebookFromFolder`). The text and outline are there at once; **pictures are fetched on demand**, in the background, three at a time, and kept only if their bytes are their hash. A real notebook (the owner's Honours one) is 11 MB of logs in 7 files and 93 MB of pictures in 625, which is why the pictures wait.
 
-**Viewing only.** Nothing is written to the folder, and the phone refuses edits in such a notebook (`isFolderNotebook` makes `notebookIsReadOnly` true; the save status says "Viewing only"), because changes kept only on the phone would be stranded. Lifted when pushing is built and tried on a copy.
+**Sending changes back** (`FolderBridge.push`, `AppState.pushFolderNow`): eight seconds after the writing stops, every half minute while the notebook is open, when the app is left (`onInactive`), and the other way round when it comes back (`onResume` pulls). Its rules are held tightly, and each has a test (`test/folder_join_test.dart`):
 
-**Test copy:** `Openote test copy/Honours (copy).onotebook` on the owner's personal Drive: logs, pictures and manifest copied from the real notebook, which was only read. It is away from the desktop's sync location on purpose.
+- It writes exactly two kinds of file: this device's own log (`ops/<this device>.oplog`, replaced whole, only when it has grown) and pictures the folder does not have (`blobs/<hash>.blob`, only if their bytes are their name).
+- It never replaces or removes anything that is not this device's own log: not `manifest.json`, not another device's log, not a picture that is there. It never deletes. A test compares every file in the folder before and after.
+- It refuses to replace the folder's copy of this device's log with a SHORTER one (this phone would be behind its own history: a restored backup, a copied install). That throws, and shows as "Not on Drive yet".
+- A folder that cannot be reached keeps the edit on the phone (the log is local first), shows a quiet "Not on Drive yet" in the save mark, and sends when it can.
+- A block type this build does not know, on a page that is edited and sent, comes through untouched to a second device (tested end to end).
 
-Tests: `test/folder_join_test.dart` reads a real published notebook through a fake folder: outline and text at once, no picture read to open it, a picture fetched on demand and told to the app, a damaged picture refused, a longer local log never replaced, the folder never written to, the same folder not opened twice.
+The notebook shows as synced (`SyncStatus.driveFolder`, "Google Drive"), not "this computer only".
 
-**Next:** try it on the phone and report the time it takes (it is shown after opening); then push (this device's own log and new pictures, whole-file replace, never touching anything else); then the Sync dialog's own "Choose a Drive folder" and automatic syncing; then delete the temporary folder test page.
+**Not built:** putting a notebook that exists only on the phone into a Drive folder (that needs the manifest written, which is the one file the rule above forbids it to touch, so it wants its own design), and the desktop Sync dialog's chooser on Android (the phone has no status bar to reach it from).
+
+**Test copy:** `Openote test copy/Honours (copy).onotebook` on the owner's personal Drive: logs, pictures and manifest copied from the real notebook, which was only read. **Try writing on the copy first, never on the real notebook.**
 
 ## Open, before anyone but the owner uses it
 
 - **Application id** is still `com.example.openote`. Make it `org.openote.openote` (as Linux and macOS use) before any release: it cannot be changed after one, and it means moving `MainActivity`.
-- **Plugins not yet audited on a device:** `media_kit` (video), `super_clipboard`, `printing`, `desktop_drop`, `pdfrx`. Anything that does not work is to be greyed with "Not yet", as the browser demo does, not hidden. The design canvas shows Video and Print greyed in the phone's Insert sheet; **the app does not do this yet**.
-- **Missing on the phone:** Recent (the drawer has no Home view), the Export menu (the desktop has it in the trailing toolbar, which the phone bar drops), search across notebooks, long-press as right-click on every context menu, and finger-versus-pen behaviour as designed (finger scrolls, stylus draws).
+- **Plugins not yet audited on a device:** `super_clipboard`, `printing`, `desktop_drop`, `pdfrx`. Anything that does not work is to be greyed with "Not yet", as the browser demo does, not hidden. **Video is greyed on Android** (`platformCanLoadEngine` is false there: the engine is desktop libraries) with "Not yet" under it; Print is left available, because the plugin supports Android, until a phone says otherwise.
+- **Missing on the phone:** search across notebooks (the drawer searches the open one), long-press on the page's own text (the text editor's own selection menu covers that), and the Markdown-folder import.
 - **Debug-build warning** "not 16 KB-compatible" can still name plugin libraries; ours are aligned.
-- **Tablet** layout is designed (`Tablet.dc.html` on the canvas) and not built: larger targets, two toolbar bands, portrait folding to a rail and a sheet.
+- **Tablet** is built from the board, with one difference: larger targets come from drawing everything at 135% rather than from a second set of sizes. Not yet measured on a real tablet.
 
 ## Syncing with Google Drive on Android
 

@@ -1929,4 +1929,37 @@ class LDe extends L {
   @override
   String get settingsWritingEnglishOnly =>
       'Grammatik, Tippfehlerkorrektur und Großschreibung funktionieren vorerst nur auf Englisch. In allen anderen Sprachen bleiben sie aus.';
+
+  @override
+  String get barTabWrite => 'Schreiben';
+
+  @override
+  String get insertNotYet => 'Noch nicht';
+
+  @override
+  String get barHideKeyboard => 'Tastatur ausblenden';
+
+  @override
+  String get pageSheetBlank => 'Leer';
+
+  @override
+  String get pageSheetGrid => 'Raster';
+
+  @override
+  String get pageSheetDots => 'Punkte';
+
+  @override
+  String get pageSheetRuled => 'Liniert';
+
+  @override
+  String get pageSheetPaper => 'Papier';
+
+  @override
+  String get pageSheetCanvas => 'Leinwand';
+
+  @override
+  String get pageSheetSnap => 'Einrasten';
+
+  @override
+  String get pageSheetFit => 'Einpassen';
 }

@@ -1,3 +1,4 @@
+import '../ui/touch_long_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -571,7 +572,9 @@ class _BoardBlockViewState extends State<BoardBlockView> {
             : BorderSide.none,
       ),
       elevation: 1,
-      child: InkWell(
+      child: TouchLongPress(
+        onMenu: (p) => _cardMenu(p, col, idx, text),
+        child: InkWell(
         mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(6),
         onTap: () => _startEditing(() {
@@ -585,7 +588,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
           padding: const EdgeInsets.fromLTRB(8, 7, 22, 7),
           child: Text(text, style: const TextStyle(fontSize: 12, height: 1.3)),
         ),
-      ),
+      )),
     );
     final hovered = _hoverCard == (col: col, card: idx);
     // **One click to delete, where the card is.** Shown on hover only, so a

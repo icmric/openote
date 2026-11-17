@@ -1,3 +1,4 @@
+import '../ui/touch_long_press.dart';
 import 'dart:typed_data';
 import '../editor/inline_atom_view.dart';
 import '../model/inline_atom.dart';
@@ -612,7 +613,9 @@ class _MarkdownViewState extends State<MarkdownView> {
               left: indentPx(img.group(1)!.length, baseStyle.fontSize),
               top: sized ? 0 : 4,
               bottom: sized ? 0 : 4),
-          child: GestureDetector(
+          child: TouchLongPress(
+            onMenu: menu == null ? null : (p) => menu(src, p),
+            child: GestureDetector(
             // Secondary only. Everything else about this picture — a click to
             // open the box, a drag to move it — still belongs to the block.
             onSecondaryTapUp:
@@ -623,7 +626,7 @@ class _MarkdownViewState extends State<MarkdownView> {
                     constraints: const BoxConstraints(maxWidth: 640),
                     child: image,
                   ),
-          ),
+          )),
         );
       }
       // Unresolvable blob → fall through to the literal-text rendering below.

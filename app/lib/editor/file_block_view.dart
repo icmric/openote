@@ -1,7 +1,7 @@
+import '../export/save_where.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
@@ -345,7 +345,7 @@ class FileBlockView extends StatelessWidget {
       _toast(context, 'That attachment is missing.');
       return;
     }
-    final loc = await getSaveLocation(
+    final loc = await chooseSaveLocation(
         suggestedName: block.content['name'] as String? ?? 'file');
     if (loc == null) return;
     try {
@@ -356,7 +356,14 @@ class FileBlockView extends StatelessWidget {
       if (context.mounted) _toast(context, "That copy didn't save: $e");
       return;
     }
-    if (context.mounted) _toast(context, 'Saved to ${loc.path}');
+    String? where;
+    try {
+      where = await finishSave(loc.path);
+    } catch (e) {
+      if (context.mounted) _toast(context, "That copy didn't save: $e");
+      return;
+    }
+    if (where != null && context.mounted) _toast(context, 'Saved to $where');
   }
 
   String _fmtSize(int b) => b < 1024

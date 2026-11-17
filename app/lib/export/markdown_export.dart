@@ -1,3 +1,4 @@
+import 'save_where.dart';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -18,7 +19,7 @@ import 'md_common.dart';
 Future<String?> exportPageMarkdown(AppState app) async {
   if (app.pageId == null) return null;
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
-  final location = await getSaveLocation(
+  final location = await chooseSaveLocation(
     suggestedName: '${safeFilename(page.title, fallback: 'page')}.md',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'Markdown', extensions: ['md'])
@@ -45,7 +46,7 @@ Future<String?> exportPageMarkdown(AppState app) async {
     }
   }
   await writeExportedMedia(app, outPath, media);
-  return outPath;
+  return finishSave(outPath);
 }
 
 /// Copy the videos and recordings [md] links to into the export's `assets/`.

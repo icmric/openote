@@ -27,9 +27,18 @@ import 'support/sqlite.dart';
 /// A directory on disk served the way the picker serves a Drive folder: by
 /// document id (here, the path relative to the root).
 class DirFolder implements FolderApi {
-  DirFolder(this.root);
+  DirFolder(this.root, {this.allowWrites = false});
   final Directory root;
   final List<String> reads = [];
+
+  /// Off by default: reading a notebook must never write to its folder.
+  bool allowWrites;
+
+  /// Make every write fail, as a folder that cannot be reached would.
+  bool failWrites = false;
+
+  /// Every file written, relative to the root.
+  final List<String> writes = [];
 
   String _abs(String? doc) => doc == null || doc.isEmpty ? root.path : p.join(root.path, doc);
 
@@ -56,8 +65,24 @@ class DirFolder implements FolderApi {
 
   @override
   Future<String> write(
-          {String? parent, required String name, required Uint8List bytes}) =>
-      throw StateError('the bridge must never write to the folder');
+      {String? parent, required String name, required Uint8List bytes}) async {
+    if (!allowWrites) {
+      throw StateError('the bridge must not write to the folder here');
+    }
+    if (failWrites) throw StateError('folder not reachable');
+    final file = File(p.join(_abs(parent), name));
+    file.writeAsBytesSync(bytes);
+    final id = p.relative(file.path, from: root.path);
+    writes.add(id);
+    return id;
+  }
+
+  @override
+  Future<String> makeDir({String? parent, required String name}) async {
+    if (!allowWrites) throw StateError('the bridge must not write to the folder here');
+    final d = Directory(p.join(_abs(parent), name))..createSync(recursive: true);
+    return p.relative(d.path, from: root.path);
+  }
 }
 
 void main() {
@@ -120,8 +145,8 @@ void main() {
     return (logDir, hash, bytes);
   }
 
-  Future<(Repository, AppState)> phone() async {
-    final dir = Directory('${root.path}/phone')..createSync(recursive: true);
+  Future<(Repository, AppState)> phone([String name = 'phone']) async {
+    final dir = Directory('${root.path}/$name')..createSync(recursive: true);
     final repo = await Repository.openAt(dir);
     final app = AppState(repo)..spellCheckEnabled = false;
     addTearDown(() {
@@ -164,15 +189,20 @@ void main() {
     expect(app.blob(hash), bytes, reason: 'and now it is there, whole');
   });
 
-  test('a notebook read from a folder is viewing-only, and says so', () async {
+  test('a notebook from a folder is edited on the phone, and shows as synced',
+      () async {
     if (skip()) return markTestSkipped('sqlite or git unavailable');
     final (logDir, _, _) = await source();
     final (repo, app) = await phone();
     await app.joinNotebookFromFolder('tree', folderForTest: DirFolder(logDir));
     final id = repo.notebooks.single.id;
     expect(app.isFolderNotebook(id), isTrue);
-    expect(app.notebookIsReadOnly(id), isTrue);
-    expect(app.saveError?.short, 'Viewing only');
+    expect(app.notebookIsReadOnly(id), isFalse,
+        reason: 'changes are kept, and sent');
+    expect(app.saveError, isNull);
+    final s = app.syncStatus(id);
+    expect(s.isSynced, isTrue, reason: 'not "this computer only"');
+    expect(s.where, 'Google Drive');
   });
 
   test('opening the same folder again opens the same notebook, not a second',
@@ -248,5 +278,162 @@ void main() {
         .toSet();
     expect(after.containsAll(before.where((e) => !e.contains('.git'))), isTrue,
         reason: 'nothing in the folder changed (DirFolder.write would throw)');
+  });
+
+  Map<String, int> snapshot(Directory d) => {
+        for (final e in d.listSync(recursive: true).whereType<File>())
+          if (!e.path.contains('${p.separator}.git${p.separator}'))
+            p.relative(e.path, from: d.path): e.lengthSync()
+      };
+
+  test('an edit on the phone is sent: its own log and its new picture, nothing else',
+      () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final folder = DirFolder(logDir, allowWrites: true);
+    final (repo, app) = await phone();
+    await app.joinNotebookFromFolder('tree', folderForTest: folder);
+    final nb = repo.notebooks.single.id;
+    final before = snapshot(logDir);
+
+    // Change a title, and add a picture the folder has never seen.
+    final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+    app.renameNode(page.id, 'Edited on the phone');
+    final bytes = Uint8List.fromList(List<int>.generate(80, (i) => (i * 7 + 3) % 251));
+    final hash = repo.putBlob(nb, bytes, 'image/png');
+    app.blocks = [
+      ...app.blocks,
+      Block(id: 'new', type: BlockType.image, x: 0, y: 300,
+          content: {'hash': hash, 'mime': 'image/png'}),
+    ];
+    app.markDirty();
+    await app.flushSave();
+    await app.pushFolderNow();
+
+    final after = snapshot(logDir);
+    final changed = {
+      for (final e in after.entries)
+        if (before[e.key] != e.value) e.key
+    };
+    final own = 'ops/${app.localDeviceId()}.oplog';
+    expect(changed.map((c) => c.replaceAll('\\', '/')).toSet(),
+        {own, 'blobs/${hash.replaceFirst('sha256:', '')}.blob'},
+        reason: 'only this phone\'s log and the new picture are new in the folder; '
+            'nothing else was touched');
+    // Nothing that was there before was changed or removed.
+    for (final e in before.entries) {
+      expect(after[e.key], e.value, reason: '${e.key} must be as it was');
+    }
+
+    // Asking again with nothing new sends nothing.
+    folder.writes.clear();
+    await app.pushFolderNow();
+    expect(folder.writes, isEmpty);
+  });
+
+  test('another device sees the phone\'s edit, and a block type it does not know '
+      'on that page comes through untouched', () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final folder = DirFolder(logDir, allowWrites: true);
+    final (repo, app) = await phone('phone1');
+    await app.joinNotebookFromFolder('tree', folderForTest: folder);
+
+    // A block from a later release sits on the page, as it would from a newer
+    // desktop. The phone edits ANOTHER block on the same page and sends.
+    final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+    final mystery = Block.fromJson({
+      'id': 'mystery',
+      'type': 'hologram',
+      'x': 10.0,
+      'y': 500.0,
+      'content': {'depth': 3},
+      'futureField': 'keep me',
+    });
+    app.blocks = [...app.blocks, mystery];
+    app.markDirty();
+    await app.flushSave();
+    app.renameNode(page.id, 'Edited on the phone');
+    app.blocks = [
+      for (final b in app.blocks)
+        if (b.id == 't')
+          Block(id: 't', type: BlockType.text, x: 0, y: 0,
+              content: {'text': 'big O, edited'})
+        else
+          b
+    ];
+    app.markDirty();
+    await app.flushSave();
+    await app.pushFolderNow();
+
+    // A second device opens the same folder.
+    final (repo2, app2) = await phone('phone2');
+    final problem =
+        await app2.joinNotebookFromFolder('tree', folderForTest: DirFolder(logDir));
+    expect(problem, isNull, reason: '$problem');
+    final page2 = app2.nodes.firstWhere((n) => n.kind == NodeKind.page);
+    expect(page2.title, 'Edited on the phone');
+    final blocks = repo2.readPage(app2.notebookId!, page2.id).blocks;
+    expect(blocks.firstWhere((b) => b.id == 't').content['text'], 'big O, edited');
+    final m = blocks.firstWhere((b) => b.id == 'mystery');
+    expect(m.rawType, 'hologram', reason: 'the unknown type is kept by name');
+    expect(m.unknownFields['futureField'], 'keep me');
+    expect(m.content['depth'], 3);
+  });
+
+  test('a folder that cannot be reached: the edit is kept, a quiet note is shown, '
+      'and it is sent when the folder is back', () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final folder = DirFolder(logDir, allowWrites: true);
+    final (_, app) = await phone();
+    await app.joinNotebookFromFolder('tree', folderForTest: folder);
+    final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+
+    folder.failWrites = true;
+    app.renameNode(page.id, 'Offline edit');
+    await app.flushSave();
+    await app.pushFolderNow();
+    expect(app.saveError?.short, 'Not on Drive yet');
+    expect(app.nodes.firstWhere((n) => n.id == page.id).title, 'Offline edit',
+        reason: 'the phone kept it');
+
+    folder.failWrites = false;
+    await app.pushFolderNow();
+    expect(app.saveError, isNull);
+    expect(folder.writes.any((w) => w.endsWith('.oplog')), isTrue);
+  });
+
+  test('the folder\'s longer copy of this device\'s own log is never replaced',
+      () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final local = Directory('${root.path}/local')..createSync();
+    Directory(p.join(local.path, 'ops')).createSync(recursive: true);
+    File(p.join(local.path, 'ops', 'me.oplog')).writeAsStringSync('short\n');
+    final theirs = File(p.join(logDir.path, 'ops', 'me.oplog'))
+      ..writeAsStringSync('a much longer history than the phone has\n' * 5);
+    final bridge = FolderBridge(
+        folder: DirFolder(logDir, allowWrites: true),
+        logDirPath: local.path,
+        ownDevice: 'me');
+    await expectLater(bridge.push(), throwsStateError);
+    expect(theirs.readAsStringSync(), startsWith('a much longer history'));
+  });
+
+  test('only a picture whose bytes are its name is sent', () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final local = Directory('${root.path}/local2')..createSync();
+    final blobs = Directory(p.join(local.path, 'blobs'))..createSync(recursive: true);
+    final fakeHash = 'ab' * 32;
+    File(p.join(blobs.path, '$fakeHash.blob'))
+        .writeAsBytesSync(Uint8List.fromList([1, 2, 3]));
+    final folder = DirFolder(logDir, allowWrites: true);
+    final bridge = FolderBridge(
+        folder: folder, logDirPath: local.path, ownDevice: 'me');
+    final r = await bridge.push();
+    expect(r.blobs, 0);
+    expect(folder.writes.where((w) => w.contains(fakeHash)), isEmpty);
   });
 }

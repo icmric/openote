@@ -13,6 +13,7 @@
 /// touches the schedule.
 library;
 
+import '../export/save_where.dart';
 import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
@@ -160,7 +161,7 @@ class _StudyPanelState extends State<StudyPanel> {
   Future<void> _export() async {
     final cards = app.study.deck(sectionId: _sectionId, pageId: _pageId);
     if (cards.isEmpty) return;
-    final path = await getSaveLocation(
+    final path = await chooseSaveLocation(
       suggestedName: 'openote-cards.txt',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'Anki text', extensions: ['txt', 'tsv'])
@@ -172,6 +173,7 @@ class _StudyPanelState extends State<StudyPanel> {
       mimeType: 'text/tab-separated-values',
     );
     await file.saveTo(path.path);
+    if (await finishSave(path.path) == null) return;
     if (!mounted) return;
     ScaffoldMessenger.of(context).showToast(SnackBar(
         content: Text('Exported ${cards.length} cards — '

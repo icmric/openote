@@ -12,7 +12,12 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 /// False in a browser, where none of this applies.
-const bool platformCanLoadEngine = true;
+///
+/// **Not on a phone.** The engine is a set of desktop libraries downloaded on
+/// demand; there is no phone build of them yet, so Android and iOS say no and
+/// the Insert menu greys Video out (with "Not yet") instead of offering a
+/// download that cannot work.
+bool get platformCanLoadEngine => !(Platform.isAndroid || Platform.isIOS);
 
 /// Open every library in [dir] by ABSOLUTE path.
 ///

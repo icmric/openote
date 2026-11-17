@@ -1,3 +1,4 @@
+import 'save_where.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -42,7 +43,7 @@ Future<String?> materializeNotebook(AppState app,
   if (app.notebookId == null) return null;
   await app.flushSave(); // include the open page's latest edits
 
-  final dir = await getDirectoryPath(confirmButtonText: 'Export here');
+  final dir = await chooseExportFolder(confirmButtonText: 'Export here');
   if (dir == null) return null;
 
   final nb = app.notebooks.firstWhere((n) => n.id == app.notebookId);
@@ -159,7 +160,7 @@ Future<String?> materializeNotebook(AppState app,
     'pages': manifestPages,
   }));
 
-  return root;
+  return finishSave(root);
 }
 
 // ── Single-page JSON Canvas (OPEN-6) ──────────────────────────────────────
@@ -168,7 +169,7 @@ Future<String?> exportPageJsonCanvas(AppState app) async {
   if (app.pageId == null) return null;
   await app.flushSave();
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
-  final location = await getSaveLocation(
+  final location = await chooseSaveLocation(
     suggestedName: '${safeFilename(page.title)}.canvas',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'JSON Canvas', extensions: ['canvas'])
@@ -177,7 +178,7 @@ Future<String?> exportPageJsonCanvas(AppState app) async {
   if (location == null) return null;
   await File(location.path).writeAsString(
       const JsonEncoder.withIndent('  ').convert(_jsonCanvas(app.blocks, 'assets')));
-  return location.path;
+  return finishSave(location.path);
 }
 
 // ── Single-page InkML (OPEN-7) ────────────────────────────────────────────
@@ -187,7 +188,7 @@ Future<String?> exportPageInkML(AppState app) async {
   await app.flushSave();
   final inkml = _inkML(app.blocks);
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
-  final location = await getSaveLocation(
+  final location = await chooseSaveLocation(
     suggestedName: '${safeFilename(page.title)}.inkml',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'InkML', extensions: ['inkml', 'xml'])
@@ -196,7 +197,7 @@ Future<String?> exportPageInkML(AppState app) async {
   if (location == null) return null;
   await File(location.path)
       .writeAsString(inkml ?? _emptyInkML());
-  return location.path;
+  return finishSave(location.path);
 }
 
 // ── Builders (pure; unit-testable) ────────────────────────────────────────

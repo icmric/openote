@@ -20,6 +20,7 @@
 /// cut at the fold, which is what a printer does and what the reader expects.
 library;
 
+import 'save_where.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -98,7 +99,7 @@ Future<String?> exportPagePdfVector(AppState app) async {
   final page = app.nodes.where((n) => n.id == pageId).firstOrNull;
   if (page == null) return null;
 
-  final location = await getSaveLocation(
+  final location = await chooseSaveLocation(
     suggestedName: '${safeFilename(page.title, fallback: 'page')}.pdf',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'PDF', extensions: ['pdf'])
@@ -120,7 +121,7 @@ Future<String?> exportPagePdfVector(AppState app) async {
     bytes = fallback;
   }
   await File(location.path).writeAsBytes(bytes);
-  return location.path;
+  return finishSave(location.path);
 }
 
 /// Export a whole section — a lecture deck, a week's notes — as one PDF.
@@ -133,7 +134,7 @@ Future<String?> exportSectionPdfVector(AppState app, String sectionId) async {
   if (section == null) return null;
   if (app.pagesOf(sectionId).isEmpty) return null;
 
-  final location = await getSaveLocation(
+  final location = await chooseSaveLocation(
     suggestedName: '${safeFilename(section.title, fallback: 'section')}.pdf',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'PDF', extensions: ['pdf'])
@@ -143,7 +144,7 @@ Future<String?> exportSectionPdfVector(AppState app, String sectionId) async {
 
   final bytes = await buildDeckPdf(app, sectionId, title: section.title);
   await File(location.path).writeAsBytes(bytes);
-  return location.path;
+  return finishSave(location.path);
 }
 
 /// Build the PDF bytes for a page.

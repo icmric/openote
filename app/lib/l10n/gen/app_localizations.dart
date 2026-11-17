@@ -3190,6 +3190,72 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Grammar, typo fixes and capital letters work in English for now. In any other language they stay off.'**
   String get settingsWritingEnglishOnly;
+
+  /// Phone only: the name of the first tab at the foot of the screen (writing text). The desktop calls the same tab Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Write'**
+  String get barTabWrite;
+
+  /// Small word under a greyed-out item that this device cannot do yet. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'Not yet'**
+  String get insertNotYet;
+
+  /// Spoken label (not shown) of the button on the phone that puts the on-screen keyboard away.
+  ///
+  /// In en, this message translates to:
+  /// **'Put the keyboard away'**
+  String get barHideKeyboard;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Blank'**
+  String get pageSheetBlank;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Grid'**
+  String get pageSheetGrid;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Dots'**
+  String get pageSheetDots;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Ruled'**
+  String get pageSheetRuled;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Paper'**
+  String get pageSheetPaper;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Canvas'**
+  String get pageSheetCanvas;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Snap'**
+  String get pageSheetSnap;
+
+  /// Short name of a tile in the phone's Page sheet (under its icon). One word.
+  ///
+  /// In en, this message translates to:
+  /// **'Fit'**
+  String get pageSheetFit;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

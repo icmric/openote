@@ -19,10 +19,10 @@
 /// half, and `pictureIn` in `context_menus.dart` for the block half.
 library;
 
+import '../export/save_where.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../store/repository.dart';
@@ -75,7 +75,7 @@ Future<void> savePictureBytes(
     say(notHereYet);
     return;
   }
-  final loc = await getSaveLocation(
+  final loc = await chooseSaveLocation(
       suggestedName: suggestedPictureName(bytes, mime: mime, base: base));
   if (loc == null) return;
   try {
@@ -84,5 +84,12 @@ Future<void> savePictureBytes(
     if (context.mounted) say("That copy didn't save: $e");
     return;
   }
-  if (context.mounted) say('Saved to ${loc.path}');
+  String? where;
+  try {
+    where = await finishSave(loc.path);
+  } catch (e) {
+    if (context.mounted) say("That copy didn't save: $e");
+    return;
+  }
+  if (where != null && context.mounted) say('Saved to $where');
 }

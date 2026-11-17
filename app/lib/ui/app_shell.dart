@@ -1372,6 +1372,9 @@ class _AppShellState extends State<AppShell> {
 
   /// For the phone's drawer: the menu button opens it, choosing a page closes it.
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// What the tablet's rail last asked the drawer to open on.
+  PhoneNavStart _railStart = PhoneNavStart.sections;
   List<Object?>? _navKey;
 
   /// The navigator, built once and reused until something it shows changes.
@@ -1444,7 +1447,20 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
         if (isPhoneWidth(context)) return _phoneShell(context, page);
+        // A tablet held upright: the navigator is a rail and opens as a drawer.
+        final upright = isTabletPortrait(context);
         return Scaffold(
+          key: upright ? _scaffoldKey : null,
+          drawer: upright
+              ? Drawer(
+                  width: 336,
+                  child: PhoneNavigator(
+                      key: ValueKey(_railStart),
+                      start: _railStart,
+                      app: app,
+                      onPicked: () => _scaffoldKey.currentState?.closeDrawer()),
+                )
+              : null,
           // A `Stack`, so a reminder floats OVER the page rather than pushing
           // it. An alert that reflowed the canvas would move the line you were
           // typing on, which is a worse interruption than the one it is
@@ -1452,12 +1468,23 @@ class _AppShellState extends State<AppShell> {
           // Any click means "I am steering with the mouse now", so the F6
           // ring stops advertising a region the user has left. `deferToChild`
           // so this changes no hit testing — it only listens on the way past.
-          body: Listener(
+          body: SafeArea(
+            // Nothing under a tablet's status bar or gesture bar (and no
+            // effect at all on a computer, which has neither).
+            child: Listener(
             onPointerDown: (_) => _ring.value = null,
             child: Stack(children: [
             Row(
             children: [
-              _regionWrap(_Region.sidebar, _navigator()),
+              if (upright)
+                TabletRail(
+                    app: app,
+                    onOpen: (start) {
+                      setState(() => _railStart = start);
+                      _scaffoldKey.currentState?.openDrawer();
+                    })
+              else
+                _regionWrap(_Region.sidebar, _navigator()),
               const VerticalDivider(width: 1),
               Expanded(
                 child: LayoutBuilder(builder: (context, size) {
@@ -1541,7 +1568,7 @@ class _AppShellState extends State<AppShell> {
             AlertPopup(app: app, regionFocus: _alertRegion),
             ImportProgressCard(app: app),
           ]),
-          ),
+          )),
         );
       },
     );

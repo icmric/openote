@@ -14,9 +14,20 @@
 ///    (`AppState._bytesMayHaveArrived`), and the picture, which showed a
 ///    placeholder, redraws. Each is checked against its hash before it is kept.
 ///
-/// **Never writes to the chosen folder from here** (there is no
-/// push yet): a notebook opened this way is viewed, not changed, until pushing
-/// is built and tested on a copy. Nothing here deletes anything anywhere.
+/// **Push** sends this device's own changes the other way, and is the only
+/// thing here that writes to the chosen folder. Its rules are the sync design's
+/// own, held tightly:
+///
+///  * It writes exactly two kinds of file: this device's own log
+///    (`ops/<this device>.oplog`, replaced whole, and only when it has grown)
+///    and pictures that are not in the folder yet (`blobs/<hash>.blob`, which
+///    are named by their contents and so never change).
+///  * It **never** replaces or removes a file that is not this device's own log,
+///    never touches `manifest.json` or another device's log, and never deletes
+///    anything anywhere.
+///  * It refuses to replace the folder's copy of this device's log with a
+///    SHORTER one: that would mean this phone is behind its own history
+///    (a restored backup, a copied install), and the folder's copy is the truth.
 library;
 
 import 'dart:io';
@@ -45,6 +56,18 @@ class PullReport {
   String toString() =>
       '$logs log(s), ${(logBytes / 1024).round()} KB, $blobsListed pictures '
       'listed, $milliseconds ms';
+}
+
+/// What one push did.
+class PushReport {
+  PushReport({this.logSent = false, this.blobs = 0, this.milliseconds = 0});
+  bool logSent;
+  int blobs;
+  int milliseconds;
+  bool get anything => logSent || blobs > 0;
+  @override
+  String toString() =>
+      '${logSent ? 'log sent' : 'log unchanged'}, $blobs picture(s), $milliseconds ms';
 }
 
 class FolderBridge {
@@ -130,6 +153,84 @@ class FolderBridge {
     final tmp = File('${target.path}.tmp');
     tmp.writeAsBytesSync(bytes, flush: true);
     tmp.renameSync(target.path);
+  }
+
+  // ── Pushing this device's own changes ────────────────────────────────────
+
+  /// The length of our log the last time it went up, so an unchanged log is not
+  /// sent again.
+  int _sentLogLength = -1;
+
+  bool _pushing = false;
+
+  /// Send what this device has written. Safe to call as often as you like: it
+  /// does nothing when nothing has changed, and a call while another is running
+  /// returns at once. Throws on a failure the caller should show; whatever did
+  /// get sent stays sent (each file is whole or absent from the other side's
+  /// point of view, and a torn log costs its last line and is replaced next time).
+  Future<PushReport> push() async {
+    final report = PushReport();
+    final own = ownDevice;
+    if (own == null || _pushing) return report;
+    _pushing = true;
+    final sw = Stopwatch()..start();
+    try {
+      final root = await folder.list();
+      final ops = root.where((e) => _isDir(e, 'ops')).firstOrNull;
+      // A folder with no `ops` is not a notebook we know how to add to.
+      if (ops == null) return report;
+
+      // This device's own log.
+      final log = File(p.join(logDir.path, 'ops', '$own.oplog'));
+      if (log.existsSync()) {
+        final length = log.lengthSync();
+        if (length > 0 && length != _sentLogLength) {
+          final there = (await folder.list(doc: ops.id))
+              .where((e) => !e.dir && e.name == '$own.oplog')
+              .firstOrNull;
+          if (there != null && there.size > length) {
+            throw StateError(
+                'the copy of this device log in the folder is longer than '
+                'the one here; not replacing it');
+          }
+          final bytes = log.readAsBytesSync();
+          await folder.write(parent: ops.id, name: '$own.oplog', bytes: bytes);
+          _sentLogLength = bytes.length;
+          report.logSent = true;
+        }
+      }
+
+      // Pictures the folder does not have yet.
+      final blobsDir = Directory(p.join(logDir.path, 'blobs'));
+      if (blobsDir.existsSync()) {
+        final local = <String, File>{
+          for (final e in blobsDir.listSync())
+            if (e is File && e.path.endsWith('.blob'))
+              p.basenameWithoutExtension(e.path): e
+        }..removeWhere((h, _) => !_hex64.hasMatch(h));
+        if (local.isNotEmpty) {
+          final blobsDoc = root.where((e) => _isDir(e, 'blobs')).firstOrNull?.id ??
+              await folder.makeDir(name: 'blobs');
+          final there = await _indexBlobs(blobsDoc);
+          _blobsDoc = blobsDoc;
+          _blobIndex = there;
+          for (final e in local.entries) {
+            if (there.containsKey(e.key)) continue; // never replace a picture
+            final bytes = e.value.readAsBytesSync();
+            // Only bytes that are what their name says leave this phone.
+            if (sha256Hex(bytes) != e.key) continue;
+            final id = await folder.write(
+                parent: blobsDoc, name: '${e.key}.blob', bytes: bytes);
+            there[e.key] = id;
+            report.blobs++;
+          }
+        }
+      }
+      return report;
+    } finally {
+      report.milliseconds = sw.elapsedMilliseconds;
+      _pushing = false;
+    }
   }
 
   // ── Pictures, on demand ──────────────────────────────────────────────────

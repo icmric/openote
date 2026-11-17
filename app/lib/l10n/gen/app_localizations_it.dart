@@ -1927,4 +1927,37 @@ class LIt extends L {
   @override
   String get settingsWritingEnglishOnly =>
       'Per ora grammatica, correzione dei refusi e maiuscole funzionano solo in inglese. Nelle altre lingue restano disattivate.';
+
+  @override
+  String get barTabWrite => 'Scrivi';
+
+  @override
+  String get insertNotYet => 'Non ancora';
+
+  @override
+  String get barHideKeyboard => 'Nascondi la tastiera';
+
+  @override
+  String get pageSheetBlank => 'Vuota';
+
+  @override
+  String get pageSheetGrid => 'Griglia';
+
+  @override
+  String get pageSheetDots => 'Punti';
+
+  @override
+  String get pageSheetRuled => 'A righe';
+
+  @override
+  String get pageSheetPaper => 'Carta';
+
+  @override
+  String get pageSheetCanvas => 'Tela';
+
+  @override
+  String get pageSheetSnap => 'Aggancia';
+
+  @override
+  String get pageSheetFit => 'Adatta';
 }

@@ -20,8 +20,10 @@
 // skeleton placeholder bars, which they never were. Math symbols (∧ ∨) still
 // box because they come from the *OS* fallback chain (`onoteFontFallback`),
 // which no test environment has. That one is a known artifact, not an app bug.
+import 'dart:async' show unawaited;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,7 +38,11 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
+import 'package:openote/ui/device_class.dart' show debugTouchPlatform;
+import 'package:openote/ui/notebook_manager.dart';
 import 'package:openote/ui/onboarding.dart';
+import 'package:openote/ui/phone_shell.dart';
+import 'package:openote/ui/ui_scale_host.dart';
 
 import 'support/sqlite.dart';
 
@@ -506,6 +512,100 @@ void main() {
       await expectLater(find.byKey(key),
           matchesGoldenFile('goldens/phone_sheet_$which.png'));
       app.cancelPendingSave();
+    });
+  }
+
+  // ── Every phone and tablet screen, light and dark ─────────────────────────
+  Future<void> device(
+    WidgetTester t,
+    String name,
+    Size size, {
+    Brightness b = Brightness.light,
+    bool touch = true,
+    Future<void> Function(WidgetTester t, AppState app, BuildContext shell)? act,
+  }) async {
+    final app = await seed(t);
+    app.systemLocale = () => const Locale('en', 'AU');
+    final tablet = size.shortestSide >= 600;
+    final pad = tablet
+        ? const FakeViewPadding(top: 24, bottom: 16)
+        : const FakeViewPadding(top: 36, bottom: 20);
+    t.view.physicalSize = size;
+    t.view.devicePixelRatio = 1;
+    t.view.padding = pad;
+    t.view.viewPadding = pad;
+    addTearDown(t.view.reset);
+    if (touch) debugTouchPlatform = true;
+    try {
+      final key = GlobalKey();
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(b),
+        debugShowCheckedModeBanner: false,
+        builder: (c, child) => RepaintBoundary(
+            key: key, child: UiScaleHost(app: app, child: child!)),
+        home: AppShell(app: app),
+      ));
+      for (var i = 0; i < 2; i++) {
+        await t.pump(const Duration(milliseconds: 800));
+        await t.pumpAndSettle();
+      }
+      if (act != null) {
+        await act(t, app, t.element(find.byType(AppShell)));
+        await t.pumpAndSettle();
+      }
+      await expectLater(find.byKey(key), matchesGoldenFile('goldens/$name.png'));
+    } finally {
+      debugTouchPlatform = null;
+    }
+    app.cancelPendingSave();
+  }
+
+  Future<void> openDrawer(WidgetTester t, AppState app, BuildContext c) async {
+    t.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await t.pumpAndSettle();
+  }
+
+  final screens = <String, (Size, Brightness, Future<void> Function(WidgetTester, AppState, BuildContext)?)>{
+    'phone_page_dark': (const Size(390, 844), Brightness.dark, null),
+    'phone_drawer_dark': (const Size(390, 844), Brightness.dark, openDrawer),
+    'phone_drawer_recent': (const Size(390, 844), Brightness.light,
+        (t, app, c) async {
+      await openDrawer(t, app, c);
+      await t.tap(find.byKey(const ValueKey('phone-nav-recent')));
+    }),
+    'phone_drawer_search': (const Size(390, 844), Brightness.light,
+        (t, app, c) async {
+      await openDrawer(t, app, c);
+      await t.enterText(
+          find.descendant(
+              of: find.byType(PhoneNavigator), matching: find.byType(TextField)),
+          'a');
+    }),
+    'phone_sheet_Page': (const Size(390, 844), Brightness.light,
+        (t, app, c) async => await t.tap(find.text('Page'))),
+    'phone_sheet_Share': (const Size(390, 844), Brightness.light,
+        (t, app, c) async {
+      await t.tap(find.text('Insert'));
+      await t.pumpAndSettle();
+      await t.tap(find.byIcon(Icons.ios_share));
+    }),
+    'phone_notebooks': (const Size(390, 844), Brightness.light,
+        (t, app, c) async {
+      unawaited(showNotebookManager(c, app));
+    }),
+    'phone_landscape': (const Size(844, 390), Brightness.light, null),
+    'tablet_landscape': (const Size(1280, 800), Brightness.light, null),
+    'tablet_landscape_dark': (const Size(1280, 800), Brightness.dark, null),
+    'tablet_portrait': (const Size(800, 1280), Brightness.light, null),
+    'tablet_portrait_drawer': (const Size(800, 1280), Brightness.light, openDrawer),
+  };
+  for (final e in screens.entries) {
+    testWidgets('screen ${e.key}', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await device(t, e.key, e.value.$1, b: e.value.$2, act: e.value.$3);
     });
   }
 

@@ -1032,15 +1032,77 @@ class AppState extends ChangeNotifier
   /// How the last pull went, for the person waiting on the first one.
   String? folderPullSummary;
 
-  /// **Viewing only, for now.** Nothing a phone changes in such a notebook is
-  /// sent back yet, so changes are refused rather than kept somewhere only this
-  /// phone would ever see them. Lifted when sending back is built and has been
-  /// tried on a copy.
-  static const SaveProblem _folderViewOnly = SaveProblem(
-    short: 'Viewing only',
-    message: 'This notebook is being read from a Drive folder. Changes made '
-        'on this phone are not sent back yet, so they are not kept.',
+  /// What was last said about sending this phone's changes to the Drive folder:
+  /// null when all is well or nothing is waiting. The changes themselves are
+  /// always safe on this phone first; this is only about the second copy.
+  static const SaveProblem _folderNotSent = SaveProblem(
+    short: 'Not on Drive yet',
+    message: 'Your changes are saved on this phone. They could not be sent to '
+        'the Drive folder just now (no connection, or the folder is not '
+        'reachable), and will be sent when it can be reached.',
   );
+
+  /// Per notebook: did the last send fail?
+  final Map<String, bool> _folderSendFailed = {};
+
+  /// How the last send went, for the status line and for tests.
+  String? folderPushSummary;
+
+  Timer? _folderPushTimer;
+  Timer? _folderTicker;
+
+  /// Send this phone's changes to the Drive folder a few seconds after the
+  /// writing stops. Many edits move the timer out; one send follows.
+  void scheduleFolderPush() {
+    final nb = notebookId;
+    if (nb == null || !isFolderNotebook(nb)) return;
+    _folderPushTimer?.cancel();
+    _folderPushTimer =
+        Timer(const Duration(seconds: 8), () => unawaited(pushFolderNow(nb)));
+  }
+
+  /// Send now. Never throws; a failure is remembered, shown quietly, and tried
+  /// again on the next change or tick. Does nothing for a notebook that is not
+  /// in a Drive folder, or that this build cannot safely write to.
+  Future<void> pushFolderNow([String? notebook]) async {
+    final nb = notebook ?? notebookId;
+    if (nb == null || _disposed) return;
+    final bridge = _bridgeFor(nb);
+    if (bridge == null || notebookIsReadOnly(nb)) return;
+    try {
+      // What is in memory goes to the log first; then the log goes up.
+      if (nb == notebookId) await flushSave();
+      final r = await bridge.push();
+      folderPushSummary = r.toString();
+      if (r.anything) debugPrint('[openote/folder] pushed: $r');
+      if (_folderSendFailed.remove(nb) == true) notifyListeners();
+    } catch (e) {
+      debugPrint('[openote/folder] push failed: $e');
+      if (_folderSendFailed[nb] != true) {
+        _folderSendFailed[nb] = true;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Look for the other devices' changes in the open notebook's Drive folder
+  /// now (on coming back to the app). Never throws.
+  Future<void> pullFolderNow() async {
+    final nb = notebookId;
+    if (nb == null || !isFolderNotebook(nb)) return;
+    await _pullFolder(nb, force: true);
+  }
+
+  /// While a Drive-folder notebook is open: look for the other devices' changes
+  /// and send ours, every half minute. Started once, by the first pull.
+  void _startFolderTicker(String nb) {
+    if (_folderTicker != null || _disposed) return;
+    _folderTicker = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (_disposed) return;
+      await _pullFolder(nb, force: true);
+      await pushFolderNow(nb);
+    });
+  }
 
   bool isFolderNotebook(String nb) => _repo.getSetting(_folderKey(nb)) is Map;
 
@@ -1052,8 +1114,8 @@ class AppState extends ChangeNotifier
     final tree = raw['tree'];
     final dir = _repo.notebooks.where((n) => n.id == nb).firstOrNull?.logDir;
     if (tree is! String || dir == null) return null;
-    return _folderBridges[nb] =
-        FolderBridge(folder: SafFolder(tree), logDirPath: dir);
+    return _folderBridges[nb] = FolderBridge(
+        folder: SafFolder(tree), logDirPath: dir, ownDevice: localDeviceId());
   }
 
   /// Bring the folder's logs down, at most every twenty seconds. Never throws:
@@ -1068,6 +1130,7 @@ class AppState extends ChangeNotifier
       return;
     }
     _folderPulledAt[nb] = DateTime.now();
+    _startFolderTicker(nb);
     try {
       final r = await bridge.pull();
       folderPullSummary = r.toString();
@@ -1129,7 +1192,8 @@ class AppState extends ChangeNotifier
     }
 
     final into = _repo.freeLogDirPath(title);
-    final bridge = FolderBridge(folder: folder, logDirPath: into);
+    final bridge = FolderBridge(
+        folder: folder, logDirPath: into, ownDevice: localDeviceId());
     onProgress?.call('Reading the notes…');
     try {
       Directory(into).createSync(recursive: true);
@@ -3431,6 +3495,7 @@ class AppState extends ChangeNotifier
       // Per notebook, not [gitRemote] — this is asked about every notebook in
       // the list, and the open one's remote is not their answer.
       gitRemote: gitRemoteFor(nb),
+      driveFolder: isFolderNotebook(nb),
     );
     _syncStatusCache[nb] = (status: status, at: now);
     return status;
@@ -11874,6 +11939,7 @@ class AppState extends ChangeNotifier
     // to save and push changes." Every edit pushes the git timer out, so a
     // cycle runs once writing stops rather than in the middle of a sentence.
     scheduleGitSync();
+    scheduleFolderPush();
     notifyListeners();
   }
 
@@ -11900,7 +11966,7 @@ class AppState extends ChangeNotifier
     // it would describe a symptom of it as if it were a separate problem.
     final nb = notebookId;
     return (nb == null ? null : _logAhead[nb]) ??
-        (nb != null && isFolderNotebook(nb) ? _folderViewOnly : null) ??
+        (nb != null && _folderSendFailed[nb] == true ? _folderNotSent : null) ??
         _pageSaveError ??
         _workspaceSaveError ??
         // A paste or drop whose bytes never landed anywhere. As costly as a
@@ -11937,8 +12003,7 @@ class AppState extends ChangeNotifier
   /// encrypted payload. Everything the user can already see stays on screen;
   /// what stops is writing, because every op this device would append is a
   /// diff against a replay that is missing whatever those operations did.
-  bool notebookIsReadOnly(String nb) =>
-      _logAhead.containsKey(nb) || isFolderNotebook(nb);
+  bool notebookIsReadOnly(String nb) => _logAhead.containsKey(nb);
 
   /// Put [nb] into the read-only state a log from a newer build produces,
   /// without needing one. For the tests that check what this build refuses to
@@ -12251,6 +12316,9 @@ class AppState extends ChangeNotifier
   void cancelPendingSave() {
     _saveDebounce?.cancel();
     _gitDebounce?.cancel();
+    _folderPushTimer?.cancel();
+    _folderTicker?.cancel();
+    _folderTicker = null;
     // Housekeeping arms timers too (the post-open delay, the deferral retry,
     // the note clear), and a fake-async widget test that loaded a notebook
     // would otherwise end with one still pending.
@@ -12272,6 +12340,8 @@ class AppState extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
+    _folderPushTimer?.cancel();
+    _folderTicker?.cancel();
     _review?.dispose();
     _review = null;
     // The caret watcher outlives nothing. A widget test builds and tears down
@@ -12503,7 +12573,13 @@ class SyncStatus {
     required this.devices,
     required this.mirrors,
     this.gitRemote,
+    this.driveFolder = false,
   });
+
+  /// True when the notebook is kept in step with a Google Drive folder reached
+  /// through Android's folder picker (it has no path the app can see, so
+  /// [folder] cannot say so).
+  final bool driveFolder;
 
   /// The detected cloud folder the notebook lives in, or null when it is only
   /// on this machine.
@@ -12531,11 +12607,11 @@ class SyncStatus {
   /// answers is "if this laptop died, are the notes gone", and for that the
   /// two are the same answer. The distinction is carried by [where] and by the
   /// tooltip, not by pretending one of them does not exist.
-  bool get isSynced => folder != null || gitRemote != null;
+  bool get isSynced => folder != null || gitRemote != null || driveFolder;
 
   /// Synced through a cloud folder specifically. The chooser and the storage
   /// rows still ask this, because those are about a FOLDER.
-  bool get isFolderSynced => folder != null;
+  bool get isFolderSynced => folder != null || driveFolder;
 
   bool get hasOtherDevices => devices > 1;
 
@@ -12561,7 +12637,8 @@ class SyncStatus {
   }
 
   /// Where the notes live, in as few words as fit. Null when nowhere else.
-  String? get where => folder?.name ?? gitLabel;
+  String? get where =>
+      folder?.name ?? (driveFolder ? 'Google Drive' : null) ?? gitLabel;
 
   /// The chip label.
   ///
@@ -12585,7 +12662,7 @@ class SyncStatus {
     if (hasOtherDevices) return Icons.devices;
     // A distinct glyph for git, because "where are my notes" has a different
     // answer and the icon is the first thing read.
-    if (folder == null) return Icons.commit;
+    if (folder == null && !driveFolder) return Icons.commit;
     return Icons.cloud_done_outlined;
   }
 }

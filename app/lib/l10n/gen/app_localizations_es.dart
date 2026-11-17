@@ -1921,4 +1921,37 @@ class LEs extends L {
   @override
   String get settingsWritingEnglishOnly =>
       'La gramática, la corrección de erratas y las mayúsculas solo funcionan en inglés por ahora. En otros idiomas permanecen desactivadas.';
+
+  @override
+  String get barTabWrite => 'Escribir';
+
+  @override
+  String get insertNotYet => 'Aún no';
+
+  @override
+  String get barHideKeyboard => 'Ocultar el teclado';
+
+  @override
+  String get pageSheetBlank => 'Vacía';
+
+  @override
+  String get pageSheetGrid => 'Cuadrícula';
+
+  @override
+  String get pageSheetDots => 'Puntos';
+
+  @override
+  String get pageSheetRuled => 'Rayada';
+
+  @override
+  String get pageSheetPaper => 'Papel';
+
+  @override
+  String get pageSheetCanvas => 'Lienzo';
+
+  @override
+  String get pageSheetSnap => 'Ajustar';
+
+  @override
+  String get pageSheetFit => 'Encajar';
 }

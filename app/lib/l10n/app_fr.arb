@@ -534,5 +534,16 @@
   "settingsEnglishUS": "Anglais (États-Unis)",
   "settingsEnglishCA": "Anglais (Canada)",
   "settingsEnglishIN": "Anglais (Inde)",
-  "settingsWritingEnglishOnly": "La grammaire, la correction des fautes de frappe et les majuscules ne fonctionnent pour l’instant qu’en anglais. Dans les autres langues, elles restent désactivées."
+  "settingsWritingEnglishOnly": "La grammaire, la correction des fautes de frappe et les majuscules ne fonctionnent pour l’instant qu’en anglais. Dans les autres langues, elles restent désactivées.",
+  "barTabWrite": "Écrire",
+  "insertNotYet": "Pas encore",
+  "barHideKeyboard": "Masquer le clavier",
+  "pageSheetBlank": "Vierge",
+  "pageSheetGrid": "Grille",
+  "pageSheetDots": "Points",
+  "pageSheetRuled": "Lignée",
+  "pageSheetPaper": "Papier",
+  "pageSheetCanvas": "Toile",
+  "pageSheetSnap": "Aimanter",
+  "pageSheetFit": "Ajuster"
 }

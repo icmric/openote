@@ -1,3 +1,4 @@
+import '../ui/touch_long_press.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -534,7 +535,7 @@ class PortalBlockView extends StatelessWidget {
         // than the one that was eating the click. Opaque, because the whole
         // window should answer a right-click, including the parts of it that
         // are blank page.
-        child: GestureDetector(
+        child: TouchLongPress(onMenu: onMenu, child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onSecondaryTapUp:
               onMenu == null ? null : (d) => onMenu!(d.globalPosition),
@@ -550,7 +551,7 @@ class PortalBlockView extends StatelessWidget {
               ),
             ),
           ),
-        ),
+        )),
       ),
     );
 

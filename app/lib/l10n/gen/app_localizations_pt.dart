@@ -1922,4 +1922,37 @@ class LPt extends L {
   @override
   String get settingsWritingEnglishOnly =>
       'Por enquanto, gramática, correção de erros de digitação e maiúsculas só funcionam em inglês. Em outros idiomas ficam desativadas.';
+
+  @override
+  String get barTabWrite => 'Escrever';
+
+  @override
+  String get insertNotYet => 'Ainda não';
+
+  @override
+  String get barHideKeyboard => 'Ocultar o teclado';
+
+  @override
+  String get pageSheetBlank => 'Em branco';
+
+  @override
+  String get pageSheetGrid => 'Grade';
+
+  @override
+  String get pageSheetDots => 'Pontos';
+
+  @override
+  String get pageSheetRuled => 'Pautada';
+
+  @override
+  String get pageSheetPaper => 'Papel';
+
+  @override
+  String get pageSheetCanvas => 'Tela';
+
+  @override
+  String get pageSheetSnap => 'Ajustar';
+
+  @override
+  String get pageSheetFit => 'Encaixar';
 }

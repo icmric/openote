@@ -534,5 +534,16 @@
   "settingsEnglishUS": "英语（美国）",
   "settingsEnglishCA": "英语（加拿大）",
   "settingsEnglishIN": "英语（印度）",
-  "settingsWritingEnglishOnly": "语法、拼写自动更正和大小写目前只适用于英语。其他语言下这些功能保持关闭。"
+  "settingsWritingEnglishOnly": "语法、拼写自动更正和大小写目前只适用于英语。其他语言下这些功能保持关闭。",
+  "barTabWrite": "书写",
+  "insertNotYet": "暂不支持",
+  "barHideKeyboard": "收起键盘",
+  "pageSheetBlank": "空白",
+  "pageSheetGrid": "方格",
+  "pageSheetDots": "点阵",
+  "pageSheetRuled": "横线",
+  "pageSheetPaper": "纸张",
+  "pageSheetCanvas": "画布",
+  "pageSheetSnap": "吸附",
+  "pageSheetFit": "适应"
 }

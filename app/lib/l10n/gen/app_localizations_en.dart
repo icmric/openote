@@ -1911,4 +1911,37 @@ class LEn extends L {
   @override
   String get settingsWritingEnglishOnly =>
       'Grammar, typo fixes and capital letters work in English for now. In any other language they stay off.';
+
+  @override
+  String get barTabWrite => 'Write';
+
+  @override
+  String get insertNotYet => 'Not yet';
+
+  @override
+  String get barHideKeyboard => 'Put the keyboard away';
+
+  @override
+  String get pageSheetBlank => 'Blank';
+
+  @override
+  String get pageSheetGrid => 'Grid';
+
+  @override
+  String get pageSheetDots => 'Dots';
+
+  @override
+  String get pageSheetRuled => 'Ruled';
+
+  @override
+  String get pageSheetPaper => 'Paper';
+
+  @override
+  String get pageSheetCanvas => 'Canvas';
+
+  @override
+  String get pageSheetSnap => 'Snap';
+
+  @override
+  String get pageSheetFit => 'Fit';
 }

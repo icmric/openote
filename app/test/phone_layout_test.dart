@@ -189,4 +189,131 @@ void main() {
     expect(find.byIcon(Icons.font_download_outlined), findsOneWidget);
     app.cancelPendingSave();
   });
+
+  testWidgets('the first tab is called Write on a phone', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    expect(find.text('Write'), findsOneWidget);
+    expect(find.text('Home'), findsNothing);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the Page tab opens a sheet, and a tile in it changes the page',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    await t.tap(find.text('Page'));
+    await t.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text('Grid'), findsOneWidget);
+    await t.tap(find.text('Grid'));
+    await t.pumpAndSettle();
+    expect(app.pageProps.background, 'grid');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Insert has a Share tile that opens the export choices',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    await t.tap(find.text('Insert'));
+    await t.pumpAndSettle();
+    await t.tap(find.byIcon(Icons.ios_share));
+    await t.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byIcon(Icons.picture_as_pdf_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.folder_zip_outlined), findsOneWidget);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a greyed Insert tile says why, in words', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    // The test machine can do everything, so ask for a tile this device cannot.
+    await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      theme: onoteTheme(Brightness.light),
+      home: Builder(
+          builder: (c) => Scaffold(
+                body: Center(
+                    child: Text(L.of(c).insertNotYet, key: const Key('note'))),
+              )),
+    ));
+    expect(find.text('Not yet'), findsOneWidget);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a keyboard on screen brings a button to put it away',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    expect(find.byIcon(Icons.keyboard_hide_outlined), findsNothing);
+    t.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(t.view.resetViewInsets);
+    await t.pumpAndSettle();
+    expect(find.byIcon(Icons.keyboard_hide_outlined), findsOneWidget);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the drawer: search, Recent, Settings, and a long-press menu',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    await t.runAsync(() => app.addPage());
+    await t.pumpAndSettle();
+    final pages = app.pagesOf(app.activeSectionId!);
+    await t.runAsync(() async => app.renameNode(pages.first.id, 'Quantum notes'));
+    await t.pumpAndSettle();
+    await t.tap(find.byIcon(Icons.menu));
+    await t.pumpAndSettle();
+    final nav = find.byType(PhoneNavigator);
+    expect(nav, findsOneWidget);
+
+    // Settings is a button in the foot of the drawer.
+    expect(find.descendant(of: nav, matching: find.byIcon(Icons.settings_outlined)),
+        findsOneWidget);
+
+    // Search or jump to…
+    await t.enterText(find.descendant(of: nav, matching: find.byType(TextField)),
+        'quantum');
+    await t.pumpAndSettle();
+    expect(find.descendant(of: nav, matching: find.text('Quantum notes')),
+        findsOneWidget);
+    await t.enterText(find.descendant(of: nav, matching: find.byType(TextField)), '');
+    await t.pumpAndSettle();
+
+    // Recent shows where you have been.
+    await t.tap(find.byKey(const ValueKey('phone-nav-recent')));
+    await t.pumpAndSettle();
+    expect(find.descendant(of: nav, matching: find.text('SECTIONS')), findsNothing);
+    await t.tap(find.byKey(const ValueKey('phone-nav-recent')));
+    await t.pumpAndSettle();
+    expect(find.descendant(of: nav, matching: find.text('SECTIONS')), findsOneWidget);
+
+    // A long press on a page is the desktop's right-click.
+    await t.longPress(
+        find.descendant(of: nav, matching: find.text('Quantum notes')).first);
+    await t.pumpAndSettle();
+    expect(find.text('Rename'), findsWidgets);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a phone says whether the writing is safe, and a problem can be pressed',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    final bar = find.byType(PhoneTopBar);
+    expect(find.descendant(of: bar, matching: find.byIcon(Icons.check_circle_outline)),
+        findsOneWidget, reason: 'saved');
+    app.debugMarkReadOnly(app.notebookId!);
+    app.refresh();
+    await t.pumpAndSettle();
+    expect(find.descendant(of: bar, matching: find.byIcon(Icons.error_outline)),
+        findsOneWidget, reason: 'a problem shows, in its own shape');
+    await t.tap(find.descendant(of: bar, matching: find.byIcon(Icons.error_outline)));
+    await t.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget, reason: 'the reason, in words');
+    app.cancelPendingSave();
+  });
 }

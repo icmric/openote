@@ -1,3 +1,4 @@
+import '../ui/touch_long_press.dart';
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kMiddleMouseButton;
 import 'package:flutter/material.dart';
@@ -811,7 +812,11 @@ class _BlockViewState extends State<BlockView> {
       cursor: _editableType && !editing && !_groupTakesGesture
           ? SystemMouseCursors.text
           : MouseCursor.defer,
-      child: GestureDetector(
+      child: TouchLongPress(
+        onMenu: editing || PenButtons.suppressesMenu(app.penButton)
+            ? null
+            : (p) => showBlockMenu(context, app, b, p),
+        child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         supportedDevices: devices,
         onTap: editing ? null : _tap,
@@ -873,7 +878,7 @@ class _BlockViewState extends State<BlockView> {
               : const BoxDecoration(),
           child: labelled,
         ),
-      ),
+      )),
     );
 
     // Touch has no hover, so the bar cannot be the only way to move a block.

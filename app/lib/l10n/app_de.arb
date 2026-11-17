@@ -534,5 +534,16 @@
   "settingsEnglishUS": "Englisch (USA)",
   "settingsEnglishCA": "Englisch (Kanada)",
   "settingsEnglishIN": "Englisch (Indien)",
-  "settingsWritingEnglishOnly": "Grammatik, Tippfehlerkorrektur und Großschreibung funktionieren vorerst nur auf Englisch. In allen anderen Sprachen bleiben sie aus."
+  "settingsWritingEnglishOnly": "Grammatik, Tippfehlerkorrektur und Großschreibung funktionieren vorerst nur auf Englisch. In allen anderen Sprachen bleiben sie aus.",
+  "barTabWrite": "Schreiben",
+  "insertNotYet": "Noch nicht",
+  "barHideKeyboard": "Tastatur ausblenden",
+  "pageSheetBlank": "Leer",
+  "pageSheetGrid": "Raster",
+  "pageSheetDots": "Punkte",
+  "pageSheetRuled": "Liniert",
+  "pageSheetPaper": "Papier",
+  "pageSheetCanvas": "Leinwand",
+  "pageSheetSnap": "Einrasten",
+  "pageSheetFit": "Einpassen"
 }

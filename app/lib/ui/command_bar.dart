@@ -28,6 +28,7 @@ import 'compacting_toolbar.dart';
 import 'memo.dart';
 import 'font_picker.dart';
 import 'icon_tap.dart';
+import '../model/models.dart' show PaperSize;
 import 'phone_shell.dart' show isPhoneWidth;
 import 'insert_catalog.dart';
 import 'object_face.dart';
@@ -50,9 +51,34 @@ class CommandBar extends StatefulWidget {
   State<CommandBar> createState() => _CommandBarState();
 }
 
-class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
+class _CommandBarState extends State<CommandBar>
+    with MemoBuild<CommandBar>, WidgetsBindingObserver {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
+
+  /// Whether the on-screen keyboard is up. Asked of the window, not of
+  /// `MediaQuery`: the phone's Scaffold gives its body the room above the
+  /// keyboard and takes the keyboard out of the `MediaQuery` it passes down, so
+  /// from in here the keyboard is invisible to `MediaQuery`.
+  bool _keyboardUp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    final up = View.of(context).viewInsets.bottom > 0;
+    if (up != _keyboardUp && mounted) setState(() => _keyboardUp = up);
+  }
 
   /// **Four.** Home is write and format, Insert is add, Draw is ink, Page is
   /// the sheet itself — its ruling, its size, the grid and the zoom.
@@ -200,6 +226,12 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// code that does.
   @override
   List<Object?> memoInputs() => [
+        // The screen, not the app: a phone-sized window (the bar is a different
+        // shape there) and a keyboard on the screen (the Write strip gains a
+        // button to put it away). Neither is an `app.` read, so the guard test
+        // cannot see them; both are rendered.
+        isPhoneWidth(context),
+        _keyboardUp,
         // The widget's own configuration, because `didUpdateWidget` cannot
         // help here — see `memo.dart`.
         app,
@@ -639,6 +671,51 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       Icons.edit_outlined,
       Icons.description_outlined,
     ];
+    // A phone held sideways has no height to spare: one row, with the four tabs
+    // as plain icons at its end, so the page keeps the screen.
+    final sideways = MediaQuery.sizeOf(context).height < 480;
+    if (sideways) {
+      return Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+        ),
+        child: Row(children: [
+          const SizedBox(width: 2),
+          _MiniIcon(
+              icon: Icons.undo,
+              tooltip: l.barUndo,
+              onPressed: app.canUndo ? app.undo : null),
+          _MiniIcon(
+              icon: Icons.redo,
+              tooltip: l.barRedo,
+              onPressed: app.canRedo ? app.redo : null),
+          Container(
+              width: 1,
+              height: 24,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              color: Theme.of(context).dividerColor),
+          Expanded(
+            child: Align(alignment: Alignment.centerLeft, child: _face(context)),
+          ),
+          for (var i = 0; i < _tabCount; i++)
+            IconTap(
+              icon: icons[i],
+              label: i == 0 ? l.barTabWrite : tabs[i],
+              size: 22,
+              width: 44,
+              height: 44,
+              selected: _tab == i,
+              onPressed: i == 1
+                  ? () => _showInsertSheet(context)
+                  : i == _tabPage
+                      ? () => _showPageSheet(context)
+                      : () => setState(() => _tab = i),
+            ),
+        ]),
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -686,9 +763,11 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                 child: InkWell(
                   mouseCursor: WidgetStateMouseCursor.clickable,
                   onTap: i == 1
-                      // Insert is a sheet, not a row to scroll along.
+                      // Insert and Page are sheets, not rows to scroll along.
                       ? () => _showInsertSheet(context)
-                      : () => setState(() {
+                      : i == _tabPage
+                          ? () => _showPageSheet(context)
+                          : () => setState(() {
                           _tab = i;
                           _tabbedAwayFrom =
                               objectFaceOf(app) == ObjectFace.equation
@@ -702,7 +781,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                             size: 22,
                             color: _tab == i ? scheme.primary : null),
                         const SizedBox(height: 2),
-                        Text(tabs[i],
+                        Text(i == 0 ? l.barTabWrite : tabs[i],
                             style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: _tab == i
@@ -774,7 +853,144 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         color: Theme.of(context).colorScheme.primary,
         onPressed: () => _showFormatSheet(context),
       ),
+      // While the keyboard is up, a way to put it away (it is not obvious that
+      // the system's own back gesture does it, and it hides the page).
+      if (_keyboardUp) ...[
+        const _Div(),
+        IconTap(
+          icon: Icons.keyboard_hide_outlined,
+          label: l.barHideKeyboard,
+          size: 22,
+          width: 44,
+          height: 44,
+          onPressed: _hideKeyboard,
+        ),
+      ],
     ]);
+  }
+
+  /// The Page tab on a phone: what the page looks like and how it is laid out,
+  /// as a sheet of big tiles (the desktop's strip is a row of small buttons).
+  void _showPageSheet(BuildContext context) {
+    _hideKeyboard();
+    final l = L.of(context);
+    final s = context.surfaces;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: s.chrome2,
+      builder: (sheet) => SafeArea(
+        child: ListenableBuilder(
+          listenable: app,
+          builder: (_, __) {
+            final paged = app.pageProps.isPaged;
+            Widget grid(List<Widget> tiles) => Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+                  child: GridView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            mainAxisExtent: 72),
+                    children: tiles,
+                  ),
+                );
+            Widget bg(String v, IconData icon, String label) => _SheetTile(
+                  width: null,
+                  icon: icon,
+                  label: label,
+                  selected: app.pageProps.background == v,
+                  onTap: () => app.setBackground(v),
+                );
+            return SingleChildScrollView(
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                grid([
+                  bg('blank', Icons.crop_din, l.pageSheetBlank),
+                  bg('grid', Icons.grid_4x4, l.pageSheetGrid),
+                  bg('dotted', Icons.apps, l.pageSheetDots),
+                  bg('ruled', Icons.notes, l.pageSheetRuled),
+                ]),
+                Divider(height: 12, color: s.border),
+                grid([
+                  _SheetTile(
+                    width: null,
+                    icon: Icons.dashboard_customize,
+                    label: l.pageSheetCanvas,
+                    selected: !paged,
+                    onTap: () => app.setPageLayout('canvas'),
+                  ),
+                  _SheetTile(
+                    width: null,
+                    icon: Icons.description,
+                    label: l.pageSheetPaper,
+                    selected: paged,
+                    onTap: () => app.setPageLayout('paged'),
+                  ),
+                  _SheetTile(
+                    width: null,
+                    icon: app.snapToGrid
+                        ? Icons.grid_goldenratio
+                        : Icons.grid_off,
+                    label: l.pageSheetSnap,
+                    selected: app.snapToGrid,
+                    onTap: app.toggleSnap,
+                  ),
+                  _SheetTile(
+                    width: null,
+                    icon: Icons.fit_screen_outlined,
+                    label: l.pageSheetFit,
+                    onTap: () {
+                      Navigator.of(sheet).pop();
+                      app.canvas.fitTo(app.contentBounds().inflate(24));
+                    },
+                  ),
+                ]),
+                if (paged) ...[
+                  Divider(height: 12, color: s.border),
+                  grid([
+                    for (final paper in PaperSize.all)
+                      _SheetTile(
+                        width: null,
+                        text: paper.name,
+                        selected: app.pageProps.paperSize == paper.name,
+                        onTap: () => app.setPageLayout('paged', paper: paper.name),
+                      ),
+                    _SheetTile(
+                      width: null,
+                      icon: Icons.screen_rotation_outlined,
+                      label: l.objectRowLandscape,
+                      selected: app.pageProps.landscape,
+                      onTap: () => app.setPageLayout('paged',
+                          landscape: !app.pageProps.landscape),
+                    ),
+                  ]),
+                ],
+                Divider(height: 12, color: s.border),
+                grid([
+                  _SheetTile(
+                    width: null,
+                    icon: Icons.toc,
+                    label: l.barPageOverview,
+                    onTap: () {
+                      Navigator.of(sheet).pop();
+                      app.togglePageOverview();
+                    },
+                  ),
+                ]),
+                const SizedBox(height: 8),
+              ]),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   /// Everything the Write row has, in a sheet, in groups with big targets.
@@ -939,6 +1155,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                   width: null,
                   icon: item.icon,
                   label: item.label(l),
+                  note: item.available ? null : l.insertNotYet,
                   onTap: item.available
                       ? () {
                           Navigator.of(sheet).pop();
@@ -946,10 +1163,83 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                         }
                       : null,
                 ),
+              // Not an insert, but it is where the design puts it: the one
+              // place on the phone with a name for "get this out of here".
+              _SheetTile(
+                width: null,
+                icon: Icons.ios_share,
+                label: l.barExport,
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  _showShareSheet(context);
+                },
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// The Export menu as a sheet of big tiles. Each one saves through the
+  /// system's own Save-as screen on a phone (see `export/save_where.dart`).
+  void _showShareSheet(BuildContext context) {
+    _hideKeyboard();
+    final l = L.of(context);
+    final s = context.surfaces;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: s.chrome2,
+      builder: (sheet) {
+        Widget tile(IconData icon, String label, VoidCallback run) => _SheetTile(
+              width: null,
+              icon: icon,
+              label: label,
+              onTap: () {
+                Navigator.of(sheet).pop();
+                run();
+              },
+            );
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: GridView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  mainAxisExtent: 72),
+              children: [
+                tile(Icons.description_outlined, l.barExportMarkdown,
+                    () => _export(context, exportPageMarkdown)),
+                tile(Icons.picture_as_pdf_outlined, l.barExportPdf,
+                    () => _export(context, exportPagePdfVector)),
+                tile(Icons.print_outlined, l.barExportPrint,
+                    () => printCurrentPage(app)),
+                tile(Icons.image_outlined, l.barExportPdfPicture,
+                    () => _export(context, exportPagePdf)),
+                tile(Icons.hub_outlined, l.barExportCanvas,
+                    () => _export(context, exportPageJsonCanvas)),
+                tile(Icons.gesture, l.barExportInk,
+                    () => _export(context, exportPageInkML)),
+                tile(
+                    Icons.folder_zip_outlined,
+                    l.barExportNotebook,
+                    () => _exportWithProgress(
+                        context,
+                        l.barExportNotebookBusy,
+                        (report) => materializeNotebook(app,
+                            onProgress: (done, total) =>
+                                report(l.barExportPageProgress(done, total))))),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -2649,6 +2939,7 @@ class _SheetTile extends StatelessWidget {
     this.selected = false,
     this.swatch,
     this.width = 80,
+    this.note,
   });
   final double? width;
   final IconData? icon;
@@ -2661,6 +2952,10 @@ class _SheetTile extends StatelessWidget {
 
   /// A bar of the colour this applies, under the icon.
   final Color? swatch;
+
+  /// A few words under the name ("Not yet" on something this device cannot do),
+  /// so a greyed tile says why and does not just look broken.
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -2714,6 +3009,10 @@ class _SheetTile extends StatelessWidget {
                     maxLines: 1, style: TextStyle(fontSize: 11, color: fg)),
               ),
             ),
+            if (note != null)
+              Text(note!,
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 9, color: s.textSecondary)),
           ]),
         ),
       ),

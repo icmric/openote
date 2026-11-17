@@ -534,5 +534,16 @@
   "settingsEnglishUS": "Inglese (Stati Uniti)",
   "settingsEnglishCA": "Inglese (Canada)",
   "settingsEnglishIN": "Inglese (India)",
-  "settingsWritingEnglishOnly": "Per ora grammatica, correzione dei refusi e maiuscole funzionano solo in inglese. Nelle altre lingue restano disattivate."
+  "settingsWritingEnglishOnly": "Per ora grammatica, correzione dei refusi e maiuscole funzionano solo in inglese. Nelle altre lingue restano disattivate.",
+  "barTabWrite": "Scrivi",
+  "insertNotYet": "Non ancora",
+  "barHideKeyboard": "Nascondi la tastiera",
+  "pageSheetBlank": "Vuota",
+  "pageSheetGrid": "Griglia",
+  "pageSheetDots": "Punti",
+  "pageSheetRuled": "A righe",
+  "pageSheetPaper": "Carta",
+  "pageSheetCanvas": "Tela",
+  "pageSheetSnap": "Aggancia",
+  "pageSheetFit": "Adatta"
 }

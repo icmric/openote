@@ -19,6 +19,7 @@
 /// anything is a dead end that reads as broken.
 library;
 
+import 'touch_long_press.dart';
 import 'package:flutter/material.dart';
 
 import '../model/models.dart';
@@ -310,7 +311,9 @@ class _PlannerPanelState extends State<PlannerPanel> {
   Widget _row(BuildContext context, DatedItem it, DateTime now) {
     final scheme = Theme.of(context).colorScheme;
     final overdue = bucketFor(it, now) == AgendaBucket.overdue;
-    return InkWell(
+    return TouchLongPress(
+      onMenu: (p) => _rowMenu(it, p, now),
+      child: InkWell(
       mouseCursor: WidgetStateMouseCursor.clickable,
       onTap: () => _open(it),
       onSecondaryTapDown: (d) => _rowMenu(it, d.globalPosition, now),
@@ -377,7 +380,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             ),
         ]),
       ),
-    );
+    ));
   }
 
   /// The leading control: a real checkbox for a task (ticking it here must tick

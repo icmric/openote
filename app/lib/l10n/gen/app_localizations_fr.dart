@@ -1929,4 +1929,37 @@ class LFr extends L {
   @override
   String get settingsWritingEnglishOnly =>
       'La grammaire, la correction des fautes de frappe et les majuscules ne fonctionnent pour l’instant qu’en anglais. Dans les autres langues, elles restent désactivées.';
+
+  @override
+  String get barTabWrite => 'Écrire';
+
+  @override
+  String get insertNotYet => 'Pas encore';
+
+  @override
+  String get barHideKeyboard => 'Masquer le clavier';
+
+  @override
+  String get pageSheetBlank => 'Vierge';
+
+  @override
+  String get pageSheetGrid => 'Grille';
+
+  @override
+  String get pageSheetDots => 'Points';
+
+  @override
+  String get pageSheetRuled => 'Lignée';
+
+  @override
+  String get pageSheetPaper => 'Papier';
+
+  @override
+  String get pageSheetCanvas => 'Toile';
+
+  @override
+  String get pageSheetSnap => 'Aimanter';
+
+  @override
+  String get pageSheetFit => 'Ajuster';
 }
