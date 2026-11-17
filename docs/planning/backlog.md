@@ -349,6 +349,12 @@ sync, AI access, the planner and study panels, and the passcode dialog, whose
 warning about what protection does *not* cover is the one most worth
 translating.
 
+**17 November: the passcode dialogs are done** (lock and unlock, warning first, all
+seven languages, guarded by `l10n_test`). Left, by size: link (6 strings), event
+alerts (5), save problem (2), AI access (12, with plurals), study panel (~34),
+planner (~49). **Leave the Sync dialog** until its redesign
+([above](#the-sync-dialog-backups-and-restore)), or the work is thrown away.
+
 ---
 
 ### 1.15 There is no way to pan with a pen · **S**

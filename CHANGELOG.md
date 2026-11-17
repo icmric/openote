@@ -67,7 +67,11 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Buttons are drawn at their full height.** Dialog buttons were painted
   20 px tall inside a larger invisible target. (#41)
 - **The Sync window is roomier**, grows with the window, and no dialog's scroll
-  bar sits on top of its controls any more. (#42)
+  bar sits on top of its controls any more; when a dialog has more below, its
+  bar shows so you can tell. (#42)
+- **Locking a page speaks your language**: the warning that a lock hides a
+  page but does not encrypt it, and the rest of both passcode windows, in all
+  seven languages.
 - **A Markdown table wider than its box shows a scroll bar** you can drag,
   instead of quietly cutting off the columns past the edge.
 - **Review writing checks what the page shows.** It was checking text you
