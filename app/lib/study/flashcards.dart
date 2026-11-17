@@ -390,7 +390,12 @@ CardState applyGrade(CardState s, Grade g, int now) {
 /// Runs the real scheduler on a copy — a preview that drifts from the algorithm
 /// is worse than no preview, because the student plans around it.
 String previewInterval(CardState s, Grade g, int now) =>
-    formatDelay(applyGrade(s.copy(), g, now).dueAt - now);
+    formatDelay(previewDelayMs(s, g, now));
+
+/// How long [g] would put the card away for, in milliseconds — the number
+/// behind [previewInterval], for a screen that says it in another language.
+int previewDelayMs(CardState s, Grade g, int now) =>
+    applyGrade(s.copy(), g, now).dueAt - now;
 
 /// A duration as a student would say it: `10m`, `3d`, `2mo`.
 String formatDelay(int ms) {

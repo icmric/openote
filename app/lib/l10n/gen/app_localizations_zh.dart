@@ -2242,4 +2242,423 @@ class LZh extends L {
   String mcpClientNotInstalled(String name) {
     return 'Openote 已就绪，但 $name 似乎还没有安装在这台电脑上。安装后连接就会自动生效。';
   }
+
+  @override
+  String get timeNow => '现在';
+
+  @override
+  String timeMinutesShort(String n) {
+    return '$n 分钟';
+  }
+
+  @override
+  String timeHoursShort(String n) {
+    return '$n 小时';
+  }
+
+  @override
+  String timeDaysShort(String n) {
+    return '$n 天';
+  }
+
+  @override
+  String timeMonthsShort(String n) {
+    return '$n 个月';
+  }
+
+  @override
+  String timeYearsShort(String n) {
+    return '$n 年';
+  }
+
+  @override
+  String get countdownToday => '今天';
+
+  @override
+  String get countdownTomorrow => '明天';
+
+  @override
+  String get countdownYesterday => '昨天';
+
+  @override
+  String countdownDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 天',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String countdownDaysAgo(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 天前',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get countdownPassed => '已过';
+
+  @override
+  String get monthsShort => '1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月';
+
+  @override
+  String dateDayMonth(String day, String month) {
+    return '$month$day日';
+  }
+
+  @override
+  String dateDayMonthYear(String day, String month, String year) {
+    return '$year年$month$day日';
+  }
+
+  @override
+  String get gradeAgain => '重来';
+
+  @override
+  String get gradeHard => '困难';
+
+  @override
+  String get gradeGood => '良好';
+
+  @override
+  String get gradeEasy => '简单';
+
+  @override
+  String get deckThisPage => '本页';
+
+  @override
+  String get deckThisSection => '本分区';
+
+  @override
+  String get deckWholeNotebook => '整个笔记本';
+
+  @override
+  String get studyAnkiText => 'Anki 文本';
+
+  @override
+  String studyExported(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已导出 $count 张卡片——在 Anki 中用“文件 ▸ 导入”导入',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyForgetTitle => '忘记这个卡组的复习计划？';
+
+  @override
+  String studyForgetBody(String scope) {
+    String _temp0 = intl.Intl.selectLogic(
+      scope,
+      {
+        'page': '本页的所有卡片都会重新变成新卡片。你的笔记不会被改动。',
+        'section': '本分区的所有卡片都会重新变成新卡片。你的笔记不会被改动。',
+        'other': '整个笔记本的所有卡片都会重新变成新卡片。你的笔记不会被改动。',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyForget => '忘记';
+
+  @override
+  String studyResetCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已重置 $count 张卡片',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyEnd => '结束';
+
+  @override
+  String get studyDeckActions => '卡组操作';
+
+  @override
+  String get studyExportAnki => '导出到 Anki…';
+
+  @override
+  String get studySetExam => '设置考试日期…';
+
+  @override
+  String get studyChangeExam => '更改考试日期…';
+
+  @override
+  String get studyRemoveExam => '移除考试日期';
+
+  @override
+  String get studyForgetSchedule => '忘记复习计划…';
+
+  @override
+  String get studyDue => '张待复习';
+
+  @override
+  String studyCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 张卡片',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyNew(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 张新卡',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyReview(String count) {
+    return '复习 $count 张';
+  }
+
+  @override
+  String get studyAllCaughtUp => '全部完成。';
+
+  @override
+  String studyAllCaughtUpNext(String delay) {
+    return '全部完成——下一张卡片 $delay后到期。';
+  }
+
+  @override
+  String studyPracticeAll(String count) {
+    return '练习全部 $count 张';
+  }
+
+  @override
+  String get studyPracticeNote => '练习不会改变你的复习计划。';
+
+  @override
+  String get studyThisSection => '学习这个分区';
+
+  @override
+  String studyExamWhen(String when) {
+    return '考试 $when';
+  }
+
+  @override
+  String get studyKeepSchedule => '这些卡片会保留复习计划。';
+
+  @override
+  String get studyExamGoodLuck => '每张卡片都看过了。祝你好运！';
+
+  @override
+  String studyExamUnseenToday(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '还有 $count 张没看过。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyAllSeen(String count) {
+    return '全部 $count 张都看过了——继续保持复习。';
+  }
+
+  @override
+  String studyToLearn(String count, String perDay) {
+    return '还要学 $count 张 · 每天 $perDay 张就能按时学完';
+  }
+
+  @override
+  String get studyExamToday => '今天考试';
+
+  @override
+  String get studySeen => '已看过';
+
+  @override
+  String studyNOfM(String n, String total) {
+    return '$n / $total';
+  }
+
+  @override
+  String get studyAddExam => '添加考试日期';
+
+  @override
+  String studyReviewedToday(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '今天复习了 $count 张',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyNothingToday => '今天还没有复习';
+
+  @override
+  String studyStreakAtRisk(String days) {
+    return '连续 $days 天——今天继续保持';
+  }
+
+  @override
+  String studyStreak(String days, String today) {
+    return '连续 $days 天 · 今天 $today 张';
+  }
+
+  @override
+  String studyActivityTip(String days) {
+    return '最近 $days 天的复习';
+  }
+
+  @override
+  String get studyDeck => '卡组';
+
+  @override
+  String get studyNoCards => '这里还没有卡片。';
+
+  @override
+  String get studyRecipeQuestion => '给问题加上标记。下面缩进的一行就是答案。';
+
+  @override
+  String get studyRecipeDefinition => '给按“术语 — 含义”写的定义加上标记。';
+
+  @override
+  String get studyRecipeCloze => '高亮已标记行的一部分，就会改为把这部分挖空。';
+
+  @override
+  String get studyCardsAreNotes => '卡片就是你笔记的一种视图，所以编辑笔记就是编辑卡片——不需要另外维护。';
+
+  @override
+  String studyReviewedCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '复习了 $count 张卡片',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyStillDue(String count) {
+    return '这个卡组还有 $count 张待复习。';
+  }
+
+  @override
+  String get studyNothingElseDue => '没有其他待复习的了。';
+
+  @override
+  String studyNextCardIn(String delay) {
+    return '下一张卡片 $delay后到期。';
+  }
+
+  @override
+  String studyNeedAnotherLook(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '有 $count 张需要再看一遍。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyExamTodayDot => '今天考试。';
+
+  @override
+  String studyUntilExam(String countdown) {
+    return '距离考试：$countdown。';
+  }
+
+  @override
+  String studyUntilExamUnseen(String countdown, String count) {
+    return '距离考试：$countdown · 还有 $count 张没看过。';
+  }
+
+  @override
+  String studyReviewAgain(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '再复习这 $count 张',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyKeepGoing(String count) {
+    return '继续——$count 张待复习';
+  }
+
+  @override
+  String get studyPracticeBadge => '练习';
+
+  @override
+  String get studyShowAnswer => '显示答案';
+
+  @override
+  String get studyOpenNote => '打开笔记';
+
+  @override
+  String get studyAnswerHidden => '答案已隐藏';
+
+  @override
+  String get studyAnswer => '答案';
+
+  @override
+  String get studyFillBlank => '填空';
+
+  @override
+  String studyExamMenu(String when, String countdown) {
+    return '考试 $when · $countdown…';
+  }
+
+  @override
+  String get examDateTitle => '考试日期';
+
+  @override
+  String examTitleFor(String section) {
+    return '考试 — $section';
+  }
+
+  @override
+  String examRemoved(String date) {
+    return '已移除考试日期（$date）。你的卡片没有变化。';
+  }
+
+  @override
+  String get examUseDate => '使用这个日期';
+
+  @override
+  String get examWhatTime => '几点开始？';
+
+  @override
+  String get examDate => '日期';
+
+  @override
+  String get examAddTime => '添加开始时间';
+
+  @override
+  String get examStarts => '开始';
+
+  @override
+  String get examNoTime => '不指定时间';
+
+  @override
+  String get examTimeOptional => '倒计时和复习计划都以整天计算，所以时间是可选的。';
+
+  @override
+  String get examShownOnDay => '会在当天显示。倒计时仍以整天计算。';
+
+  @override
+  String get examSet => '设置';
 }

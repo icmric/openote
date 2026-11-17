@@ -2345,4 +2345,443 @@ class LEs extends L {
   String mcpClientNotInstalled(String name) {
     return 'Openote está listo, pero $name no parece estar instalado en este ordenador todavía. En cuanto lo esté, la conexión funcionará sin más.';
   }
+
+  @override
+  String get timeNow => 'ahora';
+
+  @override
+  String timeMinutesShort(String n) {
+    return '$n min';
+  }
+
+  @override
+  String timeHoursShort(String n) {
+    return '$n h';
+  }
+
+  @override
+  String timeDaysShort(String n) {
+    return '$n d';
+  }
+
+  @override
+  String timeMonthsShort(String n) {
+    return '$n mes.';
+  }
+
+  @override
+  String timeYearsShort(String n) {
+    return '$n a';
+  }
+
+  @override
+  String get countdownToday => 'hoy';
+
+  @override
+  String get countdownTomorrow => 'mañana';
+
+  @override
+  String get countdownYesterday => 'ayer';
+
+  @override
+  String countdownDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count días',
+      one: '1 día',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String countdownDaysAgo(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'hace $count días',
+      one: 'hace 1 día',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get countdownPassed => 'ya pasó';
+
+  @override
+  String get monthsShort => 'ene,feb,mar,abr,may,jun,jul,ago,sept,oct,nov,dic';
+
+  @override
+  String dateDayMonth(String day, String month) {
+    return '$day $month';
+  }
+
+  @override
+  String dateDayMonthYear(String day, String month, String year) {
+    return '$day $month $year';
+  }
+
+  @override
+  String get gradeAgain => 'Otra vez';
+
+  @override
+  String get gradeHard => 'Difícil';
+
+  @override
+  String get gradeGood => 'Bien';
+
+  @override
+  String get gradeEasy => 'Fácil';
+
+  @override
+  String get deckThisPage => 'Esta página';
+
+  @override
+  String get deckThisSection => 'Esta sección';
+
+  @override
+  String get deckWholeNotebook => 'Todo el cuaderno';
+
+  @override
+  String get studyAnkiText => 'Texto de Anki';
+
+  @override
+  String studyExported(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count tarjetas exportadas: impórtalas en Anki con Archivo ▸ Importar',
+      one: '1 tarjeta exportada: impórtala en Anki con Archivo ▸ Importar',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyForgetTitle => '¿Olvidar la programación de este mazo?';
+
+  @override
+  String studyForgetBody(String scope) {
+    String _temp0 = intl.Intl.selectLogic(
+      scope,
+      {
+        'page':
+            'Todas las tarjetas de esta página vuelven a ser nuevas. Tus notas no se tocan.',
+        'section':
+            'Todas las tarjetas de esta sección vuelven a ser nuevas. Tus notas no se tocan.',
+        'other':
+            'Todas las tarjetas del cuaderno entero vuelven a ser nuevas. Tus notas no se tocan.',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyForget => 'Olvidar';
+
+  @override
+  String studyResetCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarjetas restablecidas',
+      one: '1 tarjeta restablecida',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyEnd => 'Terminar';
+
+  @override
+  String get studyDeckActions => 'Acciones del mazo';
+
+  @override
+  String get studyExportAnki => 'Exportar a Anki…';
+
+  @override
+  String get studySetExam => 'Fijar fecha de examen…';
+
+  @override
+  String get studyChangeExam => 'Cambiar fecha de examen…';
+
+  @override
+  String get studyRemoveExam => 'Quitar fecha de examen';
+
+  @override
+  String get studyForgetSchedule => 'Olvidar programación…';
+
+  @override
+  String get studyDue => 'pendientes';
+
+  @override
+  String studyCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarjetas',
+      one: '1 tarjeta',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyNew(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count nuevas',
+      one: '1 nueva',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyReview(String count) {
+    return 'Repasar $count';
+  }
+
+  @override
+  String get studyAllCaughtUp => 'Todo al día.';
+
+  @override
+  String studyAllCaughtUpNext(String delay) {
+    return 'Todo al día: la próxima tarjeta, en $delay.';
+  }
+
+  @override
+  String studyPracticeAll(String count) {
+    return 'Practicar las $count';
+  }
+
+  @override
+  String get studyPracticeNote => 'Practicar no cambia tu programación.';
+
+  @override
+  String get studyThisSection => 'Estudiar esta sección';
+
+  @override
+  String studyExamWhen(String when) {
+    return 'Examen $when';
+  }
+
+  @override
+  String get studyKeepSchedule => 'Estas tarjetas mantienen su programación.';
+
+  @override
+  String get studyExamGoodLuck => 'Todas las tarjetas vistas. ¡Suerte!';
+
+  @override
+  String studyExamUnseenToday(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count que aún no has visto.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyAllSeen(String count) {
+    return 'Las $count vistas: sigue con los repasos.';
+  }
+
+  @override
+  String studyToLearn(String count, String perDay) {
+    return '$count por aprender · $perDay al día las cubren a tiempo';
+  }
+
+  @override
+  String get studyExamToday => 'Examen hoy';
+
+  @override
+  String get studySeen => 'VISTAS';
+
+  @override
+  String studyNOfM(String n, String total) {
+    return '$n de $total';
+  }
+
+  @override
+  String get studyAddExam => 'Añadir fecha de examen';
+
+  @override
+  String studyReviewedToday(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count repasadas hoy',
+      one: '1 repasada hoy',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyNothingToday => 'Nada repasado hoy';
+
+  @override
+  String studyStreakAtRisk(String days) {
+    return 'Racha de $days días: mantenla hoy';
+  }
+
+  @override
+  String studyStreak(String days, String today) {
+    return 'Racha de $days días · $today hoy';
+  }
+
+  @override
+  String studyActivityTip(String days) {
+    return 'Repasos de los últimos $days días';
+  }
+
+  @override
+  String get studyDeck => 'Mazo';
+
+  @override
+  String get studyNoCards => 'Aún no hay tarjetas aquí.';
+
+  @override
+  String get studyRecipeQuestion =>
+      'Etiqueta una pregunta. La línea sangrada de debajo es la respuesta.';
+
+  @override
+  String get studyRecipeDefinition =>
+      'Etiqueta una definición escrita como «término — significado».';
+
+  @override
+  String get studyRecipeCloze =>
+      'Resalta parte de una línea etiquetada para ocultarla en su lugar.';
+
+  @override
+  String get studyCardsAreNotes =>
+      'Las tarjetas son una vista de tus notas, así que editar la nota edita la tarjeta: no hay nada aparte que mantener.';
+
+  @override
+  String studyReviewedCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarjetas repasadas',
+      one: '1 tarjeta repasada',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyStillDue(String count) {
+    return '$count aún pendientes en este mazo.';
+  }
+
+  @override
+  String get studyNothingElseDue => 'No queda nada pendiente.';
+
+  @override
+  String studyNextCardIn(String delay) {
+    return 'Próxima tarjeta en $delay.';
+  }
+
+  @override
+  String studyNeedAnotherLook(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count necesitan otro vistazo.',
+      one: '1 necesita otro vistazo.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyExamTodayDot => 'Examen hoy.';
+
+  @override
+  String studyUntilExam(String countdown) {
+    return '$countdown para el examen.';
+  }
+
+  @override
+  String studyUntilExamUnseen(String countdown, String count) {
+    return '$countdown para el examen · $count aún sin ver.';
+  }
+
+  @override
+  String studyReviewAgain(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Repasar esas $count otra vez',
+      one: 'Repasar esa otra vez',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyKeepGoing(String count) {
+    return 'Seguir: $count pendientes';
+  }
+
+  @override
+  String get studyPracticeBadge => 'PRÁCTICA';
+
+  @override
+  String get studyShowAnswer => 'Mostrar respuesta';
+
+  @override
+  String get studyOpenNote => 'Abrir la nota';
+
+  @override
+  String get studyAnswerHidden => 'Respuesta oculta';
+
+  @override
+  String get studyAnswer => 'RESPUESTA';
+
+  @override
+  String get studyFillBlank => 'RELLENA EL HUECO';
+
+  @override
+  String studyExamMenu(String when, String countdown) {
+    return 'Examen $when · $countdown…';
+  }
+
+  @override
+  String get examDateTitle => 'Fecha del examen';
+
+  @override
+  String examTitleFor(String section) {
+    return 'Examen: $section';
+  }
+
+  @override
+  String examRemoved(String date) {
+    return 'Fecha de examen quitada ($date). Tus tarjetas no cambian.';
+  }
+
+  @override
+  String get examUseDate => 'Usar esta fecha';
+
+  @override
+  String get examWhatTime => '¿A qué hora empieza?';
+
+  @override
+  String get examDate => 'Fecha';
+
+  @override
+  String get examAddTime => 'Añadir hora de inicio';
+
+  @override
+  String get examStarts => 'Empieza';
+
+  @override
+  String get examNoTime => 'Sin hora concreta';
+
+  @override
+  String get examTimeOptional =>
+      'La cuenta atrás y el plan de repaso funcionan en días enteros, así que la hora es opcional.';
+
+  @override
+  String get examShownOnDay =>
+      'Se muestra ese día. La cuenta atrás sigue funcionando en días enteros.';
+
+  @override
+  String get examSet => 'Fijar';
 }

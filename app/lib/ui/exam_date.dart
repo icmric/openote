@@ -23,8 +23,9 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
+import '../l10n/study_words.dart';
 import '../state/app_state.dart';
-import '../study/study_stats.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 import 'toast.dart';
@@ -52,8 +53,8 @@ Future<bool> pickExamDate(
     context: context,
     builder: (ctx) => _ExamWhenDialog(
       title: section == null || section.title.isEmpty
-          ? 'Exam date'
-          : 'Exam — ${section.title}',
+          ? L.of(context).examDateTitle
+          : L.of(context).examTitleFor(section.title),
       day: initialDay,
       minuteOfDay: app.study.examMinuteOfDay(sectionId),
       firstDate: start,
@@ -76,9 +77,10 @@ void clearExamDate(BuildContext context, AppState app, String sectionId) {
   final had = app.study.examDate(sectionId);
   app.study.setExamDate(sectionId, null);
   if (had == null || !context.mounted) return;
+  final l = L.of(context);
   ScaffoldMessenger.of(context).showToast(SnackBar(
-      content: Text('Exam date removed '
-          '(${formatExamDate(had, DateTime.now())}). Your cards are unchanged.')));
+      content:
+          Text(l.examRemoved(shortDateIn(l, had, DateTime.now())))));
 }
 
 /// `'HH:mm'` for a minute-of-day, in the local 24-hour form the settings use.
@@ -120,8 +122,8 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
       firstDate: widget.firstDate,
       lastDate: DateTime(
           widget.firstDate.year + 3, widget.firstDate.month, widget.firstDate.day),
-      helpText: 'Exam date',
-      confirmText: 'Use this date',
+      helpText: L.of(context).examDateTitle,
+      confirmText: L.of(context).examUseDate,
     );
     if (picked != null) setState(() => _day = picked);
   }
@@ -132,7 +134,7 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
       initialTime: _minute == null
           ? const TimeOfDay(hour: 9, minute: 0)
           : TimeOfDay(hour: _minute! ~/ 60, minute: _minute! % 60),
-      helpText: 'What time does it start?',
+      helpText: L.of(context).examWhatTime,
     );
     if (picked != null) {
       setState(() => _minute = picked.hour * 60 + picked.minute);
@@ -142,6 +144,7 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
   @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
+    final l = L.of(context);
     return AlertDialog(
       title: Text(widget.title, style: OnoteType.title),
       content: SizedBox(
@@ -151,8 +154,8 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Field(
-              label: 'Date',
-              value: formatExamDate(_day, DateTime.now()),
+              label: l.examDate,
+              value: shortDateIn(l, _day, DateTime.now()),
               onTap: _pickDay,
             ),
             const SizedBox(height: OnoteSpace.x4),
@@ -161,7 +164,7 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   icon: const Icon(Icons.schedule, size: OnoteIcon.sm),
-                  label: const Text('Add a start time'),
+                  label: Text(l.examAddTime),
                   onPressed: _pickTime,
                 ),
               )
@@ -169,23 +172,20 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
               Row(children: [
                 Expanded(
                   child: _Field(
-                    label: 'Starts',
+                    label: l.examStarts,
                     value: examTimeLabel(context, _minute!),
                     onTap: _pickTime,
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: OnoteIcon.sm),
-                  tooltip: 'No particular time',
+                  tooltip: l.examNoTime,
                   onPressed: () => setState(() => _minute = null),
                 ),
               ]),
             const SizedBox(height: OnoteSpace.x4),
             Text(
-              _minute == null
-                  ? 'The countdown and the revision plan work in whole days, '
-                      'so a time is optional.'
-                  : 'Shown on the day. The countdown still works in whole days.',
+              _minute == null ? l.examTimeOptional : l.examShownOnDay,
               style: OnoteType.caption.copyWith(color: s.textSecondary),
             ),
           ],
@@ -193,7 +193,8 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: Text(l.commonCancel)),
         FilledButton(
           // The only dialog in the app with no text field to carry Enter:
           // every control here is a picker, so without a default button
@@ -202,7 +203,7 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
           // and change again, it does not delete anything.
           autofocus: true,
           onPressed: () => Navigator.pop(context, _ExamWhen(_day, _minute)),
-          child: const Text('Set'),
+          child: Text(l.examSet),
         ),
       ],
     );

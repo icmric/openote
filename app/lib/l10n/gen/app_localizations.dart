@@ -3886,6 +3886,570 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Openote is ready, but {name} doesn\'t look installed on this computer yet. Once it is, the connection will just work.'**
   String mcpClientNotInstalled(String name);
+
+  /// A review interval that is due immediately, on a grade button.
+  ///
+  /// In en, this message translates to:
+  /// **'now'**
+  String get timeNow;
+
+  /// A short interval in minutes on a grade button, e.g. 10m. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'{n}m'**
+  String timeMinutesShort(String n);
+
+  /// A short interval in hours, e.g. 5h. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'{n}h'**
+  String timeHoursShort(String n);
+
+  /// A short interval in days, e.g. 3d. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'{n}d'**
+  String timeDaysShort(String n);
+
+  /// A short interval in months, e.g. 2mo. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'{n}mo'**
+  String timeMonthsShort(String n);
+
+  /// A short interval in years, e.g. 1.5y. Keep it very short.
+  ///
+  /// In en, this message translates to:
+  /// **'{n}y'**
+  String timeYearsShort(String n);
+
+  /// Exam countdown: the exam is today.
+  ///
+  /// In en, this message translates to:
+  /// **'today'**
+  String get countdownToday;
+
+  /// Exam countdown: the exam is tomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'tomorrow'**
+  String get countdownTomorrow;
+
+  /// Exam countdown: the exam was yesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'yesterday'**
+  String get countdownYesterday;
+
+  /// Exam countdown: days left.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day} other{{count} days}}'**
+  String countdownDays(int count);
+
+  /// Exam countdown: how long ago the exam was.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day ago} other{{count} days ago}}'**
+  String countdownDaysAgo(int count);
+
+  /// Exam countdown: the exam was more than two weeks ago.
+  ///
+  /// In en, this message translates to:
+  /// **'passed'**
+  String get countdownPassed;
+
+  /// The twelve short month names, January to December, separated by commas with no spaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec'**
+  String get monthsShort;
+
+  /// A short date in this year: day is a number, month a short month name.
+  ///
+  /// In en, this message translates to:
+  /// **'{day} {month}'**
+  String dateDayMonth(String day, String month);
+
+  /// A short date in another year.
+  ///
+  /// In en, this message translates to:
+  /// **'{day} {month} {year}'**
+  String dateDayMonthYear(String day, String month, String year);
+
+  /// Flashcard grade: not remembered.
+  ///
+  /// In en, this message translates to:
+  /// **'Again'**
+  String get gradeAgain;
+
+  /// Flashcard grade: remembered with difficulty.
+  ///
+  /// In en, this message translates to:
+  /// **'Hard'**
+  String get gradeHard;
+
+  /// Flashcard grade: remembered.
+  ///
+  /// In en, this message translates to:
+  /// **'Good'**
+  String get gradeGood;
+
+  /// Flashcard grade: remembered easily.
+  ///
+  /// In en, this message translates to:
+  /// **'Easy'**
+  String get gradeEasy;
+
+  /// Which cards to study: the open page.
+  ///
+  /// In en, this message translates to:
+  /// **'This page'**
+  String get deckThisPage;
+
+  /// Which cards to study: the open section.
+  ///
+  /// In en, this message translates to:
+  /// **'This section'**
+  String get deckThisSection;
+
+  /// Which cards to study: the whole notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Whole notebook'**
+  String get deckWholeNotebook;
+
+  /// File type name in the save dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Anki text'**
+  String get studyAnkiText;
+
+  /// Toast after exporting flashcards for the Anki app.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Exported 1 card — import into Anki with File ▸ Import} other{Exported {count} cards — import into Anki with File ▸ Import}}'**
+  String studyExported(int count);
+
+  /// Title of the dialog that resets the review schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Forget this deck’s schedule?'**
+  String get studyForgetTitle;
+
+  /// What resetting does; scope is page, section or notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'{scope, select, page{Every card on this page becomes new again. Your notes are not touched.} section{Every card in this section becomes new again. Your notes are not touched.} other{Every card in the whole notebook becomes new again. Your notes are not touched.}}'**
+  String studyForgetBody(String scope);
+
+  /// Button that resets the review schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Forget'**
+  String get studyForget;
+
+  /// Toast after resetting cards.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Reset 1 card} other{Reset {count} cards}}'**
+  String studyResetCards(int count);
+
+  /// Button that ends a review session.
+  ///
+  /// In en, this message translates to:
+  /// **'End'**
+  String get studyEnd;
+
+  /// Tooltip of the study panel menu.
+  ///
+  /// In en, this message translates to:
+  /// **'Deck actions'**
+  String get studyDeckActions;
+
+  /// Menu item: export cards for Anki.
+  ///
+  /// In en, this message translates to:
+  /// **'Export to Anki…'**
+  String get studyExportAnki;
+
+  /// Menu item: set the exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Set exam date…'**
+  String get studySetExam;
+
+  /// Menu item: change the exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Change exam date…'**
+  String get studyChangeExam;
+
+  /// Menu item and tooltip: remove the exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove exam date'**
+  String get studyRemoveExam;
+
+  /// Menu item: reset the review schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Forget schedule…'**
+  String get studyForgetSchedule;
+
+  /// Shown after a large number: how many cards are due.
+  ///
+  /// In en, this message translates to:
+  /// **'due'**
+  String get studyDue;
+
+  /// How many cards a deck has.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 card} other{{count} cards}}'**
+  String studyCards(int count);
+
+  /// How many cards have never been seen.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, other{{count} new}}'**
+  String studyNew(int count);
+
+  /// Button: review the due cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Review {count}'**
+  String studyReview(String count);
+
+  /// Nothing is due.
+  ///
+  /// In en, this message translates to:
+  /// **'All caught up.'**
+  String get studyAllCaughtUp;
+
+  /// Nothing is due; delay is when the next card is, e.g. 3h.
+  ///
+  /// In en, this message translates to:
+  /// **'All caught up — next card in {delay}.'**
+  String studyAllCaughtUpNext(String delay);
+
+  /// Button: go through every card without changing the schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Practice all {count}'**
+  String studyPracticeAll(String count);
+
+  /// Under the practice button.
+  ///
+  /// In en, this message translates to:
+  /// **'Practice doesn\'t change your schedule.'**
+  String get studyPracticeNote;
+
+  /// Banner action: study the section with the next exam.
+  ///
+  /// In en, this message translates to:
+  /// **'Study this section'**
+  String get studyThisSection;
+
+  /// Banner title: the exam, then when it is (a date or a countdown).
+  ///
+  /// In en, this message translates to:
+  /// **'Exam {when}'**
+  String studyExamWhen(String when);
+
+  /// After the exam has passed.
+  ///
+  /// In en, this message translates to:
+  /// **'These cards keep their schedule.'**
+  String get studyKeepSchedule;
+
+  /// Exam is today and every card has been seen.
+  ///
+  /// In en, this message translates to:
+  /// **'Every card seen. Good luck.'**
+  String get studyExamGoodLuck;
+
+  /// Exam is today; how many cards were never seen.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, other{{count} you haven\'t seen yet.}}'**
+  String studyExamUnseenToday(int count);
+
+  /// Every card has been seen before the exam.
+  ///
+  /// In en, this message translates to:
+  /// **'All {count} seen — keep the reviews up.'**
+  String studyAllSeen(String count);
+
+  /// How many new cards to learn per day to finish before the exam.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} to learn · {perDay} a day covers them by then'**
+  String studyToLearn(String count, String perDay);
+
+  /// Banner title: the exam is today.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam today'**
+  String get studyExamToday;
+
+  /// Small capitals heading over the progress bar.
+  ///
+  /// In en, this message translates to:
+  /// **'SEEN'**
+  String get studySeen;
+
+  /// Progress: n of total.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} of {total}'**
+  String studyNOfM(String n, String total);
+
+  /// Button: add an exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an exam date'**
+  String get studyAddExam;
+
+  /// How many cards were reviewed today.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, other{{count} reviewed today}}'**
+  String studyReviewedToday(int count);
+
+  /// No cards reviewed today.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing reviewed today'**
+  String get studyNothingToday;
+
+  /// A run of days with reviews that ends unless the person reviews today.
+  ///
+  /// In en, this message translates to:
+  /// **'{days}-day streak — keep it going today'**
+  String studyStreakAtRisk(String days);
+
+  /// A run of days with reviews, and how many today.
+  ///
+  /// In en, this message translates to:
+  /// **'{days}-day streak · {today} today'**
+  String studyStreak(String days, String today);
+
+  /// Tooltip of the activity bars.
+  ///
+  /// In en, this message translates to:
+  /// **'Reviews in the last {days} days'**
+  String studyActivityTip(String days);
+
+  /// Label of the deck picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Deck'**
+  String get studyDeck;
+
+  /// The deck has no cards.
+  ///
+  /// In en, this message translates to:
+  /// **'No cards here yet.'**
+  String get studyNoCards;
+
+  /// How to make a question card.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag a question. The indented line below it is the answer.'**
+  String get studyRecipeQuestion;
+
+  /// How to make a definition card.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag a definition written as “term — meaning”.'**
+  String get studyRecipeDefinition;
+
+  /// How to make a fill-in-the-blank card.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlight part of a tagged line to blank it out instead.'**
+  String get studyRecipeCloze;
+
+  /// Explains that cards come from the notes.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards are a view of your notes, so editing the note edits the card — there is nothing separate to maintain.'**
+  String get studyCardsAreNotes;
+
+  /// Session summary title.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Reviewed 1 card} other{Reviewed {count} cards}}'**
+  String studyReviewedCards(int count);
+
+  /// Session summary: cards still due.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} still due in this deck.'**
+  String studyStillDue(String count);
+
+  /// Session summary: nothing else is due.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing else due.'**
+  String get studyNothingElseDue;
+
+  /// Session summary: when the next card is due.
+  ///
+  /// In en, this message translates to:
+  /// **'Next card in {delay}.'**
+  String studyNextCardIn(String delay);
+
+  /// Session summary: cards graded Again.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 needs another look.} other{{count} need another look.}}'**
+  String studyNeedAnotherLook(int count);
+
+  /// Session summary: the exam is today.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam today.'**
+  String get studyExamTodayDot;
+
+  /// Session summary: time left before the exam.
+  ///
+  /// In en, this message translates to:
+  /// **'{countdown} until the exam.'**
+  String studyUntilExam(String countdown);
+
+  /// Session summary: time left and cards never seen.
+  ///
+  /// In en, this message translates to:
+  /// **'{countdown} until the exam · {count} still unseen.'**
+  String studyUntilExamUnseen(String countdown, String count);
+
+  /// Button: review the cards graded Again.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Review that one again} other{Review those {count} again}}'**
+  String studyReviewAgain(int count);
+
+  /// Button: keep reviewing the due cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep going — {count} due'**
+  String studyKeepGoing(String count);
+
+  /// Small capitals badge during a practice session.
+  ///
+  /// In en, this message translates to:
+  /// **'PRACTICE'**
+  String get studyPracticeBadge;
+
+  /// Button that reveals the answer.
+  ///
+  /// In en, this message translates to:
+  /// **'Show answer'**
+  String get studyShowAnswer;
+
+  /// Tooltip: open the note the card came from.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the note'**
+  String get studyOpenNote;
+
+  /// Placeholder where the answer will appear.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer hidden'**
+  String get studyAnswerHidden;
+
+  /// Small capitals heading over the answer.
+  ///
+  /// In en, this message translates to:
+  /// **'ANSWER'**
+  String get studyAnswer;
+
+  /// Small capitals label of a fill-in-the-blank card.
+  ///
+  /// In en, this message translates to:
+  /// **'FILL IN THE BLANK'**
+  String get studyFillBlank;
+
+  /// Section menu row: the exam date and countdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam {when} · {countdown}…'**
+  String studyExamMenu(String when, String countdown);
+
+  /// Title of the exam date dialog and the date picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam date'**
+  String get examDateTitle;
+
+  /// Title of the exam date dialog for a named section.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam — {section}'**
+  String examTitleFor(String section);
+
+  /// Toast after removing an exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam date removed ({date}). Your cards are unchanged.'**
+  String examRemoved(String date);
+
+  /// Date picker confirm button.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this date'**
+  String get examUseDate;
+
+  /// Time picker heading.
+  ///
+  /// In en, this message translates to:
+  /// **'What time does it start?'**
+  String get examWhatTime;
+
+  /// Label of the date field.
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get examDate;
+
+  /// Button: add a start time.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a start time'**
+  String get examAddTime;
+
+  /// Label of the start time field.
+  ///
+  /// In en, this message translates to:
+  /// **'Starts'**
+  String get examStarts;
+
+  /// Tooltip: remove the start time.
+  ///
+  /// In en, this message translates to:
+  /// **'No particular time'**
+  String get examNoTime;
+
+  /// Why a start time is optional.
+  ///
+  /// In en, this message translates to:
+  /// **'The countdown and the revision plan work in whole days, so a time is optional.'**
+  String get examTimeOptional;
+
+  /// What a start time is used for.
+  ///
+  /// In en, this message translates to:
+  /// **'Shown on the day. The countdown still works in whole days.'**
+  String get examShownOnDay;
+
+  /// Button that saves the exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Set'**
+  String get examSet;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

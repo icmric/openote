@@ -2350,4 +2350,445 @@ class LIt extends L {
   String mcpClientNotInstalled(String name) {
     return 'Openote è pronto, ma $name non sembra ancora installato su questo computer. Appena lo sarà, la connessione funzionerà da sola.';
   }
+
+  @override
+  String get timeNow => 'ora';
+
+  @override
+  String timeMinutesShort(String n) {
+    return '$n min';
+  }
+
+  @override
+  String timeHoursShort(String n) {
+    return '$n h';
+  }
+
+  @override
+  String timeDaysShort(String n) {
+    return '$n g';
+  }
+
+  @override
+  String timeMonthsShort(String n) {
+    return '$n mesi';
+  }
+
+  @override
+  String timeYearsShort(String n) {
+    return '$n a';
+  }
+
+  @override
+  String get countdownToday => 'oggi';
+
+  @override
+  String get countdownTomorrow => 'domani';
+
+  @override
+  String get countdownYesterday => 'ieri';
+
+  @override
+  String countdownDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count giorni',
+      one: '1 giorno',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String countdownDaysAgo(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count giorni fa',
+      one: '1 giorno fa',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get countdownPassed => 'passato';
+
+  @override
+  String get monthsShort => 'gen,feb,mar,apr,mag,giu,lug,ago,set,ott,nov,dic';
+
+  @override
+  String dateDayMonth(String day, String month) {
+    return '$day $month';
+  }
+
+  @override
+  String dateDayMonthYear(String day, String month, String year) {
+    return '$day $month $year';
+  }
+
+  @override
+  String get gradeAgain => 'Di nuovo';
+
+  @override
+  String get gradeHard => 'Difficile';
+
+  @override
+  String get gradeGood => 'Bene';
+
+  @override
+  String get gradeEasy => 'Facile';
+
+  @override
+  String get deckThisPage => 'Questa pagina';
+
+  @override
+  String get deckThisSection => 'Questa sezione';
+
+  @override
+  String get deckWholeNotebook => 'Tutto il quaderno';
+
+  @override
+  String get studyAnkiText => 'Testo Anki';
+
+  @override
+  String studyExported(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count schede esportate: importale in Anki con File ▸ Importa',
+      one: '1 scheda esportata: importala in Anki con File ▸ Importa',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyForgetTitle =>
+      'Dimenticare la programmazione di questo mazzo?';
+
+  @override
+  String studyForgetBody(String scope) {
+    String _temp0 = intl.Intl.selectLogic(
+      scope,
+      {
+        'page':
+            'Ogni scheda di questa pagina torna nuova. Le tue note non vengono toccate.',
+        'section':
+            'Ogni scheda di questa sezione torna nuova. Le tue note non vengono toccate.',
+        'other':
+            'Ogni scheda dell’intero quaderno torna nuova. Le tue note non vengono toccate.',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyForget => 'Dimentica';
+
+  @override
+  String studyResetCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count schede reimpostate',
+      one: '1 scheda reimpostata',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyEnd => 'Termina';
+
+  @override
+  String get studyDeckActions => 'Azioni del mazzo';
+
+  @override
+  String get studyExportAnki => 'Esporta in Anki…';
+
+  @override
+  String get studySetExam => 'Imposta data dell’esame…';
+
+  @override
+  String get studyChangeExam => 'Cambia data dell’esame…';
+
+  @override
+  String get studyRemoveExam => 'Rimuovi data dell’esame';
+
+  @override
+  String get studyForgetSchedule => 'Dimentica programmazione…';
+
+  @override
+  String get studyDue => 'da ripassare';
+
+  @override
+  String studyCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count schede',
+      one: '1 scheda',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyNew(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count nuove',
+      one: '1 nuova',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyReview(String count) {
+    return 'Ripassa $count';
+  }
+
+  @override
+  String get studyAllCaughtUp => 'Tutto in pari.';
+
+  @override
+  String studyAllCaughtUpNext(String delay) {
+    return 'Tutto in pari: prossima scheda tra $delay.';
+  }
+
+  @override
+  String studyPracticeAll(String count) {
+    return 'Esercitati su tutte le $count';
+  }
+
+  @override
+  String get studyPracticeNote =>
+      'Esercitarsi non cambia la tua programmazione.';
+
+  @override
+  String get studyThisSection => 'Studia questa sezione';
+
+  @override
+  String studyExamWhen(String when) {
+    return 'Esame $when';
+  }
+
+  @override
+  String get studyKeepSchedule =>
+      'Queste schede mantengono la loro programmazione.';
+
+  @override
+  String get studyExamGoodLuck => 'Tutte le schede viste. In bocca al lupo!';
+
+  @override
+  String studyExamUnseenToday(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count che non hai ancora visto.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyAllSeen(String count) {
+    return 'Tutte le $count viste: continua con i ripassi.';
+  }
+
+  @override
+  String studyToLearn(String count, String perDay) {
+    return '$count da imparare · $perDay al giorno bastano per arrivarci';
+  }
+
+  @override
+  String get studyExamToday => 'Esame oggi';
+
+  @override
+  String get studySeen => 'VISTE';
+
+  @override
+  String studyNOfM(String n, String total) {
+    return '$n di $total';
+  }
+
+  @override
+  String get studyAddExam => 'Aggiungi una data d’esame';
+
+  @override
+  String studyReviewedToday(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ripassate oggi',
+      one: '1 ripassata oggi',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyNothingToday => 'Niente ripassato oggi';
+
+  @override
+  String studyStreakAtRisk(String days) {
+    return 'Serie di $days giorni: continuala oggi';
+  }
+
+  @override
+  String studyStreak(String days, String today) {
+    return 'Serie di $days giorni · $today oggi';
+  }
+
+  @override
+  String studyActivityTip(String days) {
+    return 'Ripassi degli ultimi $days giorni';
+  }
+
+  @override
+  String get studyDeck => 'Mazzo';
+
+  @override
+  String get studyNoCards => 'Ancora nessuna scheda qui.';
+
+  @override
+  String get studyRecipeQuestion =>
+      'Etichetta una domanda. La riga rientrata sotto è la risposta.';
+
+  @override
+  String get studyRecipeDefinition =>
+      'Etichetta una definizione scritta come «termine — significato».';
+
+  @override
+  String get studyRecipeCloze =>
+      'Evidenzia parte di una riga etichettata per nasconderla invece.';
+
+  @override
+  String get studyCardsAreNotes =>
+      'Le schede sono una vista delle tue note, quindi modificare la nota modifica la scheda: non c’è niente di separato da mantenere.';
+
+  @override
+  String studyReviewedCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count schede ripassate',
+      one: '1 scheda ripassata',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyStillDue(String count) {
+    return '$count ancora da ripassare in questo mazzo.';
+  }
+
+  @override
+  String get studyNothingElseDue => 'Nient’altro da ripassare.';
+
+  @override
+  String studyNextCardIn(String delay) {
+    return 'Prossima scheda tra $delay.';
+  }
+
+  @override
+  String studyNeedAnotherLook(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count meritano un’altra occhiata.',
+      one: '1 merita un’altra occhiata.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get studyExamTodayDot => 'Esame oggi.';
+
+  @override
+  String studyUntilExam(String countdown) {
+    return '$countdown all’esame.';
+  }
+
+  @override
+  String studyUntilExamUnseen(String countdown, String count) {
+    return '$countdown all’esame · $count ancora da vedere.';
+  }
+
+  @override
+  String studyReviewAgain(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Ripassa quelle $count di nuovo',
+      one: 'Ripassa quella di nuovo',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String studyKeepGoing(String count) {
+    return 'Continua: $count da ripassare';
+  }
+
+  @override
+  String get studyPracticeBadge => 'ESERCIZIO';
+
+  @override
+  String get studyShowAnswer => 'Mostra risposta';
+
+  @override
+  String get studyOpenNote => 'Apri la nota';
+
+  @override
+  String get studyAnswerHidden => 'Risposta nascosta';
+
+  @override
+  String get studyAnswer => 'RISPOSTA';
+
+  @override
+  String get studyFillBlank => 'COMPLETA LO SPAZIO';
+
+  @override
+  String studyExamMenu(String when, String countdown) {
+    return 'Esame $when · $countdown…';
+  }
+
+  @override
+  String get examDateTitle => 'Data dell’esame';
+
+  @override
+  String examTitleFor(String section) {
+    return 'Esame: $section';
+  }
+
+  @override
+  String examRemoved(String date) {
+    return 'Data dell’esame rimossa ($date). Le tue schede non cambiano.';
+  }
+
+  @override
+  String get examUseDate => 'Usa questa data';
+
+  @override
+  String get examWhatTime => 'A che ora inizia?';
+
+  @override
+  String get examDate => 'Data';
+
+  @override
+  String get examAddTime => 'Aggiungi un orario di inizio';
+
+  @override
+  String get examStarts => 'Inizio';
+
+  @override
+  String get examNoTime => 'Nessun orario preciso';
+
+  @override
+  String get examTimeOptional =>
+      'Il conto alla rovescia e il piano di ripasso funzionano a giorni interi, quindi l’orario è facoltativo.';
+
+  @override
+  String get examShownOnDay =>
+      'Mostrato quel giorno. Il conto alla rovescia funziona sempre a giorni interi.';
+
+  @override
+  String get examSet => 'Imposta';
 }

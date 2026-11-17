@@ -17,6 +17,7 @@ import '../math/evaluate.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../l10n/l10n.dart';
+import '../l10n/study_words.dart';
 import '../l10n/labels.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
@@ -2399,7 +2400,7 @@ class _StudyButton extends StatelessWidget {
         daysLeft != null && daysLeft >= 0 && daysLeft <= _urgentDays && due > 0;
     final countdown = daysLeft == null || daysLeft < 0
         ? ''
-        : l.barStudyExamCountdown(formatCountdown(daysLeft));
+        : l.barStudyExamCountdown(countdownIn(l, daysLeft));
     return Tooltip(
       message: total == 0
           ? l.barStudyEmpty

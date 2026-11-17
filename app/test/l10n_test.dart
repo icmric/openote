@@ -49,6 +49,8 @@ const _converted = [
   'lib/ui/event_alert_dialog.dart',
   'lib/ui/save_problem_dialog.dart',
   'lib/ui/mcp_dialog.dart',
+  'lib/ui/study_panel.dart',
+  'lib/ui/exam_date.dart',
 ];
 
 void main() {

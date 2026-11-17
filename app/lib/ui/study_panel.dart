@@ -20,6 +20,9 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
+import '../l10n/study_words.dart';
 import '../markdown/md_render.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
@@ -37,12 +40,15 @@ import 'toast.dart';
 /// page is a deck without anyone having to build one — so this is a view over
 /// the notebook tree rather than a card-container entity of its own.
 enum DeckScope {
-  page('This page'),
-  section('This section'),
-  notebook('Whole notebook');
+  page,
+  section,
+  notebook;
 
-  const DeckScope(this.label);
-  final String label;
+  String label(L l) => switch (this) {
+        DeckScope.page => l.deckThisPage,
+        DeckScope.section => l.deckThisSection,
+        DeckScope.notebook => l.deckWholeNotebook,
+      };
 }
 
 class StudyPanel extends StatefulWidget {
@@ -163,8 +169,9 @@ class _StudyPanelState extends State<StudyPanel> {
     if (cards.isEmpty) return;
     final path = await chooseSaveLocation(
       suggestedName: 'openote-cards.txt',
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'Anki text', extensions: ['txt', 'tsv'])
+      acceptedTypeGroups: [
+        XTypeGroup(
+            label: L.of(context).studyAnkiText, extensions: const ['txt', 'tsv'])
       ],
     );
     if (path == null) return;
@@ -175,25 +182,23 @@ class _StudyPanelState extends State<StudyPanel> {
     await file.saveTo(path.path);
     if (await finishSave(path.path) == null) return;
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showToast(SnackBar(
-        content: Text('Exported ${cards.length} cards — '
-            'import into Anki with File ▸ Import')));
+    ScaffoldMessenger.of(context).showToast(
+        SnackBar(content: Text(L.of(context).studyExported(cards.length))));
   }
 
   Future<void> _resetSchedule() async {
     final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Forget this deck’s schedule?'),
-        content: Text('Every card in ${_scope.label.toLowerCase()} becomes new '
-            'again. Your notes are not touched.'),
+        title: Text(L.of(c).studyForgetTitle),
+        content: Text(L.of(c).studyForgetBody(_scope.name)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
+              child: Text(L.of(c).commonCancel)),
           FilledButton(
               onPressed: () => Navigator.pop(c, true),
-              child: const Text('Forget')),
+              child: Text(L.of(c).studyForget)),
         ],
       ),
     );
@@ -202,7 +207,7 @@ class _StudyPanelState extends State<StudyPanel> {
     if (!mounted) return;
     _end();
     ScaffoldMessenger.of(context)
-        .showToast(SnackBar(content: Text('Reset $n cards')));
+        .showToast(SnackBar(content: Text(L.of(context).studyResetCards(n))));
   }
 
   @override
@@ -245,12 +250,13 @@ class _StudyPanelState extends State<StudyPanel> {
               style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: const Text('End', style: TextStyle(fontSize: 12)),
+              child: Text(L.of(context).studyEnd,
+                  style: const TextStyle(fontSize: 12)),
             )
           else
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_horiz, size: 16),
-              tooltip: 'Deck actions',
+              tooltip: L.of(context).studyDeckActions,
               padding: EdgeInsets.zero,
               onSelected: (v) async {
                 final sectionId = app.activeSectionId;
@@ -273,29 +279,29 @@ class _StudyPanelState extends State<StudyPanel> {
               },
               itemBuilder: (_) {
                 final hasExam = app.study.examDate(app.activeSectionId) != null;
+                final l = L.of(context);
+                const menu = TextStyle(fontSize: 13);
                 return [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                       value: 'export',
                       height: 36,
-                      child: Text('Export to Anki…',
-                          style: TextStyle(fontSize: 13))),
+                      child: Text(l.studyExportAnki, style: menu)),
                   if (app.activeSectionId != null)
                     PopupMenuItem(
                         value: 'exam',
                         height: 36,
-                        child: Text(hasExam ? 'Change exam date…' : 'Set exam date…',
-                            style: const TextStyle(fontSize: 13))),
+                        child: Text(
+                            hasExam ? l.studyChangeExam : l.studySetExam,
+                            style: menu)),
                   if (hasExam)
-                    const PopupMenuItem(
+                    PopupMenuItem(
                         value: 'examclear',
                         height: 36,
-                        child: Text('Remove exam date',
-                            style: TextStyle(fontSize: 13))),
-                  const PopupMenuItem(
+                        child: Text(l.studyRemoveExam, style: menu)),
+                  PopupMenuItem(
                       value: 'reset',
                       height: 36,
-                      child: Text('Forget schedule…',
-                          style: TextStyle(fontSize: 13))),
+                      child: Text(l.studyForgetSchedule, style: menu)),
                 ];
               },
             ),
@@ -325,14 +331,16 @@ class _StudyPanelState extends State<StudyPanel> {
                     style: const TextStyle(
                         fontSize: 22, fontWeight: FontWeight.w700)),
                 TextSpan(
-                    text: '  due',
+                    text: '  ${L.of(context).studyDue}',
                     style: TextStyle(
                         fontSize: 13, color: context.surfaces.textSecondary)),
               ])),
               const SizedBox(height: 2),
               Text(
-                  '${s.total} card${s.total == 1 ? '' : 's'}'
-                  '${s.unseen > 0 ? ' · ${s.unseen} new' : ''}',
+                  L.of(context).studyCards(s.total) +
+                      (s.unseen > 0
+                          ? ' · ${L.of(context).studyNew(s.unseen)}'
+                          : ''),
                   style: TextStyle(
                       fontSize: 12, color: context.surfaces.textSecondary)),
               const SizedBox(height: 14),
@@ -340,7 +348,7 @@ class _StudyPanelState extends State<StudyPanel> {
                 FilledButton.icon(
                   onPressed: () => _start(StudyMode.due),
                   icon: const Icon(Icons.play_arrow, size: 18),
-                  label: Text('Review ${s.due}'),
+                  label: Text(L.of(context).studyReview('${s.due}')),
                 )
               else
                 Container(
@@ -356,9 +364,9 @@ class _StudyPanelState extends State<StudyPanel> {
                     Expanded(
                       child: Text(
                         s.nextDueAt == null
-                            ? 'All caught up.'
-                            : 'All caught up — next card in '
-                                '${formatDelay(s.nextDueAt! - nowMs())}.',
+                            ? L.of(context).studyAllCaughtUp
+                            : L.of(context).studyAllCaughtUpNext(delayIn(
+                                L.of(context), s.nextDueAt! - nowMs())),
                         style: const TextStyle(fontSize: 12, height: 1.35),
                       ),
                     ),
@@ -368,11 +376,11 @@ class _StudyPanelState extends State<StudyPanel> {
               OutlinedButton.icon(
                 onPressed: () => _start(StudyMode.cram),
                 icon: const Icon(Icons.refresh, size: 16),
-                label: Text('Practice all ${s.total}',
+                label: Text(L.of(context).studyPracticeAll('${s.total}'),
                     style: const TextStyle(fontSize: 13)),
               ),
               const SizedBox(height: 4),
-              Text("Practice doesn't change your schedule.",
+              Text(L.of(context).studyPracticeNote,
                   textAlign: TextAlign.center,
                   style:
                       TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
@@ -408,8 +416,8 @@ class _StudyPanelState extends State<StudyPanel> {
         tint: OnoteColors.brass500,
         icon: Icons.event_outlined,
         title: next.section.title,
-        trailing: formatCountdown(next.plan.daysLeft),
-        detail: 'Study this section',
+        trailing: countdownIn(L.of(context), next.plan.daysLeft),
+        detail: L.of(context).studyThisSection,
         onTap: () {
           app.activateSection(next.section.id);
           setState(() {
@@ -421,6 +429,7 @@ class _StudyPanelState extends State<StudyPanel> {
     }
 
     final sectionId = app.activeSectionId;
+    final l = L.of(context);
     final plan = examPlan(
       exam: app.study.examDate(sectionId),
       today: DateTime.now(),
@@ -437,9 +446,9 @@ class _StudyPanelState extends State<StudyPanel> {
         dark: dark,
         tint: context.surfaces.textSecondary,
         icon: Icons.event_available_outlined,
-        title: 'Exam ${formatCountdown(plan.daysLeft)}',
-        trailing: formatExamDate(plan.date, DateTime.now()),
-        detail: 'These cards keep their schedule.',
+        title: l.studyExamWhen(countdownIn(l, plan.daysLeft)),
+        trailing: shortDateIn(l, plan.date, DateTime.now()),
+        detail: l.studyKeepSchedule,
         onClear: sectionId == null
             ? null
             : () => clearExamDate(context, app, sectionId),
@@ -447,20 +456,19 @@ class _StudyPanelState extends State<StudyPanel> {
     }
 
     final detail = switch ((plan.isToday, plan.unseen)) {
-      (true, 0) => 'Every card seen. Good luck.',
-      (true, final n) => "$n you haven't seen yet.",
-      (false, 0) => 'All ${plan.total} seen — keep the reviews up.',
-      (false, final n) =>
-        '$n to learn · ${plan.newPerDay} a day covers them by then',
+      (true, 0) => l.studyExamGoodLuck,
+      (true, final n) => l.studyExamUnseenToday(n),
+      (false, 0) => l.studyAllSeen('${plan.total}'),
+      (false, final n) => l.studyToLearn('$n', '${plan.newPerDay}'),
     };
     return _bannerBox(
       dark: dark,
       tint: OnoteColors.brass500,
       icon: Icons.flag_outlined,
       title: plan.isToday
-          ? 'Exam today'
-          : 'Exam ${formatExamDate(plan.date, DateTime.now())}',
-      trailing: formatCountdown(plan.daysLeft),
+          ? l.studyExamToday
+          : l.studyExamWhen(shortDateIn(l, plan.date, DateTime.now())),
+      trailing: countdownIn(l, plan.daysLeft),
       detail: detail,
       onTap: sectionId == null
           ? null
@@ -518,7 +526,7 @@ class _StudyPanelState extends State<StudyPanel> {
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 26, minHeight: 22),
-                      tooltip: 'Remove exam date',
+                      tooltip: L.of(context).studyRemoveExam,
                       color: context.surfaces.textSecondary,
                       onPressed: onClear,
                     ),
@@ -562,14 +570,14 @@ class _StudyPanelState extends State<StudyPanel> {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
-            child: Text('SEEN',
+            child: Text(L.of(context).studySeen,
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: .6,
                     color: context.surfaces.textSecondary)),
           ),
-          Text('$seen of ${s.total}',
+          Text(L.of(context).studyNOfM('$seen', '${s.total}'),
               style: const TextStyle(
                   fontSize: 12, fontWeight: FontWeight.w600)),
         ]),
@@ -592,7 +600,7 @@ class _StudyPanelState extends State<StudyPanel> {
             ),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(_streakLine(streak, today),
+              child: Text(_streakLine(L.of(context), streak, today),
                   style: const TextStyle(fontSize: 12, height: 1.3)),
             ),
           ]),
@@ -608,8 +616,8 @@ class _StudyPanelState extends State<StudyPanel> {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               icon: const Icon(Icons.event_outlined, size: 16),
-              label: const Text('Add an exam date',
-                  style: TextStyle(fontSize: 12)),
+              label: Text(L.of(context).studyAddExam,
+                  style: const TextStyle(fontSize: 12)),
               style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 6)),
@@ -625,15 +633,15 @@ class _StudyPanelState extends State<StudyPanel> {
     );
   }
 
-  static String _streakLine(int streak, int today) {
+  static String _streakLine(L l, int streak, int today) {
     if (streak <= 0) {
-      return today > 0 ? '$today reviewed today' : 'Nothing reviewed today';
+      return today > 0 ? l.studyReviewedToday(today) : l.studyNothingToday;
     }
     // The one line in this panel that is trying to change behaviour: a streak
     // is only motivating while it is still savable, and the day it is at risk
     // is the day worth saying so.
-    if (today <= 0) return '$streak-day streak — keep it going today';
-    return '$streak-day streak · $today today';
+    if (today <= 0) return l.studyStreakAtRisk('$streak');
+    return l.studyStreak('$streak', '$today');
   }
 
   /// Reviews per day for the last fortnight. Today is the full-strength bar,
@@ -644,7 +652,7 @@ class _StudyPanelState extends State<StudyPanel> {
     final idle = context.surfaces.border;
     final primary = Theme.of(context).colorScheme.primary;
     return Tooltip(
-      message: 'Reviews in the last ${bars.length} days',
+      message: L.of(context).studyActivityTip('${bars.length}'),
       child: SizedBox(
         height: 20,
         child: Row(
@@ -672,7 +680,7 @@ class _StudyPanelState extends State<StudyPanel> {
   }
 
   Widget _scopePicker() => Row(children: [
-        Text('Deck',
+        Text(L.of(context).studyDeck,
             style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -700,7 +708,8 @@ class _StudyPanelState extends State<StudyPanel> {
                             s == DeckScope.notebook ? null : app.activeSectionId,
                         pageId: s == DeckScope.page ? app.pageId : null,
                       );
-                      return Text('${s.label}  ·  ${st.due}/${st.total}',
+                      return Text(
+                          '${s.label(L.of(context))}  ·  ${st.due}/${st.total}',
                           style: DefaultTextStyle.of(context)
                               .style
                               .copyWith(fontSize: 13),
@@ -716,24 +725,27 @@ class _StudyPanelState extends State<StudyPanel> {
   Widget _emptyHelp(bool dark) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('No cards here yet.',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          Text(L.of(context).studyNoCards,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
-          _recipe(TagKind.question, 'Ctrl+3',
-              'Tag a question. The indented line below it is the answer.'),
-          _recipe(TagKind.definition, 'Ctrl+5',
-              'Tag a definition written as “term — meaning”.'),
-          _recipe(TagKind.remember, '== ==',
-              'Highlight part of a tagged line to blank it out instead.'),
+          _recipe(TagKind.question, _chordQuestion,
+              L.of(context).studyRecipeQuestion),
+          _recipe(TagKind.definition, _chordDefinition,
+              L.of(context).studyRecipeDefinition),
+          _recipe(TagKind.remember, _chordCloze, L.of(context).studyRecipeCloze),
           const SizedBox(height: 12),
           Text(
-            'Cards are a view of your notes, so editing the note edits the '
-            'card — there is nothing separate to maintain.',
+            L.of(context).studyCardsAreNotes,
             style: TextStyle(
                 fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
           ),
         ],
       );
+
+  /// Keys and syntax, the same in every language.
+  static const _chordQuestion = 'Ctrl+3';
+  static const _chordDefinition = 'Ctrl+5';
+  static const _chordCloze = '== ==';
 
   Widget _recipe(TagKind kind, String chord, String what) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -760,6 +772,7 @@ class _StudyPanelState extends State<StudyPanel> {
   Widget _summary(bool dark) {
     final done = _session?.length ?? 0;
     final stats = app.study.deckStats(sectionId: _sectionId, pageId: _pageId);
+    final l = L.of(context);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
@@ -770,7 +783,7 @@ class _StudyPanelState extends State<StudyPanel> {
             const Icon(Icons.task_alt,
                 size: OnoteIcon.xl, color: OnoteColors.success),
             const SizedBox(height: 10),
-            Text('Reviewed $done card${done == 1 ? '' : 's'}',
+            Text(l.studyReviewedCards(done),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.w600)),
@@ -778,12 +791,12 @@ class _StudyPanelState extends State<StudyPanel> {
             Text(
               _missed.isEmpty
                   ? (stats.due > 0
-                      ? '${stats.due} still due in this deck.'
+                      ? l.studyStillDue('${stats.due}')
                       : stats.nextDueAt == null
-                          ? 'Nothing else due.'
-                          : 'Next card in '
-                              '${formatDelay(stats.nextDueAt! - nowMs())}.')
-                  : '${_missed.length} need another look.',
+                          ? l.studyNothingElseDue
+                          : l.studyNextCardIn(
+                              delayIn(l, stats.nextDueAt! - nowMs())))
+                  : l.studyNeedAnotherLook(_missed.length),
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 12, color: context.surfaces.textSecondary, height: 1.35),
@@ -798,8 +811,9 @@ class _StudyPanelState extends State<StudyPanel> {
                 const Icon(Icons.local_fire_department,
                     size: 16, color: OnoteColors.brass500),
                 const SizedBox(width: 5),
-                Text('${app.study.studyStreakDays()}-day streak · '
-                    '${app.study.reviewsToday()} today',
+                Text(
+                    l.studyStreak('${app.study.studyStreakDays()}',
+                        '${app.study.reviewsToday()}'),
                     style: const TextStyle(
                         fontSize: 12, fontWeight: FontWeight.w600)),
               ]),
@@ -813,9 +827,11 @@ class _StudyPanelState extends State<StudyPanel> {
               const SizedBox(height: 6),
               Text(
                 p.isToday
-                    ? 'Exam today.'
-                    : '${formatCountdown(p.daysLeft)} until the exam'
-                        '${p.unseen > 0 ? ' · ${p.unseen} still unseen' : ''}.',
+                    ? l.studyExamTodayDot
+                    : p.unseen > 0
+                        ? l.studyUntilExamUnseen(
+                            countdownIn(l, p.daysLeft), '${p.unseen}')
+                        : l.studyUntilExam(countdownIn(l, p.daysLeft)),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 12, color: context.surfaces.textSecondary),
@@ -826,18 +842,18 @@ class _StudyPanelState extends State<StudyPanel> {
               FilledButton.icon(
                 onPressed: () => _startWith(_missed),
                 icon: const Icon(Icons.replay, size: 16),
-                label: Text('Review those ${_missed.length} again'),
+                label: Text(l.studyReviewAgain(_missed.length)),
               )
             else if (stats.due > 0)
               FilledButton.icon(
                 onPressed: () => _start(StudyMode.due),
                 icon: const Icon(Icons.play_arrow, size: 18),
-                label: Text('Keep going — ${stats.due} due'),
+                label: Text(l.studyKeepGoing('${stats.due}')),
               ),
             const SizedBox(height: 8),
             OutlinedButton(
                 onPressed: _end,
-                child: const Text('Done', style: TextStyle(fontSize: 13))),
+                child: Text(l.commonDone, style: const TextStyle(fontSize: 13))),
           ],
         ),
       ),
@@ -866,7 +882,7 @@ class _StudyPanelState extends State<StudyPanel> {
           ),
           const SizedBox(height: 6),
           Row(children: [
-            Text('${_index + 1} of $total',
+            Text(L.of(context).studyNOfM('${_index + 1}', '$total'),
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -879,7 +895,7 @@ class _StudyPanelState extends State<StudyPanel> {
                       fontSize: 11, color: context.surfaces.textSecondary)),
             ),
             if (_mode == StudyMode.cram)
-              Text('PRACTICE',
+              Text(L.of(context).studyPracticeBadge,
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -905,7 +921,7 @@ class _StudyPanelState extends State<StudyPanel> {
                 constraints: const BoxConstraints(maxWidth: 380),
                 child: FilledButton(
                   onPressed: () => setState(() => _revealed = true),
-                  child: const Text('Show answer   ␣'),
+                  child: Text('${L.of(context).studyShowAnswer}   ␣'),
                 ),
               ),
             )
@@ -920,7 +936,9 @@ class _StudyPanelState extends State<StudyPanel> {
   /// turning it over rather than as more text appearing underneath.
   Widget _face(Flashcard c, bool dark) {
     final kind = c.kind;
-    final label = c.isCloze ? 'FILL IN THE BLANK' : kind.englishLabel.toUpperCase();
+    final l = L.of(context);
+    final label =
+        c.isCloze ? l.studyFillBlank : kind.label(l).toUpperCase();
     return Container(
       decoration: BoxDecoration(
         color: context.surfaces.raised,
@@ -957,7 +975,7 @@ class _StudyPanelState extends State<StudyPanel> {
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                tooltip: 'Open the note',
+                tooltip: L.of(context).studyOpenNote,
                 color: context.surfaces.textSecondary,
                 onPressed: () {
                   app.selectPage(c.pageId);
@@ -1030,7 +1048,7 @@ class _StudyPanelState extends State<StudyPanel> {
           border: Border.all(
               color: (context.surfaces.border)),
         ),
-        child: Text('Answer hidden',
+        child: Text(L.of(context).studyAnswerHidden,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       );
@@ -1049,7 +1067,7 @@ class _StudyPanelState extends State<StudyPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ANSWER',
+          Text(L.of(context).studyAnswer,
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -1097,12 +1115,12 @@ class _StudyPanelState extends State<StudyPanel> {
     final child = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(g.label,
+        Text(g.labelIn(L.of(context)),
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
         Text(
           _mode == StudyMode.cram && g != Grade.again
               ? '—'
-              : previewInterval(state, g, now),
+              : delayIn(L.of(context), previewDelayMs(state, g, now)),
           style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary),
         ),
       ],

@@ -3129,5 +3129,590 @@
         "type": "String"
       }
     }
+  },
+  "timeNow": "now",
+  "@timeNow": {
+    "description": "A review interval that is due immediately, on a grade button."
+  },
+  "timeMinutesShort": "{n}m",
+  "@timeMinutesShort": {
+    "description": "A short interval in minutes on a grade button, e.g. 10m. Keep it very short.",
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "timeHoursShort": "{n}h",
+  "@timeHoursShort": {
+    "description": "A short interval in hours, e.g. 5h. Keep it very short.",
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "timeDaysShort": "{n}d",
+  "@timeDaysShort": {
+    "description": "A short interval in days, e.g. 3d. Keep it very short.",
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "timeMonthsShort": "{n}mo",
+  "@timeMonthsShort": {
+    "description": "A short interval in months, e.g. 2mo. Keep it very short.",
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "timeYearsShort": "{n}y",
+  "@timeYearsShort": {
+    "description": "A short interval in years, e.g. 1.5y. Keep it very short.",
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "countdownToday": "today",
+  "@countdownToday": {
+    "description": "Exam countdown: the exam is today."
+  },
+  "countdownTomorrow": "tomorrow",
+  "@countdownTomorrow": {
+    "description": "Exam countdown: the exam is tomorrow."
+  },
+  "countdownYesterday": "yesterday",
+  "@countdownYesterday": {
+    "description": "Exam countdown: the exam was yesterday."
+  },
+  "countdownDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@countdownDays": {
+    "description": "Exam countdown: days left.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "countdownDaysAgo": "{count, plural, =1{1 day ago} other{{count} days ago}}",
+  "@countdownDaysAgo": {
+    "description": "Exam countdown: how long ago the exam was.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "countdownPassed": "passed",
+  "@countdownPassed": {
+    "description": "Exam countdown: the exam was more than two weeks ago."
+  },
+  "monthsShort": "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
+  "@monthsShort": {
+    "description": "The twelve short month names, January to December, separated by commas with no spaces."
+  },
+  "dateDayMonth": "{day} {month}",
+  "@dateDayMonth": {
+    "description": "A short date in this year: day is a number, month a short month name.",
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "dateDayMonthYear": "{day} {month} {year}",
+  "@dateDayMonthYear": {
+    "description": "A short date in another year.",
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "month": {
+        "type": "String"
+      },
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "gradeAgain": "Again",
+  "@gradeAgain": {
+    "description": "Flashcard grade: not remembered."
+  },
+  "gradeHard": "Hard",
+  "@gradeHard": {
+    "description": "Flashcard grade: remembered with difficulty."
+  },
+  "gradeGood": "Good",
+  "@gradeGood": {
+    "description": "Flashcard grade: remembered."
+  },
+  "gradeEasy": "Easy",
+  "@gradeEasy": {
+    "description": "Flashcard grade: remembered easily."
+  },
+  "deckThisPage": "This page",
+  "@deckThisPage": {
+    "description": "Which cards to study: the open page."
+  },
+  "deckThisSection": "This section",
+  "@deckThisSection": {
+    "description": "Which cards to study: the open section."
+  },
+  "deckWholeNotebook": "Whole notebook",
+  "@deckWholeNotebook": {
+    "description": "Which cards to study: the whole notebook."
+  },
+  "studyAnkiText": "Anki text",
+  "@studyAnkiText": {
+    "description": "File type name in the save dialog."
+  },
+  "studyExported": "{count, plural, =1{Exported 1 card — import into Anki with File ▸ Import} other{Exported {count} cards — import into Anki with File ▸ Import}}",
+  "@studyExported": {
+    "description": "Toast after exporting flashcards for the Anki app.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyForgetTitle": "Forget this deck’s schedule?",
+  "@studyForgetTitle": {
+    "description": "Title of the dialog that resets the review schedule."
+  },
+  "studyForgetBody": "{scope, select, page{Every card on this page becomes new again. Your notes are not touched.} section{Every card in this section becomes new again. Your notes are not touched.} other{Every card in the whole notebook becomes new again. Your notes are not touched.}}",
+  "@studyForgetBody": {
+    "description": "What resetting does; scope is page, section or notebook.",
+    "placeholders": {
+      "scope": {
+        "type": "String"
+      }
+    }
+  },
+  "studyForget": "Forget",
+  "@studyForget": {
+    "description": "Button that resets the review schedule."
+  },
+  "studyResetCards": "{count, plural, =1{Reset 1 card} other{Reset {count} cards}}",
+  "@studyResetCards": {
+    "description": "Toast after resetting cards.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyEnd": "End",
+  "@studyEnd": {
+    "description": "Button that ends a review session."
+  },
+  "studyDeckActions": "Deck actions",
+  "@studyDeckActions": {
+    "description": "Tooltip of the study panel menu."
+  },
+  "studyExportAnki": "Export to Anki…",
+  "@studyExportAnki": {
+    "description": "Menu item: export cards for Anki."
+  },
+  "studySetExam": "Set exam date…",
+  "@studySetExam": {
+    "description": "Menu item: set the exam date."
+  },
+  "studyChangeExam": "Change exam date…",
+  "@studyChangeExam": {
+    "description": "Menu item: change the exam date."
+  },
+  "studyRemoveExam": "Remove exam date",
+  "@studyRemoveExam": {
+    "description": "Menu item and tooltip: remove the exam date."
+  },
+  "studyForgetSchedule": "Forget schedule…",
+  "@studyForgetSchedule": {
+    "description": "Menu item: reset the review schedule."
+  },
+  "studyDue": "due",
+  "@studyDue": {
+    "description": "Shown after a large number: how many cards are due."
+  },
+  "studyCards": "{count, plural, =1{1 card} other{{count} cards}}",
+  "@studyCards": {
+    "description": "How many cards a deck has.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyNew": "{count, plural, other{{count} new}}",
+  "@studyNew": {
+    "description": "How many cards have never been seen.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyReview": "Review {count}",
+  "@studyReview": {
+    "description": "Button: review the due cards.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "studyAllCaughtUp": "All caught up.",
+  "@studyAllCaughtUp": {
+    "description": "Nothing is due."
+  },
+  "studyAllCaughtUpNext": "All caught up — next card in {delay}.",
+  "@studyAllCaughtUpNext": {
+    "description": "Nothing is due; delay is when the next card is, e.g. 3h.",
+    "placeholders": {
+      "delay": {
+        "type": "String"
+      }
+    }
+  },
+  "studyPracticeAll": "Practice all {count}",
+  "@studyPracticeAll": {
+    "description": "Button: go through every card without changing the schedule.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "studyPracticeNote": "Practice doesn't change your schedule.",
+  "@studyPracticeNote": {
+    "description": "Under the practice button."
+  },
+  "studyThisSection": "Study this section",
+  "@studyThisSection": {
+    "description": "Banner action: study the section with the next exam."
+  },
+  "studyExamWhen": "Exam {when}",
+  "@studyExamWhen": {
+    "description": "Banner title: the exam, then when it is (a date or a countdown).",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "studyKeepSchedule": "These cards keep their schedule.",
+  "@studyKeepSchedule": {
+    "description": "After the exam has passed."
+  },
+  "studyExamGoodLuck": "Every card seen. Good luck.",
+  "@studyExamGoodLuck": {
+    "description": "Exam is today and every card has been seen."
+  },
+  "studyExamUnseenToday": "{count, plural, other{{count} you haven't seen yet.}}",
+  "@studyExamUnseenToday": {
+    "description": "Exam is today; how many cards were never seen.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyAllSeen": "All {count} seen — keep the reviews up.",
+  "@studyAllSeen": {
+    "description": "Every card has been seen before the exam.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "studyToLearn": "{count} to learn · {perDay} a day covers them by then",
+  "@studyToLearn": {
+    "description": "How many new cards to learn per day to finish before the exam.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "perDay": {
+        "type": "String"
+      }
+    }
+  },
+  "studyExamToday": "Exam today",
+  "@studyExamToday": {
+    "description": "Banner title: the exam is today."
+  },
+  "studySeen": "SEEN",
+  "@studySeen": {
+    "description": "Small capitals heading over the progress bar."
+  },
+  "studyNOfM": "{n} of {total}",
+  "@studyNOfM": {
+    "description": "Progress: n of total.",
+    "placeholders": {
+      "n": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "studyAddExam": "Add an exam date",
+  "@studyAddExam": {
+    "description": "Button: add an exam date."
+  },
+  "studyReviewedToday": "{count, plural, other{{count} reviewed today}}",
+  "@studyReviewedToday": {
+    "description": "How many cards were reviewed today.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyNothingToday": "Nothing reviewed today",
+  "@studyNothingToday": {
+    "description": "No cards reviewed today."
+  },
+  "studyStreakAtRisk": "{days}-day streak — keep it going today",
+  "@studyStreakAtRisk": {
+    "description": "A run of days with reviews that ends unless the person reviews today.",
+    "placeholders": {
+      "days": {
+        "type": "String"
+      }
+    }
+  },
+  "studyStreak": "{days}-day streak · {today} today",
+  "@studyStreak": {
+    "description": "A run of days with reviews, and how many today.",
+    "placeholders": {
+      "days": {
+        "type": "String"
+      },
+      "today": {
+        "type": "String"
+      }
+    }
+  },
+  "studyActivityTip": "Reviews in the last {days} days",
+  "@studyActivityTip": {
+    "description": "Tooltip of the activity bars.",
+    "placeholders": {
+      "days": {
+        "type": "String"
+      }
+    }
+  },
+  "studyDeck": "Deck",
+  "@studyDeck": {
+    "description": "Label of the deck picker."
+  },
+  "studyNoCards": "No cards here yet.",
+  "@studyNoCards": {
+    "description": "The deck has no cards."
+  },
+  "studyRecipeQuestion": "Tag a question. The indented line below it is the answer.",
+  "@studyRecipeQuestion": {
+    "description": "How to make a question card."
+  },
+  "studyRecipeDefinition": "Tag a definition written as “term — meaning”.",
+  "@studyRecipeDefinition": {
+    "description": "How to make a definition card."
+  },
+  "studyRecipeCloze": "Highlight part of a tagged line to blank it out instead.",
+  "@studyRecipeCloze": {
+    "description": "How to make a fill-in-the-blank card."
+  },
+  "studyCardsAreNotes": "Cards are a view of your notes, so editing the note edits the card — there is nothing separate to maintain.",
+  "@studyCardsAreNotes": {
+    "description": "Explains that cards come from the notes."
+  },
+  "studyReviewedCards": "{count, plural, =1{Reviewed 1 card} other{Reviewed {count} cards}}",
+  "@studyReviewedCards": {
+    "description": "Session summary title.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyStillDue": "{count} still due in this deck.",
+  "@studyStillDue": {
+    "description": "Session summary: cards still due.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "studyNothingElseDue": "Nothing else due.",
+  "@studyNothingElseDue": {
+    "description": "Session summary: nothing else is due."
+  },
+  "studyNextCardIn": "Next card in {delay}.",
+  "@studyNextCardIn": {
+    "description": "Session summary: when the next card is due.",
+    "placeholders": {
+      "delay": {
+        "type": "String"
+      }
+    }
+  },
+  "studyNeedAnotherLook": "{count, plural, =1{1 needs another look.} other{{count} need another look.}}",
+  "@studyNeedAnotherLook": {
+    "description": "Session summary: cards graded Again.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyExamTodayDot": "Exam today.",
+  "@studyExamTodayDot": {
+    "description": "Session summary: the exam is today."
+  },
+  "studyUntilExam": "{countdown} until the exam.",
+  "@studyUntilExam": {
+    "description": "Session summary: time left before the exam.",
+    "placeholders": {
+      "countdown": {
+        "type": "String"
+      }
+    }
+  },
+  "studyUntilExamUnseen": "{countdown} until the exam · {count} still unseen.",
+  "@studyUntilExamUnseen": {
+    "description": "Session summary: time left and cards never seen.",
+    "placeholders": {
+      "countdown": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "studyReviewAgain": "{count, plural, =1{Review that one again} other{Review those {count} again}}",
+  "@studyReviewAgain": {
+    "description": "Button: review the cards graded Again.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "studyKeepGoing": "Keep going — {count} due",
+  "@studyKeepGoing": {
+    "description": "Button: keep reviewing the due cards.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "studyPracticeBadge": "PRACTICE",
+  "@studyPracticeBadge": {
+    "description": "Small capitals badge during a practice session."
+  },
+  "studyShowAnswer": "Show answer",
+  "@studyShowAnswer": {
+    "description": "Button that reveals the answer."
+  },
+  "studyOpenNote": "Open the note",
+  "@studyOpenNote": {
+    "description": "Tooltip: open the note the card came from."
+  },
+  "studyAnswerHidden": "Answer hidden",
+  "@studyAnswerHidden": {
+    "description": "Placeholder where the answer will appear."
+  },
+  "studyAnswer": "ANSWER",
+  "@studyAnswer": {
+    "description": "Small capitals heading over the answer."
+  },
+  "studyFillBlank": "FILL IN THE BLANK",
+  "@studyFillBlank": {
+    "description": "Small capitals label of a fill-in-the-blank card."
+  },
+  "studyExamMenu": "Exam {when} · {countdown}…",
+  "@studyExamMenu": {
+    "description": "Section menu row: the exam date and countdown.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      },
+      "countdown": {
+        "type": "String"
+      }
+    }
+  },
+  "examDateTitle": "Exam date",
+  "@examDateTitle": {
+    "description": "Title of the exam date dialog and the date picker."
+  },
+  "examTitleFor": "Exam — {section}",
+  "@examTitleFor": {
+    "description": "Title of the exam date dialog for a named section.",
+    "placeholders": {
+      "section": {
+        "type": "String"
+      }
+    }
+  },
+  "examRemoved": "Exam date removed ({date}). Your cards are unchanged.",
+  "@examRemoved": {
+    "description": "Toast after removing an exam date.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "examUseDate": "Use this date",
+  "@examUseDate": {
+    "description": "Date picker confirm button."
+  },
+  "examWhatTime": "What time does it start?",
+  "@examWhatTime": {
+    "description": "Time picker heading."
+  },
+  "examDate": "Date",
+  "@examDate": {
+    "description": "Label of the date field."
+  },
+  "examAddTime": "Add a start time",
+  "@examAddTime": {
+    "description": "Button: add a start time."
+  },
+  "examStarts": "Starts",
+  "@examStarts": {
+    "description": "Label of the start time field."
+  },
+  "examNoTime": "No particular time",
+  "@examNoTime": {
+    "description": "Tooltip: remove the start time."
+  },
+  "examTimeOptional": "The countdown and the revision plan work in whole days, so a time is optional.",
+  "@examTimeOptional": {
+    "description": "Why a start time is optional."
+  },
+  "examShownOnDay": "Shown on the day. The countdown still works in whole days.",
+  "@examShownOnDay": {
+    "description": "What a start time is used for."
+  },
+  "examSet": "Set",
+  "@examSet": {
+    "description": "Button that saves the exam date."
   }
 }

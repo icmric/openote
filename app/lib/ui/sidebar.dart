@@ -8,6 +8,7 @@ import '../export/print_page.dart';
 import '../model/models.dart';
 import '../planner/agenda.dart';
 import '../l10n/l10n.dart';
+import '../l10n/study_words.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
@@ -3249,10 +3250,11 @@ String _examMenuLabel(
     BuildContext context, AppState app, String sectionId, DateTime exam) {
   final now = DateTime.now();
   final minute = app.study.examMinuteOfDay(sectionId);
-  final when = minute == null
-      ? formatExamDate(exam, now)
-      : '${formatExamDate(exam, now)}, ${examTimeLabel(context, minute)}';
-  return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
+  final l = L.of(context);
+  final date = shortDateIn(l, exam, now);
+  final when =
+      minute == null ? date : '$date, ${examTimeLabel(context, minute)}';
+  return l.studyExamMenu(when, countdownIn(l, daysBetween(now, exam)));
 }
 
 /// Do something that needs [pageId] open, then go back to where you were.
