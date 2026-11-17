@@ -7980,6 +7980,11 @@ class AppState extends ChangeNotifier
 
   String? _blockClipboard;
 
+  /// The notebook the block clipboard was filled in. Its pictures, PDFs and
+  /// ink live there, so a paste anywhere else carries them across
+  /// ([_carryClipboardBlobs]).
+  String? _blockClipboardNotebook;
+
   /// What a block copy put on the clipboard, as JSON. For the test that
   /// checks an inline table travels WITH its block — the payload lives in the
   /// block's own content, so it either rides along or it is lost.
@@ -8025,6 +8030,7 @@ class AppState extends ChangeNotifier
     if (selectedIds.isEmpty) return;
     final copied = [for (final b in blocks) if (selectedIds.contains(b.id)) b];
     _blockClipboard = jsonEncode([for (final b in copied) b.toJson()]);
+    _blockClipboardNotebook = notebookId;
     _blockClipboardAt = DateTime.now().millisecondsSinceEpoch;
     // Kept as a Future rather than its value: Ctrl+X → Ctrl+V can land
     // before the clipboard write completes, and the paste decision awaits the
@@ -8189,6 +8195,7 @@ class AppState extends ChangeNotifier
     if (ae == null || ae.block.type != BlockType.text) return false;
     final projected = blockClipboardAsText();
     if (projected == null) return false;
+    _carryClipboardBlobs(_blockClipboard!);
     // ONE undo step for the whole paste, and it is taken BEFORE the atoms are
     // written. It used to be taken inside the insert, which runs after — so
     // the snapshot Ctrl+Z restored already contained the pasted payloads, and
@@ -8208,6 +8215,61 @@ class AppState extends ChangeNotifier
     insertTextAtActiveCursor(projected.text, recordUndo: false);
     return true;
   }
+
+  /// **A paste into another notebook brings its pictures with it.**
+  ///
+  /// A copied box names its picture, PDF or handwriting by hash, and the bytes
+  /// live in the notebook it was copied in. Pasted into a different notebook,
+  /// the box named bytes nothing there held: a blank where the picture was,
+  /// on this computer and on every device the notebook syncs to. So before the
+  /// boxes land, every blob they name that this notebook lacks is copied over
+  /// from the source — content-addressed, so the hash, and every reference to
+  /// it, stays the same.
+  ///
+  /// Best effort per blob: a source notebook that has since been removed, or
+  /// bytes it never had, leave that one picture as blank as it was before
+  /// rather than refusing the paste.
+  void _carryClipboardBlobs(String raw) {
+    final from = _blockClipboardNotebook;
+    final to = notebookId;
+    if (from == null || to == null || from == to) return;
+    final wanted = <String, String>{}; // bare hash -> mime
+    void want(Object? h, String mime) {
+      if (h is! String || h.isEmpty) return;
+      wanted.putIfAbsent(h.replaceFirst('sha256:', '').toLowerCase(), () => mime);
+    }
+    try {
+      for (final j in (jsonDecode(raw) as List)) {
+        final c = ((j as Map)['content'] as Map?)?.cast<String, dynamic>();
+        if (c == null) continue;
+        final mime = c['mime'];
+        want(c['blob'], mime is String ? mime : 'application/octet-stream');
+        want(c['pdf'], 'application/pdf');
+        for (final ref in InkStorage.refsOf(c)) {
+          want(ref, inkMimeType);
+        }
+      }
+    } catch (_) {
+      return; // not ours to repair; the paste itself will say no
+    }
+    // Pictures inside text, a table's cells or any other payload are written
+    // as `sha256:<hex>` wherever they sit.
+    for (final m in _sha256Ref.allMatches(raw)) {
+      want(m.group(1), 'application/octet-stream');
+    }
+    for (final e in wanted.entries) {
+      try {
+        if (_repo.getBlob(to, e.key) != null) continue;
+        final bytes = _repo.getBlob(from, e.key);
+        if (bytes == null) continue;
+        importBlob(to, bytes, e.value);
+      } catch (err) {
+        debugPrint('[openote] could not carry blob ${e.key} across: $err');
+      }
+    }
+  }
+
+  static final _sha256Ref = RegExp(r'sha256:([0-9a-fA-F]{64})');
 
   /// **Where a paste puts the box, so the grip is under the pointer.** The move
   /// bar is the 16px strip ABOVE a box (from `y - 16` to `y`), and its grip is
@@ -8249,6 +8311,7 @@ class AppState extends ChangeNotifier
     final raw = _blockClipboard;
     if (raw == null) return;
     pushUndo();
+    _carryClipboardBlobs(raw);
     final list = (jsonDecode(raw) as List)
         .map((j) => Block.fromJson((j as Map).cast<String, dynamic>()))
         .toList();
