@@ -278,6 +278,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     final scheme = Theme.of(context).colorScheme;
     final l = L.of(context);
     final tabs = _tabNames(l);
+    if (isPhoneWidth(context)) return _phoneBar(context, scheme, l, tabs);
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -620,6 +621,94 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           ),
         ],
       ),
+    );
+  }
+
+  /// **The phone's bar**, at the foot of the screen where the thumb is: the
+  /// tools for the tab you are on (undo and redo first, always), and under them
+  /// the four tabs as icons with their names. The same four tabs as the
+  /// desktop, in the same order, so what is where does not change; only how
+  /// they are drawn.
+  Widget _phoneBar(
+      BuildContext context, ColorScheme scheme, L l, List<String> tabs) {
+    const icons = [
+      Icons.text_fields,
+      Icons.add_circle_outline,
+      Icons.edit_outlined,
+      Icons.description_outlined,
+    ];
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(
+          height: 48,
+          child: Row(children: [
+            const SizedBox(width: 2),
+            _MiniIcon(
+                icon: Icons.undo,
+                tooltip: l.barUndo,
+                onPressed: app.canUndo ? app.undo : null),
+            _MiniIcon(
+                icon: Icons.redo,
+                tooltip: l.barRedo,
+                onPressed: app.canRedo ? app.redo : null),
+            Container(
+                width: 1,
+                height: 24,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                color: Theme.of(context).dividerColor),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [...previous, if (current != null) current],
+                  ),
+                  child: _face(context),
+                ),
+              ),
+            ),
+          ]),
+        ),
+        Divider(height: 1, color: Theme.of(context).dividerColor),
+        SizedBox(
+          height: 56,
+          child: Row(children: [
+            for (var i = 0; i < _tabCount; i++)
+              Expanded(
+                child: InkWell(
+                  mouseCursor: WidgetStateMouseCursor.clickable,
+                  onTap: () => setState(() {
+                    _tab = i;
+                    _tabbedAwayFrom = objectFaceOf(app) == ObjectFace.equation
+                        ? app.activeMath
+                        : null;
+                  }),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(icons[i],
+                            size: 22,
+                            color: _tab == i ? scheme.primary : null),
+                        const SizedBox(height: 2),
+                        Text(tabs[i],
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: _tab == i
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: _tab == i ? scheme.primary : null)),
+                      ]),
+                ),
+              ),
+          ]),
+        ),
+      ]),
     );
   }
 
