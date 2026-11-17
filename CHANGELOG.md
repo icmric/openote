@@ -4,8 +4,72 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — spelling and grammar in your own English
+
+- **Grammar is checked as well as spelling**, in the English your computer is
+  set to — Australian, British, Canadian, Indian or American — or the one you
+  choose in Settings ▸ Writing. Spelling is a wavy line, grammar a double
+  line, punctuation a dotted one, in colours that stay distinct for
+  colour-blind eyes. Names, dates, contractions and most of this decade are no
+  longer underlined.
+- **Small slips are fixed as you finish the word**: a missing apostrophe
+  (`dont`), a classic misspelling (`recieve`), the capital at the start of a
+  sentence, a lone `i`, and `its a` once the next word shows what was meant. A
+  small marker under the word puts it back in one click, and Ctrl+Z straight
+  after takes back only the fix. Each of these has its own switch.
+- **Review writing** (F7, or the chip at the right of the status bar): every
+  suggestion on the page in one panel, in three kinds, each with *Fix all*. A
+  tick or a cross on each, *Add to dictionary*, and the word lit up on the
+  page while you look at it. Only offered when you write in English.
+- None of it touches notes in other languages: there it is simply off.
+
+### Added — the navigator
+
+- **One plus for sections** at the top of the list, and a new section takes
+  the next of eight colours, marked by an open ring.
+- **Drag a section onto another to group them**, with a label under the
+  pointer saying what letting go will do.
+- **Recent and the Recycle bin are places** at the foot. The bin says what is
+  in it and when it went in, and restores a deleted section with its pages.
+- **Right-click the empty part of either list** to make a section, group,
+  page or notebook, or open one from a folder — OneNote's menu, beside the
+  buttons rather than instead of them.
+- **Undo takes back making a page, section or group**, and redo brings it
+  back — even after you have opened another page.
+
+### Added — elsewhere
+
+- **Interface size** in Settings ▸ Appearance, from 75 to 200 per cent. A size
+  the window cannot hold is held back so Settings can always be reached.
+- **Deleting a notebook that lives in a shared folder** asks whether to remove
+  it from this computer (the default: it stays in the folder and on your other
+  devices) or delete it everywhere, which asks a second time.
+- **Settings ▸ Help links to the issue tracker**, to report a problem or share
+  an idea.
+
 ### Fixed
 
+- **PDFs over about 1 MB open on Windows.** Above that size pdfrx handed pdfium
+  a reader that could lose its wake-up on Windows and wait for ever — the
+  bigger the file, the surer — which is why decks of 4 MB and more would not
+  open by any route. Openote now gives pdfium the whole file at once. (#33)
+- **Closing waits for the last save**, and a save that failed is no longer
+  remembered as written. If saving cannot work at all, closing says why and a
+  second close leaves. (Contributed in #9.)
+- **Buttons are drawn at their full height.** Dialog buttons were painted
+  20 px tall inside a larger invisible target. (#41)
+- **The Sync window is roomier**, grows with the window, and no dialog's scroll
+  bar sits on top of its controls any more. (#42)
+- **A Markdown table wider than its box shows a scroll bar** you can drag,
+  instead of quietly cutting off the columns past the edge.
+- **Review writing checks what the page shows.** It was checking text you
+  never see — every box with a table carries a hidden line for older versions,
+  which is why "Openote" was flagged — and skipping coloured words you do see.
+  A punctuation suggestion now lights up on the page as well.
+- **Ctrl+Z and Ctrl+Y work while a name or title is being typed.**
+- **The page ignores the system's font size** on a phone set to large text, so
+  tables and boxes stay where they were measured; the rest of the app still
+  follows it.
 - **A large PDF added as a thumbnail opens every time.** Two renders of the
   same file could race for it while it was still opening, and a failure was
   remembered until restart. The thumbnail now renders once per card and a
@@ -21,7 +85,12 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   they go at the left margin under the lowest box. Repeated pastes no longer
   stack.
 
-### Added
+### Removed
+
+- **The page's "Recent changes" menu entry and window.** The history it read
+  is kept, since sync uses it.
+
+### Added — copy into other apps
 
 - **Copy or cut blocks, paste into Word or Google Docs.** Text, code, tables
   and pictures go on the clipboard as formatted HTML, and as Markdown for
