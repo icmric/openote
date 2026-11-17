@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:perfect_freehand/perfect_freehand.dart';
 
 import '../model/models.dart';
@@ -17,11 +18,20 @@ Color colorFromHex(String hex) =>
 class InkPainter extends CustomPainter {
   InkPainter(this.strokes,
       {this.wet,
+      this.moving = const [],
+      this.movingOffset,
       this.autoColor = const Color(0xFF211F1B),
       this.documentRects = const [],
       this.overDocument,
       super.repaint});
   final List<Stroke> strokes;
+
+  /// Strokes a drag is carrying, painted shifted by [movingOffset] — read at
+  /// paint time, so a drag repaints this layer without anything being rebuilt
+  /// or any outline being solved again. Painted after [strokes], so what is
+  /// being moved is on top while it moves.
+  final List<Stroke> moving;
+  final ValueListenable<Offset>? movingOffset;
   final Stroke? wet; // in-progress stroke, drawn last (mutated between repaints)
   final Color autoColor;
 
@@ -62,11 +72,11 @@ class InkPainter extends CustomPainter {
     return true;
   }
 
-  Color autoFor(Stroke s) {
+  Color autoFor(Stroke s, {Offset shift = Offset.zero}) {
     final over = overDocument;
     if (over == null || documentRects.isEmpty || s.x.isEmpty) return autoColor;
     final mid = s.x.length ~/ 2;
-    final at = Offset(s.x[mid], s.y[mid]);
+    final at = Offset(s.x[mid], s.y[mid]) + shift;
     for (final r in documentRects) {
       if (r.contains(at)) return over;
     }
@@ -94,11 +104,21 @@ class InkPainter extends CustomPainter {
     for (final s in strokes) {
       _paintStroke(canvas, s, cache: true);
     }
+    if (moving.isNotEmpty) {
+      final shift = movingOffset?.value ?? Offset.zero;
+      canvas.save();
+      canvas.translate(shift.dx, shift.dy);
+      for (final s in moving) {
+        _paintStroke(canvas, s, cache: true, shift: shift);
+      }
+      canvas.restore();
+    }
     // The wet stroke grows every sample — never cache it.
     if (wet != null) _paintStroke(canvas, wet!, cache: false);
   }
 
-  void _paintStroke(Canvas canvas, Stroke s, {required bool cache}) {
+  void _paintStroke(Canvas canvas, Stroke s,
+      {required bool cache, Offset shift = Offset.zero}) {
     if (s.x.isEmpty) return;
     Path? path = cache ? _outlines[s] : null;
     if (path == null) {
@@ -106,7 +126,8 @@ class InkPainter extends CustomPainter {
       if (path == null) return;
       if (cache) _outlines[s] = path;
     }
-    final base = s.colorHex == 'auto' ? autoFor(s) : colorFromHex(s.colorHex);
+    final base =
+        s.colorHex == 'auto' ? autoFor(s, shift: shift) : colorFromHex(s.colorHex);
     final paint = Paint()
       ..color = base.withValues(alpha: s.opacity)
       ..style = PaintingStyle.fill
@@ -152,6 +173,8 @@ class InkPainter extends CustomPainter {
       old.overDocument != overDocument ||
       !_sameRects(old.documentRects, documentRects) ||
       old.strokes.length != strokes.length ||
+      old.moving.length != moving.length ||
+      old.movingOffset != movingOffset ||
       (strokes.isNotEmpty &&
           (!identical(old.strokes.first, strokes.first) ||
               !identical(old.strokes.last, strokes.last)));

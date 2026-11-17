@@ -902,7 +902,10 @@ class _BlockViewState extends State<BlockView> {
       // mean the content box.
       left: b.x - _kChromePad,
       top: b.y - _kBarH,
-      child: IgnorePointer(
+      child: _FollowDrag(
+        app: app,
+        block: b,
+        child: IgnorePointer(
         ignoring: inkToolActive,
         // Raw pointer stream: claims the pointer so the canvas ignores it, and
         // drives text drag-selection. `deferToChild` (the default) means the
@@ -1057,8 +1060,71 @@ class _BlockViewState extends State<BlockView> {
           ),
         ),
       ),
+      ),
     );
   }
+}
+
+/// Carries a block with the drag in progress, at paint time.
+///
+/// The drag is not written into the block until it ends (see
+/// [AppState.dragOffset]), so a dragged block is drawn where it was plus the
+/// distance travelled — without the page, or even this block, being rebuilt.
+/// A `Transform` hit-tests where it paints, so the block is also clicked where
+/// it is seen. Always in the tree, moving or not: swapping it in when a drag
+/// starts would remount the block, and a text box would lose its caret.
+class _FollowDrag extends StatefulWidget {
+  const _FollowDrag(
+      {required this.app, required this.block, required this.child});
+
+  final AppState app;
+  final Block block;
+  final Widget child;
+
+  @override
+  State<_FollowDrag> createState() => _FollowDragState();
+}
+
+class _FollowDragState extends State<_FollowDrag> {
+  Offset _shown = Offset.zero;
+
+  Offset get _wanted => widget.app.movesWithDrag(widget.block)
+      ? widget.app.dragOffset.value
+      : Offset.zero;
+
+  void _moved() {
+    // Every block listens, and only those the drag carries — or one that has
+    // just been let go — rebuild: a Transform and nothing under it.
+    final want = _wanted;
+    if (want != _shown) setState(() => _shown = want);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _shown = _wanted;
+    widget.app.dragOffset.addListener(_moved);
+  }
+
+  @override
+  void didUpdateWidget(_FollowDrag old) {
+    super.didUpdateWidget(old);
+    if (old.app != widget.app) {
+      old.app.dragOffset.removeListener(_moved);
+      widget.app.dragOffset.addListener(_moved);
+    }
+    _shown = _wanted;
+  }
+
+  @override
+  void dispose() {
+    widget.app.dragOffset.removeListener(_moved);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      Transform.translate(offset: _shown, child: widget.child);
 }
 
 /// Reports the child's laid-out size (post-frame) so the app can hit-test,

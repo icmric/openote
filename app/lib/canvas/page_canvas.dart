@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -1488,7 +1489,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (!app.showSelectionDelete) return const [];
     // Not while the selection is being dragged or marqueed out, and not while
     // the eyedropper owns the next click.
-    if (_mode != _DragMode.none || app.pickingInkColor) return const [];
+    // Nor during any drag, the bar's included: it is placed from where the
+    // selection was when the page was last built, and a drag no longer
+    // rebuilds the page (see [AppState.dragOffset]).
+    if (_mode != _DragMode.none || app.draggingBlock || app.pickingInkColor) {
+      return const [];
+    }
     final rect = _selectionRect();
     if (rect == null) return const [];
     final vp = controller.viewport;
@@ -1722,15 +1728,21 @@ class _PageCanvasState extends State<PageCanvas> {
               Offset(controller.viewport.width, controller.viewport.height)),
         ).inflate(200);
         final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
-        final visibleStrokes = [
-          for (final b in inkBlocks)
-            // Never cull the selected/editing block (CANVAS-9), so a selected
-            // ink block off-screen still paints under its selection rect.
-            if (app.selectedIds.contains(b.id) ||
-                app.editingBlockId == b.id ||
-                visible.overlaps(_cullRect(b)))
-              ..._strokesOf(b),
-        ];
+        // Ink a drag is carrying is painted apart, shifted by the drag at
+        // paint time (see [AppState.dragOffset]): its coordinates are not
+        // rewritten per sample, so its outlines are not solved again either.
+        final visibleStrokes = <Stroke>[];
+        final movingStrokes = <Stroke>[];
+        for (final b in inkBlocks) {
+          // Never cull the selected/editing block (CANVAS-9), so a selected
+          // ink block off-screen still paints under its selection rect.
+          if (app.selectedIds.contains(b.id) ||
+              app.editingBlockId == b.id ||
+              visible.overlaps(_cullRect(b))) {
+            (app.movesWithDrag(b) ? movingStrokes : visibleStrokes)
+                .addAll(_strokesOf(b));
+          }
+        }
         // **Round everything selected while a drawing tool is in hand, not
         // only the handwriting.** A block's own chrome is suppressed under an
         // ink tool (see `BlockView`), so this dashed box is then the only mark
@@ -1869,8 +1881,12 @@ class _PageCanvasState extends State<PageCanvas> {
                                 size: Size.zero,
                                 painter: InkPainter(visibleStrokes,
                                     wet: _wet,
-                                    // Per-point repaint without widget rebuild.
-                                    repaint: _wetTick,
+                                    moving: movingStrokes,
+                                    movingOffset: app.dragOffset,
+                                    // Per-point repaint without widget rebuild,
+                                    // for wet ink and for a drag alike.
+                                    repaint: Listenable.merge(
+                                        [_wetTick, app.dragOffset]),
                                     // Theme default for "auto" strokes: dark
                                     // ink on light pages, light ink on dark.
                                     autoColor: dark
@@ -1908,13 +1924,14 @@ class _PageCanvasState extends State<PageCanvas> {
                   ),
                 // Alignment guides (CANVAS-7), above the grid so they read as
                 // the stronger signal while dragging.
-                if (app.alignGuides.isNotEmpty)
-                  Positioned.fill(
+                // Always present, and repainted from the guides' own notifier:
+                // their ends follow the dragged box, so they change per sample.
+                Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(
                         painter: _AlignGuidePainter(
                           controller: controller,
-                          guides: app.alignGuides,
+                          guides: app.alignGuideList,
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
@@ -1930,6 +1947,7 @@ class _PageCanvasState extends State<PageCanvas> {
                             ? Rect.fromPoints(_marqueeStartPage, _marqueeEndPage)
                             : null,
                         inkSelections: selectedInkRects,
+                        inkShift: app.dragOffset,
                         // **A COPY, and that is the whole of the fix.** The
                         // loop is built up point by point in one list, and a
                         // painter handed that list compares it with itself in
@@ -2476,7 +2494,8 @@ class OverlayPainter extends CustomPainter {
     required this.color,
     required this.halo,
     required this.eraserAt,
-  }) : super(repaint: eraserAt);
+    this.inkShift,
+  }) : super(repaint: Listenable.merge([eraserAt, inkShift]));
 
   /// How many times an overlay has painted, for the test that proves the lasso
   /// is drawn as it is drawn rather than at the end. See CONTRIBUTING: count
@@ -2500,6 +2519,10 @@ class OverlayPainter extends CustomPainter {
   /// the canvas a hundred times a second to move a circle. Same trick the wet
   /// stroke uses.
   final ValueNotifier<Offset?> eraserAt;
+
+  /// How far a drag has carried the selection so far (page space). The dashed
+  /// box follows it at paint time, as the ink inside it does.
+  final ValueListenable<Offset>? inkShift;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2579,7 +2602,9 @@ class OverlayPainter extends CustomPainter {
             ..strokeWidth = 1
             ..color = color.withValues(alpha: .6));
     }
-    for (final pr in inkSelections) {
+    final shift = inkShift?.value ?? Offset.zero;
+    for (final selected in inkSelections) {
+      final pr = selected.shift(shift);
       final r = Rect.fromPoints(controller.pageToScreen(pr.topLeft),
               controller.pageToScreen(pr.bottomRight))
           .inflate(kSelectionOutline);
@@ -2630,10 +2655,10 @@ class _AlignGuidePainter extends CustomPainter {
     required this.controller,
     required this.guides,
     required this.color,
-  }) : super(repaint: controller);
+  }) : super(repaint: Listenable.merge([controller, guides]));
 
   final CanvasController controller;
-  final List<AlignGuide> guides;
+  final ValueListenable<List<AlignGuide>> guides;
   final Color color;
 
   @override
@@ -2642,7 +2667,7 @@ class _AlignGuidePainter extends CustomPainter {
       ..color = color.withValues(alpha: .85)
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
-    for (final g in guides) {
+    for (final g in guides.value) {
       final a = controller.pageToScreen(
           g.vertical ? Offset(g.position, g.from) : Offset(g.from, g.position));
       final b = controller.pageToScreen(

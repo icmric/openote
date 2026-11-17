@@ -97,6 +97,12 @@ void main() {
   /// The box as it is now.
   Block at() => app.blocks.firstWhere((b) => b.id == box.id);
 
+  /// Where the box is DRAWN. A drag is written into the block only when it
+  /// ends (v1.0.2 bug 31: writing every sample rebuilt the whole page per
+  /// sample), so mid-drag the model is where it started and the box on screen
+  /// is that plus the drag — which is the position a cursor has to track.
+  Offset pos([Block? b]) => app.livePosition(b ?? at());
+
   /// The move bar — the strip just above the box, which is where a box is
   /// dragged from (inside a text box a drag means "select this text", so the
   /// container needs somewhere else to be grabbed).
@@ -143,14 +149,14 @@ void main() {
       expect(app.canvas.scale, closeTo(zoom, 0.001), reason: 'precondition');
 
       final g = await grab(t, bar());
-      final startPage = Offset(at().x, at().y);
+      final startPage = pos();
       const byScreen = Offset(120, 80);
       await moveBy(t, g, byScreen);
 
       // The box moved by the pointer's SCREEN distance, so the grab point is
       // still under the cursor. In page units that is the screen distance
       // divided by the zoom — exactly once.
-      final movedPage = Offset(at().x, at().y) - startPage;
+      final movedPage = pos() - startPage;
       expect(movedPage.dx, closeTo(byScreen.dx / zoom, 1.0),
           reason: 'x: moved ${movedPage.dx} page units');
       expect(movedPage.dy, closeTo(byScreen.dy / zoom, 1.0),
@@ -177,14 +183,14 @@ void main() {
     final grabScreen = bar(along: 0.85);
     final g = await grab(t, grabScreen);
     final grabInBox =
-        app.canvas.screenToPage(grabScreen) - Offset(at().x, at().y);
+        app.canvas.screenToPage(grabScreen) - pos();
 
     const by = Offset(-90, 140);
     await moveBy(t, g, by);
 
     final underCursor = app.canvas.screenToPage(grabScreen + by);
-    expect(underCursor.dx - at().x, closeTo(grabInBox.dx, 1.0));
-    expect(underCursor.dy - at().y, closeTo(grabInBox.dy, 1.0));
+    expect(underCursor.dx - pos().dx, closeTo(grabInBox.dx, 1.0));
+    expect(underCursor.dy - pos().dy, closeTo(grabInBox.dy, 1.0));
     await g.up();
     await t.pump();
     app.cancelPendingSave();
@@ -204,10 +210,10 @@ void main() {
     await t.pump(const Duration(milliseconds: 600)); // the long press
     await g.moveBy(const Offset(40, 40)); // past its own slop
     await t.pump();
-    final startPage = Offset(at().x, at().y);
+    final startPage = pos();
     await moveBy(t, g, const Offset(100, 60));
 
-    final moved = Offset(at().x, at().y) - startPage;
+    final moved = pos() - startPage;
     expect(moved.dx, closeTo(100 / 0.5, 2.0), reason: 'x: ${moved.dx}');
     expect(moved.dy, closeTo(60 / 0.5, 2.0), reason: 'y: ${moved.dy}');
     await g.up();
@@ -268,12 +274,12 @@ void main() {
     final g = await t.startGesture(from);
     await g.moveBy(const Offset(10, 10)); // past the canvas's own 5px
     await t.pump();
-    final startPage = Offset(ink.x, ink.y);
+    final startPage = pos(ink);
     await moveBy(t, g, const Offset(50, 30));
     await g.up();
     await t.pump();
 
-    final moved = Offset(ink.x, ink.y) - startPage;
+    final moved = pos(ink) - startPage;
     expect(moved.dx, closeTo(50 / 0.5, 2.0), reason: 'x: ${moved.dx}');
     app.cancelPendingSave();
   });

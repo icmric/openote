@@ -6355,8 +6355,66 @@ class AppState extends ChangeNotifier
   }
 
   /// Guides to draw while dragging (CANVAS-7), and the snap they imply.
-  List<AlignGuide> alignGuides = const [];
+  ///
+  /// A notifier of their own, so the guide layer repaints as they move without
+  /// the page being rebuilt: a guide's ends follow the box being dragged, so
+  /// they change on every pointer sample while anything lines up.
+  final ValueNotifier<List<AlignGuide>> alignGuideList = ValueNotifier(const []);
+  List<AlignGuide> get alignGuides => alignGuideList.value;
   Offset _pendingSnap = Offset.zero;
+
+  // ── A drag, painted rather than written (v1.0.2 bug 31) ───────────────
+  //
+  // Dragging used to write every pointer sample into the blocks and notify,
+  // so every block on the page rebuilt once per sample — measured at 13.5 ms
+  // a sample with one box selected on an 80-block page, and ink was
+  // re-decoded and re-tessellated as well, since its coordinates moved. Now a
+  // drag only accumulates [dragOffset]; the selected blocks, their ink, the
+  // dashed ink box and the guides follow it at paint time, and the blocks are
+  // written once, on release ([settleSelected]).
+
+  /// How far the selection has been dragged since the drag began and has not
+  /// yet been written into the blocks. Zero outside a drag.
+  final ValueNotifier<Offset> dragOffset = ValueNotifier(Offset.zero);
+
+  /// Is [b] carried by the drag in progress? A locked block never is: the
+  /// selection moves without it, as it always has.
+  bool movesWithDrag(Block b) =>
+      draggingBlock && !b.locked && selectedIds.contains(b.id);
+
+  /// Where [b] is drawn: its position, plus whatever a drag in progress has
+  /// carried it and not yet written.
+  Offset livePosition(Block b) =>
+      Offset(b.x, b.y) + (movesWithDrag(b) ? dragOffset.value : Offset.zero);
+
+  /// Where the moving part of the selection is right now, including what the
+  /// drag has not written yet.
+  Rect? _liveSelectionRect() {
+    Rect? out;
+    final off = dragOffset.value;
+    for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      final r = movesWithDrag(b) ? blockRect(b).shift(off) : blockRect(b);
+      out = out == null ? r : out.expandToInclude(r);
+    }
+    return out;
+  }
+
+  /// Write the drag into the blocks, once. True when there was anything to
+  /// write.
+  bool _commitDrag() {
+    final off = dragOffset.value;
+    if (off == Offset.zero) return false;
+    for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
+      if (b.locked) continue;
+      b.x += off.dx;
+      b.y += off.dy;
+      _translateInk(b, off.dx, off.dy);
+    }
+    // After the blocks, so the frame that drops the paint-time shift is the
+    // frame that has them in their new place.
+    dragOffset.value = Offset.zero;
+    return true;
+  }
 
   /// Recompute guides for the current selection against its neighbours.
   ///
@@ -6367,19 +6425,19 @@ class AppState extends ChangeNotifier
     if (selectedIds.isEmpty || snapToGrid) {
       // Snap-to-grid already decides placement; two competing snaps fight.
       if (alignGuides.isNotEmpty) {
-        alignGuides = const [];
+        alignGuideList.value = const [];
         _pendingSnap = Offset.zero;
       }
       return;
     }
-    final moving = _unionRect(selectedIds);
+    final moving = _liveSelectionRect();
     if (moving == null) return;
     final others = [
       for (final b in blocks)
         if (!selectedIds.contains(b.id)) blockRect(b)
     ];
     final r = findAlignment(moving, others, threshold: 7.0 / scale);
-    alignGuides = r.guides;
+    alignGuideList.value = r.guides;
     _pendingSnap = r.offset;
   }
 
@@ -6392,7 +6450,7 @@ class AppState extends ChangeNotifier
       moveSelectedBy(_pendingSnap.dx, _pendingSnap.dy);
       _pendingSnap = Offset.zero;
     }
-    alignGuides = const [];
+    alignGuideList.value = const [];
   }
 
   /// **The rectangle a block occupies**, for selection, hit-testing, the
@@ -6440,19 +6498,14 @@ class AppState extends ChangeNotifier
     return false;
   }
 
-  Rect? _unionRect(Set<String> ids) {
-    Rect? out;
-    for (final b in blocks.where((b) => ids.contains(b.id))) {
-      final r = blockRect(b);
-      out = out == null ? r : out.expandToInclude(r);
-    }
-    return out;
-  }
-
   // True while a block is being dragged — the canvas shows a faint grid then.
   bool draggingBlock = false;
   void setDragging(bool v) {
     if (draggingBlock == v) return;
+    // A drag that ends without being settled — a pointer cancel, a pinch
+    // taking over — still leaves the selection where it was dragged to, as it
+    // did when every sample was written straight into the blocks.
+    if (!v && _commitDrag()) markDirty();
     draggingBlock = v;
     notifyListeners();
   }
@@ -11847,6 +11900,12 @@ class AppState extends ChangeNotifier
   /// that joined the selection used to be carried off the page with the notes
   /// written on it.
   void moveSelectedBy(double dx, double dy) {
+    // During a drag, only remembered: see [dragOffset]. A keyboard nudge, with
+    // no drag in progress, writes straight away as it always has.
+    if (draggingBlock) {
+      dragOffset.value += Offset(dx, dy);
+      return;
+    }
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
       if (b.locked) continue;
       b.x += dx;
@@ -11860,6 +11919,7 @@ class AppState extends ChangeNotifier
   /// if a block lands near the invisible writing margin, tuck it to the
   /// margin so everything stays neat (matches the smart initial placement).
   void settleSelected() {
+    _commitDrag();
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
       if (b.locked) continue; // never moved, so nothing to settle
       if (b.type != BlockType.ink) {
