@@ -493,6 +493,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_noteSpace);
     PenButtons.bits.removeListener(_penBitsChanged);
     _eraserAt.dispose();
     _wetTick.dispose();
@@ -503,6 +504,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void initState() {
     super.initState();
     PenButtons.bits.addListener(_penBitsChanged);
+    HardwareKeyboard.instance.addHandler(_noteSpace);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
       // Restore this page's remembered view if the user actually adjusted it
@@ -518,6 +520,78 @@ class _PageCanvasState extends State<PageCanvas> {
         controller.fitWidth(app.contentExtent().right);
       }
     });
+  }
+
+  // ── Space-drag pans (§1.15) ─────────────────────────────────────────────
+  //
+  // Middle-drag pans, two fingers pan, the wheel scrolls — and a graphics
+  // tablet has none of those, so somebody working with a pen could only move
+  // round the page by the scroll bar (#20). Holding Space turns any drag into
+  // a pan, as it does in most drawing programs: pen, mouse or finger, over
+  // empty page or over a box, whatever tool is in hand.
+  //
+  // **Space, not Alt.** Alt-drag already means "move this box rather than
+  // select its text" (`BlockView`), the escape hatch a text box needs.
+  //
+  // **Not while typing.** A Space typed into a box or a field is a space;
+  // that includes the one that starts typing into a selected box
+  // (type-through), which opens its editor before any drag could begin.
+
+  /// Whether Space is down, as the keyboard last said.
+  bool _spaceDown = false;
+
+  /// The pointer a Space-pan is following, until it lifts — so letting go of
+  /// Space part way through finishes the pan rather than dropping the page
+  /// into whatever tool is underneath.
+  int? _spacePanPointer;
+
+  bool _noteSpace(KeyEvent e) {
+    if (e.logicalKey != LogicalKeyboardKey.space) return false;
+    final down = e is! KeyUpEvent;
+    if (down != _spaceDown && mounted) setState(() => _spaceDown = down);
+    return false; // a Space is still a Space to whoever else wants it
+  }
+
+  /// True while a text field, or a box's editor, has the keyboard.
+  bool get _typing {
+    if (app.editingBlockId != null) return true;
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    return ctx != null &&
+        (ctx.widget is EditableText ||
+            ctx.findAncestorWidgetOfExactType<EditableText>() != null);
+  }
+
+  /// Whether the pan layer is over the page: Space is held and nothing is
+  /// being typed, or a Space-pan is still under way.
+  bool get _spacePanArmed =>
+      _spacePanPointer != null || (_spaceDown && !_typing);
+
+  /// Laid over the whole page while [_spacePanArmed]. Opaque, so a box, the
+  /// pen and the marquee underneath never see the press.
+  Widget _spacePanLayer() => MouseRegion(
+        cursor: _spacePanPointer != null
+            ? SystemMouseCursors.grabbing
+            : SystemMouseCursors.grab,
+        child: Listener(
+          key: const ValueKey('space-pan'),
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (e) {
+            if (_spacePanPointer != null) return;
+            app.claimedPointers.remove(e.pointer);
+            setState(() => _spacePanPointer = e.pointer);
+          },
+          onPointerMove: (e) {
+            if (e.pointer != _spacePanPointer) return;
+            controller.panBy(e.delta);
+          },
+          onPointerUp: (e) => _endSpacePan(e.pointer),
+          onPointerCancel: (e) => _endSpacePan(e.pointer),
+        ),
+      );
+
+  void _endSpacePan(int pointer) {
+    if (pointer != _spacePanPointer) return;
+    setState(() => _spacePanPointer = null);
   }
 
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
@@ -2099,6 +2173,13 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     }
+
+    // Always the same Stack, so the page under it keeps its state when the
+    // layer comes and goes; `passthrough` keeps the page's own constraints.
+    canvas = Stack(fit: StackFit.passthrough, children: [
+      canvas,
+      if (_spacePanArmed) Positioned.fill(child: _spacePanLayer()),
+    ]);
 
     // **A page dragged out of the navigator and onto this one becomes a
     // window onto it.**
