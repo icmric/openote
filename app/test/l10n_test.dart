@@ -44,6 +44,7 @@ const _converted = [
   'lib/ui/notebook_manager.dart',
   'lib/ui/insert_catalog.dart',
   'lib/ui/app_shell.dart',
+  'lib/ui/protect_dialog.dart',
 ];
 
 void main() {

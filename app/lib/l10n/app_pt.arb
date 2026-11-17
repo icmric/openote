@@ -553,5 +553,20 @@
   "openFolderNone": "Nenhum caderno foi encontrado ali. Escolha a pasta que contém seus cadernos, ou a pasta do próprio caderno (o nome termina em .onotebook).",
   "openFolderLooking": "Procurando cadernos…",
   "openFolderAndroidHint": "Escolha a pasta onde estão seus cadernos. No Google Drive costuma ser a chamada “Openote”. Depois toque em “Usar esta pasta”.",
-  "openFolderFound": "Cadernos encontrados"
+  "openFolderFound": "Cadernos encontrados",
+  "protectLockTitle": "Bloquear “{title}”",
+  "protectLockedTitle": "“{title}” está bloqueada",
+  "protectBetaHeadline": "Beta: isto esconde a página no Openote, mas ainda não a criptografa.",
+  "protectBetaBody": "Por enquanto, qualquer pessoa com o arquivo do seu bloco de notas ainda consegue ler a página, e uma senha esquecida não pode ser recuperada. Uma criptografia de verdade está planejada.",
+  "protectPasscode": "Senha",
+  "protectPasscodeAgain": "Repita a senha",
+  "protectAskAgain": "Pedir de novo…",
+  "protectLock": "Bloquear",
+  "protectEnterPasscode": "Digite uma senha.",
+  "protectMismatch": "As duas senhas não coincidem.",
+  "protectWrong": "Essa não é a senha.",
+  "protectPolicyAlways": "Sempre que for aberta",
+  "protectPolicyTenMinutes": "Por 10 minutos",
+  "protectPolicyOneHour": "Por 1 hora",
+  "protectPolicySession": "Até o Openote ser fechado"
 }

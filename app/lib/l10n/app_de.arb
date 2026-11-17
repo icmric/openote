@@ -553,5 +553,20 @@
   "openFolderNone": "Dort wurde kein Notizbuch gefunden. Wähle den Ordner, der deine Notizbücher enthält, oder den eigenen Ordner eines Notizbuchs (sein Name endet auf .onotebook).",
   "openFolderLooking": "Notizbücher werden gesucht…",
   "openFolderAndroidHint": "Wähle den Ordner mit deinen Notizbüchern. In Google Drive ist das meist der Ordner „Openote“. Tippe dann auf „Diesen Ordner verwenden“.",
-  "openFolderFound": "Gefundene Notizbücher"
+  "openFolderFound": "Gefundene Notizbücher",
+  "protectLockTitle": "„{title}“ sperren",
+  "protectLockedTitle": "„{title}“ ist gesperrt",
+  "protectBetaHeadline": "Beta: Damit wird die Seite in Openote versteckt, aber noch nicht verschlüsselt.",
+  "protectBetaBody": "Vorerst kann jeder, der Ihre Notizbuchdatei hat, die Seite trotzdem lesen, und ein vergessener Code lässt sich nicht wiederherstellen. Echte Verschlüsselung ist geplant.",
+  "protectPasscode": "Code",
+  "protectPasscodeAgain": "Code wiederholen",
+  "protectAskAgain": "Erneut abfragen …",
+  "protectLock": "Sperren",
+  "protectEnterPasscode": "Geben Sie einen Code ein.",
+  "protectMismatch": "Die beiden Eingaben stimmen nicht überein.",
+  "protectWrong": "Das ist nicht der Code.",
+  "protectPolicyAlways": "Bei jedem Öffnen",
+  "protectPolicyTenMinutes": "Für 10 Minuten",
+  "protectPolicyOneHour": "Für 1 Stunde",
+  "protectPolicySession": "Bis Openote geschlossen wird"
 }

@@ -1982,4 +1982,55 @@ class LPt extends L {
 
   @override
   String get openFolderFound => 'Cadernos encontrados';
+
+  @override
+  String protectLockTitle(String title) {
+    return 'Bloquear “$title”';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '“$title” está bloqueada';
+  }
+
+  @override
+  String get protectBetaHeadline =>
+      'Beta: isto esconde a página no Openote, mas ainda não a criptografa.';
+
+  @override
+  String get protectBetaBody =>
+      'Por enquanto, qualquer pessoa com o arquivo do seu bloco de notas ainda consegue ler a página, e uma senha esquecida não pode ser recuperada. Uma criptografia de verdade está planejada.';
+
+  @override
+  String get protectPasscode => 'Senha';
+
+  @override
+  String get protectPasscodeAgain => 'Repita a senha';
+
+  @override
+  String get protectAskAgain => 'Pedir de novo…';
+
+  @override
+  String get protectLock => 'Bloquear';
+
+  @override
+  String get protectEnterPasscode => 'Digite uma senha.';
+
+  @override
+  String get protectMismatch => 'As duas senhas não coincidem.';
+
+  @override
+  String get protectWrong => 'Essa não é a senha.';
+
+  @override
+  String get protectPolicyAlways => 'Sempre que for aberta';
+
+  @override
+  String get protectPolicyTenMinutes => 'Por 10 minutos';
+
+  @override
+  String get protectPolicyOneHour => 'Por 1 hora';
+
+  @override
+  String get protectPolicySession => 'Até o Openote ser fechado';
 }

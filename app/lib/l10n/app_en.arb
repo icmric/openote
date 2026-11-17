@@ -2666,5 +2666,75 @@
   "openFolderFound": "Notebooks found",
   "@openFolderFound": {
     "description": "Heading over the list of notebooks found in a folder."
+  },
+  "protectLockTitle": "Lock “{title}”",
+  "@protectLockTitle": {
+    "description": "Title of the dialog that puts a passcode on a page or section.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "protectLockedTitle": "“{title}” is locked",
+  "@protectLockedTitle": {
+    "description": "Title of the dialog that asks for the passcode of a locked page or section.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "protectBetaHeadline": "Beta: this hides the page in Openote, it does not encrypt it yet.",
+  "@protectBetaHeadline": {
+    "description": "First line of the warning in the lock dialog. Must say plainly that locking hides the page but does not encrypt it."
+  },
+  "protectBetaBody": "For now, anyone with your notebook file can still read the page, and a forgotten passcode cannot be recovered. Real encryption is planned.",
+  "@protectBetaBody": {
+    "description": "The rest of the warning: who can still read a locked page, and that a forgotten passcode is gone for good. The most important sentence to translate exactly."
+  },
+  "protectPasscode": "Passcode",
+  "@protectPasscode": {
+    "description": "Label of the passcode field."
+  },
+  "protectPasscodeAgain": "Passcode again",
+  "@protectPasscodeAgain": {
+    "description": "Label of the field where the passcode is typed a second time to confirm it."
+  },
+  "protectAskAgain": "Ask for it again…",
+  "@protectAskAgain": {
+    "description": "Heading over the choices of how long an unlock lasts."
+  },
+  "protectLock": "Lock",
+  "@protectLock": {
+    "description": "Button that puts the passcode on."
+  },
+  "protectEnterPasscode": "Enter a passcode.",
+  "@protectEnterPasscode": {
+    "description": "Error under an empty passcode field."
+  },
+  "protectMismatch": "The two entries do not match.",
+  "@protectMismatch": {
+    "description": "Error when the passcode and its confirmation differ."
+  },
+  "protectWrong": "That is not the passcode.",
+  "@protectWrong": {
+    "description": "Error when the passcode typed to unlock is wrong."
+  },
+  "protectPolicyAlways": "Every time it is opened",
+  "@protectPolicyAlways": {
+    "description": "How long an unlock lasts: ask every time the page is opened."
+  },
+  "protectPolicyTenMinutes": "For 10 minutes",
+  "@protectPolicyTenMinutes": {
+    "description": "How long an unlock lasts: ten minutes."
+  },
+  "protectPolicyOneHour": "For 1 hour",
+  "@protectPolicyOneHour": {
+    "description": "How long an unlock lasts: one hour."
+  },
+  "protectPolicySession": "Until Openote is closed",
+  "@protectPolicySession": {
+    "description": "How long an unlock lasts: until the app is quit."
   }
 }

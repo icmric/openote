@@ -553,5 +553,20 @@
   "openFolderNone": "No se encontró ningún cuaderno ahí. Elige la carpeta que contiene tus cuadernos, o la carpeta propia de un cuaderno (su nombre termina en .onotebook).",
   "openFolderLooking": "Buscando cuadernos…",
   "openFolderAndroidHint": "Elige la carpeta donde están tus cuadernos. En Google Drive suele ser la que se llama «Openote». Luego toca «Usar esta carpeta».",
-  "openFolderFound": "Cuadernos encontrados"
+  "openFolderFound": "Cuadernos encontrados",
+  "protectLockTitle": "Bloquear «{title}»",
+  "protectLockedTitle": "«{title}» está bloqueada",
+  "protectBetaHeadline": "Beta: esto oculta la página en Openote, pero todavía no la cifra.",
+  "protectBetaBody": "Por ahora, cualquiera que tenga el archivo de tu cuaderno puede leer la página, y un código olvidado no se puede recuperar. Está previsto añadir un cifrado real.",
+  "protectPasscode": "Código",
+  "protectPasscodeAgain": "Repite el código",
+  "protectAskAgain": "Volver a pedirlo…",
+  "protectLock": "Bloquear",
+  "protectEnterPasscode": "Escribe un código.",
+  "protectMismatch": "Los dos códigos no coinciden.",
+  "protectWrong": "Ese no es el código.",
+  "protectPolicyAlways": "Cada vez que se abra",
+  "protectPolicyTenMinutes": "Durante 10 minutos",
+  "protectPolicyOneHour": "Durante 1 hora",
+  "protectPolicySession": "Hasta cerrar Openote"
 }

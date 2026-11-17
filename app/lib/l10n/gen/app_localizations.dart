@@ -3304,6 +3304,96 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Notebooks found'**
   String get openFolderFound;
+
+  /// Title of the dialog that puts a passcode on a page or section.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock “{title}”'**
+  String protectLockTitle(String title);
+
+  /// Title of the dialog that asks for the passcode of a locked page or section.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” is locked'**
+  String protectLockedTitle(String title);
+
+  /// First line of the warning in the lock dialog. Must say plainly that locking hides the page but does not encrypt it.
+  ///
+  /// In en, this message translates to:
+  /// **'Beta: this hides the page in Openote, it does not encrypt it yet.'**
+  String get protectBetaHeadline;
+
+  /// The rest of the warning: who can still read a locked page, and that a forgotten passcode is gone for good. The most important sentence to translate exactly.
+  ///
+  /// In en, this message translates to:
+  /// **'For now, anyone with your notebook file can still read the page, and a forgotten passcode cannot be recovered. Real encryption is planned.'**
+  String get protectBetaBody;
+
+  /// Label of the passcode field.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode'**
+  String get protectPasscode;
+
+  /// Label of the field where the passcode is typed a second time to confirm it.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode again'**
+  String get protectPasscodeAgain;
+
+  /// Heading over the choices of how long an unlock lasts.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for it again…'**
+  String get protectAskAgain;
+
+  /// Button that puts the passcode on.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock'**
+  String get protectLock;
+
+  /// Error under an empty passcode field.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a passcode.'**
+  String get protectEnterPasscode;
+
+  /// Error when the passcode and its confirmation differ.
+  ///
+  /// In en, this message translates to:
+  /// **'The two entries do not match.'**
+  String get protectMismatch;
+
+  /// Error when the passcode typed to unlock is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'That is not the passcode.'**
+  String get protectWrong;
+
+  /// How long an unlock lasts: ask every time the page is opened.
+  ///
+  /// In en, this message translates to:
+  /// **'Every time it is opened'**
+  String get protectPolicyAlways;
+
+  /// How long an unlock lasts: ten minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'For 10 minutes'**
+  String get protectPolicyTenMinutes;
+
+  /// How long an unlock lasts: one hour.
+  ///
+  /// In en, this message translates to:
+  /// **'For 1 hour'**
+  String get protectPolicyOneHour;
+
+  /// How long an unlock lasts: until the app is quit.
+  ///
+  /// In en, this message translates to:
+  /// **'Until Openote is closed'**
+  String get protectPolicySession;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

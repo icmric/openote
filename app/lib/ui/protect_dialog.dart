@@ -19,6 +19,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../state/page_protection.dart';
 import '../theme/onote_theme.dart';
@@ -65,11 +66,11 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
   void _submit() {
     final pw = _a.text;
     if (pw.isEmpty) {
-      setState(() => _error = 'Enter a passcode.');
+      setState(() => _error = L.of(context).protectEnterPasscode);
       return;
     }
     if (pw != _b.text) {
-      setState(() => _error = 'The two entries do not match.');
+      setState(() => _error = L.of(context).protectMismatch);
       return;
     }
     Navigator.of(context).pop((passcode: pw, policy: _policy));
@@ -77,11 +78,12 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     return AlertDialog(
       title: Row(children: [
         const Icon(Icons.lock_outline, size: 19),
         const SizedBox(width: 8),
-        Flexible(child: Text('Lock “${widget.nodeTitle}”')),
+        Flexible(child: Text(l.protectLockTitle(widget.nodeTitle))),
       ]),
       content: SizedBox(
         width: 460,
@@ -98,19 +100,16 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
                   color: OnoteColors.brass400.withValues(alpha: .12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Beta: this hides the page in Openote, '
-                        'it does not encrypt it yet.',
-                        style: TextStyle(
+                    Text(l.protectBetaHeadline,
+                        style: const TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600)),
-                    SizedBox(height: 6),
+                    const SizedBox(height: 6),
                     Text(
-                      'For now, anyone with your notebook file can still '
-                      'read the page, and a forgotten passcode cannot be '
-                      'recovered. Real encryption is planned.',
-                      style: TextStyle(fontSize: 12.5, height: 1.45),
+                      l.protectBetaBody,
+                      style: const TextStyle(fontSize: 12.5, height: 1.45),
                     ),
                   ],
                 ),
@@ -121,7 +120,7 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
                 autofocus: true,
                 obscureText: true,
                 decoration:
-                    InputDecoration(labelText: 'Passcode', errorText: _error),
+                    InputDecoration(labelText: l.protectPasscode, errorText: _error),
                 onChanged: (_) {
                   if (_error != null) setState(() => _error = null);
                 },
@@ -131,13 +130,13 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
               TextField(
                 controller: _b,
                 obscureText: true,
-                decoration:
-                    const InputDecoration(labelText: 'Passcode again'),
+                decoration: InputDecoration(labelText: l.protectPasscodeAgain),
                 onSubmitted: (_) => _submit(),
               ),
               const SizedBox(height: 16),
-              const Text('Ask for it again…',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              Text(l.protectAskAgain,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               RadioGroup<UnlockPolicy>(
                 groupValue: _policy,
@@ -148,7 +147,7 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
                     for (final p in UnlockPolicy.values)
                       RadioListTile<UnlockPolicy>(
                         value: p,
-                        title: Text(p.label,
+                        title: Text(_policyLabel(l, p),
                             style: const TextStyle(fontSize: 13.5)),
                         dense: true,
                         contentPadding: EdgeInsets.zero,
@@ -164,8 +163,8 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
       actions: [
         TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel')),
-        FilledButton(onPressed: _submit, child: const Text('Lock')),
+            child: Text(l.commonCancel)),
+        FilledButton(onPressed: _submit, child: Text(l.protectLock)),
       ],
     );
   }
@@ -197,18 +196,19 @@ class _UnlockDialogState extends State<_UnlockDialog> {
     if (widget.verify(_c.text)) {
       Navigator.of(context).pop(true);
     } else {
-      setState(() => _error = 'That is not the passcode.');
+      setState(() => _error = L.of(context).protectWrong);
       _c.clear();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     return AlertDialog(
       title: Row(children: [
         const Icon(Icons.lock_outline, size: 19),
         const SizedBox(width: 8),
-        Flexible(child: Text('“${widget.nodeTitle}” is locked')),
+        Flexible(child: Text(l.protectLockedTitle(widget.nodeTitle))),
       ]),
       content: SizedBox(
         width: 380,
@@ -216,7 +216,8 @@ class _UnlockDialogState extends State<_UnlockDialog> {
           controller: _c,
           autofocus: true,
           obscureText: true,
-          decoration: InputDecoration(labelText: 'Passcode', errorText: _error),
+          decoration:
+              InputDecoration(labelText: l.protectPasscode, errorText: _error),
           onChanged: (_) {
             if (_error != null) setState(() => _error = null);
           },
@@ -226,8 +227,8 @@ class _UnlockDialogState extends State<_UnlockDialog> {
       actions: [
         TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel')),
-        FilledButton(onPressed: _submit, child: const Text('Unlock')),
+            child: Text(l.commonCancel)),
+        FilledButton(onPressed: _submit, child: Text(l.shellUnlock)),
       ],
     );
   }
@@ -257,3 +258,12 @@ Future<bool> promptUnlock(
       app.nodes.where((n) => n.id == root).firstOrNull?.title ?? 'This';
   return askToUnlock(context, title, (pw) => app.unlockNode(nodeId, pw));
 }
+
+/// How long an unlock lasts, in the person's language. [UnlockPolicy.label]
+/// stays the English name the policy is known by in code.
+String _policyLabel(L l, UnlockPolicy p) => switch (p) {
+      UnlockPolicy.always => l.protectPolicyAlways,
+      UnlockPolicy.tenMinutes => l.protectPolicyTenMinutes,
+      UnlockPolicy.oneHour => l.protectPolicyOneHour,
+      UnlockPolicy.session => l.protectPolicySession,
+    };

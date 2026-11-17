@@ -1981,4 +1981,55 @@ class LEs extends L {
 
   @override
   String get openFolderFound => 'Cuadernos encontrados';
+
+  @override
+  String protectLockTitle(String title) {
+    return 'Bloquear «$title»';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '«$title» está bloqueada';
+  }
+
+  @override
+  String get protectBetaHeadline =>
+      'Beta: esto oculta la página en Openote, pero todavía no la cifra.';
+
+  @override
+  String get protectBetaBody =>
+      'Por ahora, cualquiera que tenga el archivo de tu cuaderno puede leer la página, y un código olvidado no se puede recuperar. Está previsto añadir un cifrado real.';
+
+  @override
+  String get protectPasscode => 'Código';
+
+  @override
+  String get protectPasscodeAgain => 'Repite el código';
+
+  @override
+  String get protectAskAgain => 'Volver a pedirlo…';
+
+  @override
+  String get protectLock => 'Bloquear';
+
+  @override
+  String get protectEnterPasscode => 'Escribe un código.';
+
+  @override
+  String get protectMismatch => 'Los dos códigos no coinciden.';
+
+  @override
+  String get protectWrong => 'Ese no es el código.';
+
+  @override
+  String get protectPolicyAlways => 'Cada vez que se abra';
+
+  @override
+  String get protectPolicyTenMinutes => 'Durante 10 minutos';
+
+  @override
+  String get protectPolicyOneHour => 'Durante 1 hora';
+
+  @override
+  String get protectPolicySession => 'Hasta cerrar Openote';
 }

@@ -553,5 +553,20 @@
   "openFolderNone": "那里没有找到笔记本。请选择存放笔记本的文件夹，或笔记本自己的文件夹（名称以 .onotebook 结尾）。",
   "openFolderLooking": "正在查找笔记本…",
   "openFolderAndroidHint": "请选择存放笔记本的文件夹。在 Google Drive 中通常是名为“Openote”的那个。然后点按“使用此文件夹”。",
-  "openFolderFound": "找到的笔记本"
+  "openFolderFound": "找到的笔记本",
+  "protectLockTitle": "锁定“{title}”",
+  "protectLockedTitle": "“{title}”已锁定",
+  "protectBetaHeadline": "测试版：这只会在 Openote 里隐藏该页面，还不会加密它。",
+  "protectBetaBody": "目前，任何拿到你笔记本文件的人仍然可以读取该页面，而且忘记的密码无法找回。真正的加密功能正在计划中。",
+  "protectPasscode": "密码",
+  "protectPasscodeAgain": "再次输入密码",
+  "protectAskAgain": "再次询问…",
+  "protectLock": "锁定",
+  "protectEnterPasscode": "请输入密码。",
+  "protectMismatch": "两次输入不一致。",
+  "protectWrong": "密码不正确。",
+  "protectPolicyAlways": "每次打开时",
+  "protectPolicyTenMinutes": "10 分钟内",
+  "protectPolicyOneHour": "1 小时内",
+  "protectPolicySession": "直到关闭 Openote"
 }

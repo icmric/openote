@@ -1971,4 +1971,55 @@ class LEn extends L {
 
   @override
   String get openFolderFound => 'Notebooks found';
+
+  @override
+  String protectLockTitle(String title) {
+    return 'Lock “$title”';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '“$title” is locked';
+  }
+
+  @override
+  String get protectBetaHeadline =>
+      'Beta: this hides the page in Openote, it does not encrypt it yet.';
+
+  @override
+  String get protectBetaBody =>
+      'For now, anyone with your notebook file can still read the page, and a forgotten passcode cannot be recovered. Real encryption is planned.';
+
+  @override
+  String get protectPasscode => 'Passcode';
+
+  @override
+  String get protectPasscodeAgain => 'Passcode again';
+
+  @override
+  String get protectAskAgain => 'Ask for it again…';
+
+  @override
+  String get protectLock => 'Lock';
+
+  @override
+  String get protectEnterPasscode => 'Enter a passcode.';
+
+  @override
+  String get protectMismatch => 'The two entries do not match.';
+
+  @override
+  String get protectWrong => 'That is not the passcode.';
+
+  @override
+  String get protectPolicyAlways => 'Every time it is opened';
+
+  @override
+  String get protectPolicyTenMinutes => 'For 10 minutes';
+
+  @override
+  String get protectPolicyOneHour => 'For 1 hour';
+
+  @override
+  String get protectPolicySession => 'Until Openote is closed';
 }

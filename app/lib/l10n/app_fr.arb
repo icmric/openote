@@ -553,5 +553,20 @@
   "openFolderNone": "Aucun carnet trouvé ici. Choisissez le dossier qui contient vos carnets, ou le dossier propre d’un carnet (son nom se termine par .onotebook).",
   "openFolderLooking": "Recherche de carnets…",
   "openFolderAndroidHint": "Choisissez le dossier où se trouvent vos carnets. Dans Google Drive, c’est en général celui qui s’appelle « Openote ». Touchez ensuite « Utiliser ce dossier ».",
-  "openFolderFound": "Carnets trouvés"
+  "openFolderFound": "Carnets trouvés",
+  "protectLockTitle": "Verrouiller « {title} »",
+  "protectLockedTitle": "« {title} » est verrouillée",
+  "protectBetaHeadline": "Bêta : cela cache la page dans Openote, mais ne la chiffre pas encore.",
+  "protectBetaBody": "Pour l’instant, toute personne qui a le fichier de votre carnet peut quand même lire la page, et un code oublié ne peut pas être récupéré. Un vrai chiffrement est prévu.",
+  "protectPasscode": "Code",
+  "protectPasscodeAgain": "Confirmez le code",
+  "protectAskAgain": "Le redemander…",
+  "protectLock": "Verrouiller",
+  "protectEnterPasscode": "Saisissez un code.",
+  "protectMismatch": "Les deux saisies ne correspondent pas.",
+  "protectWrong": "Ce n’est pas le bon code.",
+  "protectPolicyAlways": "À chaque ouverture",
+  "protectPolicyTenMinutes": "Pendant 10 minutes",
+  "protectPolicyOneHour": "Pendant 1 heure",
+  "protectPolicySession": "Jusqu’à la fermeture d’Openote"
 }

@@ -1989,4 +1989,55 @@ class LFr extends L {
 
   @override
   String get openFolderFound => 'Carnets trouvés';
+
+  @override
+  String protectLockTitle(String title) {
+    return 'Verrouiller « $title »';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '« $title » est verrouillée';
+  }
+
+  @override
+  String get protectBetaHeadline =>
+      'Bêta : cela cache la page dans Openote, mais ne la chiffre pas encore.';
+
+  @override
+  String get protectBetaBody =>
+      'Pour l’instant, toute personne qui a le fichier de votre carnet peut quand même lire la page, et un code oublié ne peut pas être récupéré. Un vrai chiffrement est prévu.';
+
+  @override
+  String get protectPasscode => 'Code';
+
+  @override
+  String get protectPasscodeAgain => 'Confirmez le code';
+
+  @override
+  String get protectAskAgain => 'Le redemander…';
+
+  @override
+  String get protectLock => 'Verrouiller';
+
+  @override
+  String get protectEnterPasscode => 'Saisissez un code.';
+
+  @override
+  String get protectMismatch => 'Les deux saisies ne correspondent pas.';
+
+  @override
+  String get protectWrong => 'Ce n’est pas le bon code.';
+
+  @override
+  String get protectPolicyAlways => 'À chaque ouverture';
+
+  @override
+  String get protectPolicyTenMinutes => 'Pendant 10 minutes';
+
+  @override
+  String get protectPolicyOneHour => 'Pendant 1 heure';
+
+  @override
+  String get protectPolicySession => 'Jusqu’à la fermeture d’Openote';
 }

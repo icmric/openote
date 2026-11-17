@@ -1987,4 +1987,55 @@ class LIt extends L {
 
   @override
   String get openFolderFound => 'Quaderni trovati';
+
+  @override
+  String protectLockTitle(String title) {
+    return 'Blocca «$title»';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '«$title» è bloccata';
+  }
+
+  @override
+  String get protectBetaHeadline =>
+      'Beta: questo nasconde la pagina in Openote, ma non la cifra ancora.';
+
+  @override
+  String get protectBetaBody =>
+      'Per ora, chiunque abbia il file del tuo blocco appunti può comunque leggere la pagina, e un codice dimenticato non si può recuperare. È prevista una vera cifratura.';
+
+  @override
+  String get protectPasscode => 'Codice';
+
+  @override
+  String get protectPasscodeAgain => 'Ripeti il codice';
+
+  @override
+  String get protectAskAgain => 'Richiedilo di nuovo…';
+
+  @override
+  String get protectLock => 'Blocca';
+
+  @override
+  String get protectEnterPasscode => 'Inserisci un codice.';
+
+  @override
+  String get protectMismatch => 'I due codici non coincidono.';
+
+  @override
+  String get protectWrong => 'Non è il codice giusto.';
+
+  @override
+  String get protectPolicyAlways => 'Ogni volta che si apre';
+
+  @override
+  String get protectPolicyTenMinutes => 'Per 10 minuti';
+
+  @override
+  String get protectPolicyOneHour => 'Per 1 ora';
+
+  @override
+  String get protectPolicySession => 'Finché Openote resta aperto';
 }

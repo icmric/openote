@@ -1989,4 +1989,55 @@ class LDe extends L {
 
   @override
   String get openFolderFound => 'Gefundene Notizbücher';
+
+  @override
+  String protectLockTitle(String title) {
+    return '„$title“ sperren';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '„$title“ ist gesperrt';
+  }
+
+  @override
+  String get protectBetaHeadline =>
+      'Beta: Damit wird die Seite in Openote versteckt, aber noch nicht verschlüsselt.';
+
+  @override
+  String get protectBetaBody =>
+      'Vorerst kann jeder, der Ihre Notizbuchdatei hat, die Seite trotzdem lesen, und ein vergessener Code lässt sich nicht wiederherstellen. Echte Verschlüsselung ist geplant.';
+
+  @override
+  String get protectPasscode => 'Code';
+
+  @override
+  String get protectPasscodeAgain => 'Code wiederholen';
+
+  @override
+  String get protectAskAgain => 'Erneut abfragen …';
+
+  @override
+  String get protectLock => 'Sperren';
+
+  @override
+  String get protectEnterPasscode => 'Geben Sie einen Code ein.';
+
+  @override
+  String get protectMismatch => 'Die beiden Eingaben stimmen nicht überein.';
+
+  @override
+  String get protectWrong => 'Das ist nicht der Code.';
+
+  @override
+  String get protectPolicyAlways => 'Bei jedem Öffnen';
+
+  @override
+  String get protectPolicyTenMinutes => 'Für 10 Minuten';
+
+  @override
+  String get protectPolicyOneHour => 'Für 1 Stunde';
+
+  @override
+  String get protectPolicySession => 'Bis Openote geschlossen wird';
 }

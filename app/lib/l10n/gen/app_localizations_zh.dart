@@ -1893,4 +1893,54 @@ class LZh extends L {
 
   @override
   String get openFolderFound => '找到的笔记本';
+
+  @override
+  String protectLockTitle(String title) {
+    return '锁定“$title”';
+  }
+
+  @override
+  String protectLockedTitle(String title) {
+    return '“$title”已锁定';
+  }
+
+  @override
+  String get protectBetaHeadline => '测试版：这只会在 Openote 里隐藏该页面，还不会加密它。';
+
+  @override
+  String get protectBetaBody =>
+      '目前，任何拿到你笔记本文件的人仍然可以读取该页面，而且忘记的密码无法找回。真正的加密功能正在计划中。';
+
+  @override
+  String get protectPasscode => '密码';
+
+  @override
+  String get protectPasscodeAgain => '再次输入密码';
+
+  @override
+  String get protectAskAgain => '再次询问…';
+
+  @override
+  String get protectLock => '锁定';
+
+  @override
+  String get protectEnterPasscode => '请输入密码。';
+
+  @override
+  String get protectMismatch => '两次输入不一致。';
+
+  @override
+  String get protectWrong => '密码不正确。';
+
+  @override
+  String get protectPolicyAlways => '每次打开时';
+
+  @override
+  String get protectPolicyTenMinutes => '10 分钟内';
+
+  @override
+  String get protectPolicyOneHour => '1 小时内';
+
+  @override
+  String get protectPolicySession => '直到关闭 Openote';
 }
