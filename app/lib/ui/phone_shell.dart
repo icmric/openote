@@ -198,14 +198,14 @@ class _PhoneNavigatorState extends State<PhoneNavigator> {
                     ? scheme.primary.withValues(alpha: .10)
                     : null,
                 child: Row(children: [
-                  Container(
+                  // The same marker the desktop navigator draws (an open ring
+                  // with a dot), not a plain circle.
+                  SizedBox(
                       width: 16,
                       height: 16,
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: sectionColorFor(sec.color, dark),
-                              width: 3))),
+                      child: CustomPaint(
+                          painter: SectionRingPainter(
+                              sectionColorFor(sec.color, dark)))),
                   const SizedBox(width: 12),
                   Expanded(
                       child: Text(sec.title,

@@ -13,6 +13,7 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
+import 'package:openote/theme/section_palette.dart';
 import 'package:openote/ui/app_shell.dart';
 import 'package:openote/ui/notebook_manager.dart';
 import 'package:openote/ui/phone_shell.dart';
@@ -114,6 +115,20 @@ void main() {
     await t.pumpAndSettle();
     expect(find.byType(PhoneNavigator), findsNothing, reason: 'the drawer closed');
     expect(app.pageId, first.id, reason: 'on the page chosen');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the drawer marks a section with the desktop ring, not a plain circle',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    await t.tap(find.byIcon(Icons.menu));
+    await t.pumpAndSettle();
+    final rings = find.descendant(
+        of: find.byType(PhoneNavigator),
+        matching: find.byWidgetPredicate(
+            (w) => w is CustomPaint && w.painter is SectionRingPainter));
+    expect(rings, findsWidgets);
     app.cancelPendingSave();
   });
 
