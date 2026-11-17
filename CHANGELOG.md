@@ -36,6 +36,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   buttons rather than instead of them.
 - **Undo takes back making a page, section or group**, and redo brings it
   back — even after you have opened another page.
+- **Move to group offers a new group**, made where the section stood.
 
 ### Added — elsewhere
 
@@ -46,6 +47,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   devices) or delete it everywhere, which asks a second time.
 - **Settings ▸ Help links to the issue tracker**, to report a problem or share
   an idea.
+- **The language setting says "System default"**, the same words as every
+  other setting that follows your device.
 
 ### Fixed
 
@@ -56,6 +59,11 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Closing waits for the last save**, and a save that failed is no longer
   remembered as written. If saving cannot work at all, closing says why and a
   second close leaves. (Contributed in #9.)
+- **Dragging is smooth on a busy page.** A drag used to rebuild every box on
+  the page for every movement of the pointer; now only what is being dragged
+  moves, and the page is updated once when you let go.
+- **Duplicate copies Google Drive left in a notebook's folder are cleared**
+  on the next open, once each file is proved identical to the one kept.
 - **Buttons are drawn at their full height.** Dialog buttons were painted
   20 px tall inside a larger invisible target. (#41)
 - **The Sync window is roomier**, grows with the window, and no dialog's scroll

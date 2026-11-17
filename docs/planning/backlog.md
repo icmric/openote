@@ -92,7 +92,7 @@ release**: they were noted to be thought through, not fixed now. Sizes are first
 | **Hide the Home tab** | S | Home (favourites and recents) has never earned its place for the owner. At minimum an option to hide it; whether it should exist at all is the larger question |
 | **Drop "· open" and "1 open" from the notebook list** | S | The open notebook is already highlighted, so both say it twice |
 | **More themes, and how to choose one** | M–L | Already [#12 and PR #22](v1.0.3.md#the-theme-catalogue-12). New here: the default stays *follow the computer*, and how a person *picks* one is undecided — a short list, swatches, or a gallery. Settle the picker before the themes |
-| **One phrase for "follow the system"** | S | Theme says *System*, Language right under it says *Same as my computer*. **Decided:** *System default* (or *System*) for both, because a mobile version is intended and some people dislike a phone being called a computer. Use the same words wherever the app follows the device — theme, language, and any later setting |
+| **One phrase for "follow the system"** | S, **done 17 Nov** (the language setting now says *System default* in all seven languages; the theme switch keeps the short *System*) | Theme says *System*, Language right under it says *Same as my computer*. **Decided:** *System default* (or *System*) for both, because a mobile version is intended and some people dislike a phone being called a computer. Use the same words wherever the app follows the device — theme, language, and any later setting |
 | **The Sync dialog does too much** | M | See below. **Git stays in it, and stays visible**: it is not how most people would sync, nor the best way, but the owner wants the option, so it is *not* folded behind Advanced |
 | **A popup animation from the lab project** | — | The one meant is the **"voice note uploaded" confirmation in the advent editor**. To be looked at for how it moves, **not** copied in style: that one is informational, and the undo toast has a real job (a button that works). **It was not found** in `C:\src\lab` on `main` (clean tree): the only animations in the source are a pulsing recording dot and a blinking cursor. It may be uncommitted elsewhere or live only on the deployed site; the owner will say where. The toast fix ([#38](https://github.com/icmric/openote/issues/38)) has not yet been tried by hand |
 | **Bring notebooks over from other apps** | M–L, later | Obsidian first, as it is popular. **A Markdown-folder importer already exists** (`export/md_import.dart`, in the notebook list as *Markdown folder*): the chosen folder becomes a section, files become pages, nested folders become pages with subpages, `[[wiki-links]]` render, and YAML front matter is stripped. What it does **not** do is the list that makes an Obsidian vault feel moved: **pictures** (`![[img.png]]` stays literal text — the biggest gap), tags and front matter (dropped), the vault as a *notebook* with its folders as groups rather than one section, and `.canvas` files (Openote *exports* Canvas; it does not read it). It is a very different way of working — links and folders, not a page you place things on — so expect it to need decisions, not just code. Flagged for later. The same importer is the likely base for Notion, Joplin and Evernote exports, which are mostly Markdown or HTML; unchecked |
@@ -237,7 +237,10 @@ comment through a shell that interprets it becomes a control character silently.
 Ten files were carrying one when the check was widened, and two of them were tests
 whose assertions had been vacuous as a result.
 
-### 1.7 `lib/` must not touch a `debug*` member outside an assert
+### 1.7 `lib/` must not touch a `debug*` member outside an assert — **swept 17 November**
+
+Every `debug…` getter in the pinned Flutter whose value is set only inside an assert was found by reading the SDK (thirteen); nothing in `lib/` reads any of them, and `source_hygiene_test` now bans all of them rather than the six remembered from the incident. Re-derive the list when Flutter is upgraded.
+
 
 `RenderObject.debugNeedsLayout` is assigned inside an `assert`, so it throws
 with asserts stripped — release and profile only. Every open inline equation
@@ -289,7 +292,10 @@ So this is the same question as §1.3, and wants the same answer: retire a log
 deliberately, with evidence that everything in it has been superseded, rather
 than sweeping by age. Worth doing together.
 
-### 1.12 The blob repair leaves Drive's old duplicates behind · **S**
+### 1.12 The blob repair leaves Drive's old duplicates behind · **S** — **done 17 November**
+
+The tidy (`OpLogStore.tidyRenamedCopies`) already existed with the checks below, but ran only on a pass that had just repaired something, so copies left by an earlier repair were never looked for. The on-open proof now runs it once per notebook regardless (`proveBlobs(tidyAll:)`, remembered as `blobCopiesTidied`).
+
 
 Measured on the owner's notebook: **17 files, about 5 MB**, named
 `<hash> (1).pdf` through `<hash> (8).pdf`.
