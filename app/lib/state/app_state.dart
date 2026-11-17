@@ -10628,6 +10628,39 @@ class AppState extends ChangeNotifier
     return g.id;
   }
 
+  /// **Make a group around one section** — *Move to group ▸ New group* (#18).
+  ///
+  /// The group takes the section's place in the list and the section goes
+  /// into it, so nothing moves on screen but the indent; the group's name
+  /// opens for typing, as any new group's does. Returns the group, or null
+  /// when nothing happened.
+  ///
+  /// No "made a group" undo step, as with [groupSectionsTogether]: undoing a
+  /// made group deletes it, and this one is made with a section inside, which
+  /// would go to the recycle bin with it.
+  String? groupSectionAlone(String sectionId) {
+    final s = node(sectionId);
+    if (s == null || s.kind != NodeKind.section) return null;
+    if (notebookIsReadOnly(notebookId!)) return null;
+    final count = nodes.where((n) => n.kind == NodeKind.sectionGroup).length;
+    // Top level, always: the navigator draws groups at the top level only.
+    // A section already in a group leaves it, and the new group stands where
+    // that group does.
+    final at = node(s.parentId)?.position ?? s.position;
+    final g = _putNode(
+        notebookId!,
+        TreeNode(
+            kind: NodeKind.sectionGroup,
+            title: 'Group ${count + 1}',
+            position: at));
+    s.parentId = g.id;
+    _putNode(notebookId!, s);
+    reloadNodes();
+    groupToRename = g.id;
+    notifyListeners();
+    return g.id;
+  }
+
   TreeNode? node(String? id) =>
       id == null ? null : nodes.where((n) => n.id == id).firstOrNull;
 

@@ -2944,6 +2944,10 @@ class _CreateOnEmpty extends StatelessWidget {
       );
 }
 
+/// The *Move to group* choice that makes a new group: not an id any group can
+/// have.
+const _kNewGroup = '+new-group';
+
 Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     {required bool canIndent,
     required Offset position,
@@ -3127,10 +3131,20 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
               SimpleDialogOption(
                   onPressed: () => Navigator.pop(ctx, g.id),
                   child: Text(g.title)),
+            // #18: the group it should go in often does not exist yet.
+            SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, _kNewGroup),
+                child: Row(children: [
+                  const Icon(Icons.create_new_folder_outlined, size: 16),
+                  const SizedBox(width: 8),
+                  Text(L.of(ctx).navNewSectionGroup),
+                ])),
           ],
         ),
       );
-      if (choice != null) {
+      if (choice == _kNewGroup) {
+        app.groupSectionAlone(node.id);
+      } else if (choice != null) {
         app.moveSectionToGroup(node.id, choice.isEmpty ? null : choice);
       }
     case 'indent':

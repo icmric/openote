@@ -129,4 +129,51 @@ void main() {
     expect(find.text('New notebook…'), findsNothing,
         reason: 'the create menu is for empty space only');
   });
+
+  // #18: Move to group offers a group that does not exist yet.
+  testWidgets('a section can be moved into a new group', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+    final groups = count(NodeKind.sectionGroup);
+
+    final g = app.groupSectionAlone(section.id);
+    await tester.pumpAndSettle();
+
+    expect(count(NodeKind.sectionGroup), groups + 1);
+    final made = app.node(g)!;
+    expect(made.parentId, isNull, reason: 'groups are drawn at the top level');
+    expect(app.node(section.id)!.parentId, g, reason: 'and the section is in it');
+  });
+
+  testWidgets('out of one group into a new one, the new one is top level',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+    final first = app.groupSectionAlone(section.id)!;
+    final second = app.groupSectionAlone(section.id)!;
+    await tester.pumpAndSettle();
+    expect(app.node(second)!.parentId, isNull,
+        reason: 'never nested inside the group it left');
+    expect(app.node(section.id)!.parentId, second);
+    expect(app.node(first), isNotNull, reason: 'the old group is left as it is');
+  });
+
+  testWidgets('and through the menu: Move to group, New group',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+    final groups = count(NodeKind.sectionGroup);
+    // The section row sits just under the SECTIONS header and its plus.
+    final plus = tester.getRect(find.byKey(const ValueKey('nav-add-section')));
+    await rightClick(tester, Offset(plus.left - 40, plus.bottom + 18));
+    await tester.tap(find.text('Move to group…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New group'));
+    await tester.pumpAndSettle();
+    expect(count(NodeKind.sectionGroup), groups + 1);
+    expect(app.node(section.id)!.parentId, isNotNull);
+  });
 }
