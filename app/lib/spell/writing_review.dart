@@ -289,7 +289,7 @@ class WritingReview extends ChangeNotifier {
       }
       for (final f in hit.found) {
         if (app.isWritingIgnored(b.id, text, f)) continue;
-        if (f.isSpelling && learnedWords.contains(f.word.toLowerCase())) {
+        if (f.isSpelling && isKnownWord(f.word)) {
           continue;
         }
         out.add(ReviewItem(blockId: b.id, finding: f, text: text));

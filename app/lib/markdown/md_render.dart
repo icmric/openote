@@ -203,17 +203,19 @@ class _MarkdownViewState extends State<MarkdownView> {
     // Which line the marked word is on, and which time it appears in that line.
     var markLine = -1;
     var markOccurrence = 0;
+    var markWord = '';
     final mark = widget.mark;
-    if (mark != null && mark.range.start >= 0 && mark.range.end <= text.length) {
+    final target =
+        mark == null ? null : markTarget(text, mark.range, mark.word);
+    if (target != null) {
       var off = 0;
       for (var i = 0; i < lines.length; i++) {
         final end = off + lines[i].length;
-        if (mark.range.start <= end) {
-          final into = mark.range.start - off;
-          if (text.substring(mark.range.start, mark.range.end) == mark.word) {
-            markLine = i;
-            markOccurrence = wholeWordCount(lines[i], mark.word, limit: into);
-          }
+        if (target.start <= end) {
+          markLine = i;
+          markWord = target.word;
+          markOccurrence =
+              wholeWordCount(lines[i], markWord, limit: target.start - off);
           break;
         }
         off = end + 1;
@@ -263,7 +265,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       var rendered = _renderLine(context, line, i, dark);
       if (i == markLine) {
         rendered = WordMark(
-            word: widget.mark!.word,
+            word: markWord,
             occurrence: markOccurrence,
             color: widget.mark!.color,
             child: rendered);

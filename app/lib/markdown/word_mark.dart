@@ -27,11 +27,66 @@ int wholeWordCount(String text, String word, {int? limit}) {
 
 final RegExp _letter = RegExp(r"[\p{L}\p{N}'’]", unicode: true);
 
+/// Is the occurrence of a [len]-long mark at [i] in [t] free at its edges?
+///
+/// Only an edge that IS a letter needs a non-letter beside it: `Its` must not
+/// match inside `Itself`, but `Done ,` ends in a comma and is followed by the
+/// word the comma was glued to, which is the whole point of marking it.
 bool _isWholeWord(String t, int i, int len) {
+  if (len == 0) return false;
   final before = i == 0 ? '' : t[i - 1];
   final after = i + len >= t.length ? '' : t[i + len];
-  return !(before.isNotEmpty && _letter.hasMatch(before)) &&
-      !(after.isNotEmpty && _letter.hasMatch(after));
+  final startsWord = _letter.hasMatch(t[i]);
+  final endsWord = _letter.hasMatch(t[i + len - 1]);
+  return !(startsWord && before.isNotEmpty && _letter.hasMatch(before)) &&
+      !(endsWord && after.isNotEmpty && _letter.hasMatch(after));
+}
+
+/// What to mark on the page for a finding at [range] of [text]: the raw text to
+/// look for and where it starts, or null when the finding no longer fits.
+///
+/// A spelling or wording finding covers a word, and that word is the mark. A
+/// **punctuation** finding often covers no letters at all — the space before a
+/// comma in `Done ,really` is `" ,"`, a space before nothing is `" "` — and a
+/// mark made of that is either invisible or impossible to find again in the
+/// rendered line, which is why the highlight never showed for them. So such a
+/// span takes in the word it is attached to (the one before, else the one
+/// after) and, if it is only space, the punctuation mark that follows: `Done ,`
+/// and `slow ,`, which are both visible and findable.
+///
+/// [word] is the finding's own idea of its text. When it is a real word and the
+/// text at [range] is no longer that word, the note has changed under the
+/// finding and nothing is marked rather than the wrong thing.
+({int start, String word})? markTarget(String text, TextRange range, String word) {
+  if (range.start < 0 || range.end > text.length || range.end <= range.start) {
+    return null;
+  }
+  final span = text.substring(range.start, range.end);
+  if (span.contains('\n')) return null;
+  if (span.split('').any(_letter.hasMatch)) {
+    if (word.split('').any(_letter.hasMatch) && word != span) return null;
+    return (start: range.start, word: span);
+  }
+  bool isLetterAt(int k) =>
+      k >= 0 && k < text.length && _letter.hasMatch(text[k]);
+  var s = range.start, e = range.end;
+  if (isLetterAt(s - 1)) {
+    while (isLetterAt(s - 1)) {
+      s--;
+    }
+  } else if (isLetterAt(e)) {
+    while (isLetterAt(e)) {
+      e++;
+    }
+  }
+  if (span.trim().isEmpty &&
+      e < text.length &&
+      text[e] != '\n' &&
+      text[e].trim().isNotEmpty &&
+      !_letter.hasMatch(text[e])) {
+    e++;
+  }
+  return (start: s, word: text.substring(s, e));
 }
 
 class WordMark extends SingleChildRenderObjectWidget {

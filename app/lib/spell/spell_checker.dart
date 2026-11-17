@@ -50,6 +50,17 @@ const String kDictionaryAsset = 'assets/dict/en_us.txt.gz';
 /// jargon everyone's — including on a shared group notebook.
 final Set<String> learnedWords = <String>{};
 
+/// Words every copy knows without being taught, lower-case. The app's own name
+/// is the first: underlining it in somebody's notes about the app is the
+/// checker contradicting the window it is drawn in.
+const Set<String> kBuiltInWords = {'openote'};
+
+/// Is [word] one the person taught us, or one we ship with?
+bool isKnownWord(String word) {
+  final w = word.toLowerCase();
+  return learnedWords.contains(w) || kBuiltInWords.contains(w);
+}
+
 /// Called whenever [learnedWords] changes, so the host can persist it. Set once
 /// at startup; null in tests.
 void Function(List<String> words)? onLearnedChanged;
@@ -157,7 +168,7 @@ class SpellChecker {
   bool isWordSpelled(String word) {
     final lower = word.toLowerCase();
     return dictionary.contains(lower) ||
-        learnedWords.contains(lower) ||
+        isKnownWord(lower) ||
         // An ALL-CAPS token is usually an acronym, and flagging every one of
         // them makes technical notes unusable.
         (word.length > 1 && word == word.toUpperCase());
@@ -325,21 +336,46 @@ class SpellChecker {
   }
 
   /// If a non-prose region starts at [i], the offset just past it.
+  ///
+  /// **What the page shows, not what the Markdown holds** (owner, 17
+  /// November: review writing "checks the raw text … and Openote is flagged
+  /// as misspelt"). Both halves of that were wrong here. Text the page never
+  /// shows was checked: the alt of a picture or an inline table — and every
+  /// box holding a table carries `![update Openote to see the table](…)`,
+  /// which is where "Openote" came from — and a link's target. And text the
+  /// page does show was skipped: a coloured or highlighted run was blanked
+  /// whole, so its words were never checked at all. So a construct whose
+  /// inside is drawn as text gives up only its punctuation (the brackets, the
+  /// `{{#RRGGBB ` opener), and one drawn as something else is skipped whole.
   static int _skipRegionEnd(String text, int i) {
     // `inline code`
     if (text[i] == '`') {
       final close = text.indexOf('`', i + 1);
       return close < 0 ? text.length : close + 1;
     }
-    // [[wiki links]] and {{markers}} — both are targets/metadata, not prose.
+    // [[wiki links]] — a page's name, not a sentence.
     if (text.startsWith('[[', i)) {
       final close = text.indexOf(']]', i + 2);
       return close < 0 ? text.length : close + 2;
     }
+    // {{#RRGGBB text}} and {{=RRGGBB text}}: the text is on the page in a
+    // colour, so only the opener and the closer go.
+    final opener = _colourOpener.matchAsPrefix(text, i);
+    if (opener != null) return opener.end;
+    if (text.startsWith('}}', i)) return i + 2;
     if (text.startsWith('{{', i)) {
       final close = text.indexOf('}}', i + 2);
       return close < 0 ? text.length : close + 2;
     }
+    // ![alt](target): a picture or an inline table is drawn, and its alt is
+    // for a build that cannot draw it.
+    final image = _image.matchAsPrefix(text, i);
+    if (image != null) return image.end;
+    // [text](target): the text is the link on the page; its brackets and
+    // target are not.
+    if (_link.matchAsPrefix(text, i) != null) return i + 1;
+    final target = _linkTarget.matchAsPrefix(text, i);
+    if (target != null) return target.end;
     // Bare URLs and scheme-ish tokens (http://…, sha256:…, mailto:…).
     if (_isWordChar(text.codeUnitAt(i)) &&
         (i == 0 || !_isWordChar(text.codeUnitAt(i - 1)))) {
@@ -347,7 +383,11 @@ class SpellChecker {
       while (j < text.length && _isWordChar(text.codeUnitAt(j))) {
         j++;
       }
-      if (j < text.length && text[j] == ':') {
+      // Only when something is glued to the colon: `Results: …` and `Note: …`
+      // are a word and its colon, and were skipped as if they were links.
+      if (j + 1 < text.length &&
+          text[j] == ':' &&
+          !_isSpace(text.codeUnitAt(j + 1))) {
         // Consume to whitespace — the whole token is machine-readable.
         var k = j;
         while (k < text.length && !_isSpace(text.codeUnitAt(k))) {
@@ -358,6 +398,11 @@ class SpellChecker {
     }
     return i;
   }
+
+  static final _colourOpener = RegExp(r'\{\{[#=][0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})? ');
+  static final _image = RegExp(r'!\[[^\]\n]*\]\([^)\s]*\)');
+  static final _link = RegExp(r'\[[^\[\]\n]*\]\([^)\s]*\)');
+  static final _linkTarget = RegExp(r'\]\([^)\s]*\)');
 
   static bool _isWordChar(int c) =>
       (c >= 0x41 && c <= 0x5A) || // A-Z

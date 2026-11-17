@@ -66,8 +66,8 @@ class WritingChecker {
       final others = <TextFinding>[];
       for (final f in found) {
         if (f.isSpelling) {
-          // Words the person taught us stay taught.
-          if (learnedWords.contains(f.word.toLowerCase())) continue;
+          // Words the person taught us stay taught, and ours are known.
+          if (isKnownWord(f.word)) continue;
           ranges.add(TextRange(start: f.start, end: f.end));
           spelled.add(f);
         } else {

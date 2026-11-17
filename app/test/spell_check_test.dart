@@ -48,8 +48,14 @@ void main() {
       expect(bad(c, 'the `zzzq wrld` code'), isEmpty);
     });
 
-    test('wiki-link targets and {{markers}}', () {
-      expect(bad(c, 'see [[Zzzq Page]] and {{#FF0000 zzzq}}'), isEmpty);
+    test('wiki-link targets, and the colour in a coloured run', () {
+      expect(bad(c, 'see [[Zzzq Page]] and {{#FF0000 hello}}'), isEmpty);
+    });
+
+    test('but the words of a coloured run are on the page, so checked', () {
+      // They used to be skipped with the marker, so a misspelling in colour
+      // was never underlined (owner, 17 November: check what the page shows).
+      expect(bad(c, 'a {{#FF0000 zzzq}} b'), ['zzzq']);
     });
 
     test('URLs and scheme-prefixed tokens', () {
@@ -88,9 +94,9 @@ void main() {
 
   group('learned words', () {
     test('a learned word stops being flagged', () {
-      expect(bad(c, 'openote is it'), ['openote']);
-      learnedWords.add('openote');
-      expect(bad(c, 'openote is it'), isEmpty);
+      expect(bad(c, 'zorbix is it'), ['zorbix']);
+      learnedWords.add('zorbix');
+      expect(bad(c, 'zorbix is it'), isEmpty);
     });
   });
 
