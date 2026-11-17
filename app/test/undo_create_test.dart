@@ -106,4 +106,54 @@ void main() {
     await step(app.redo);
     expect(count(NodeKind.sectionGroup), groups + 2);
   });
+
+  // Found in the owner's 16 November trial: tree steps were cleared with the
+  // page snapshots whenever another page opened, so a section made on one
+  // page could not be taken back from the next.
+  test('making something survives opening another page', () async {
+    if (!haveSqlite) return;
+    final groups = count(NodeKind.sectionGroup);
+    final first = app.pageId!;
+    app.addSectionGroup();
+    expect(count(NodeKind.sectionGroup), groups + 1);
+
+    // Wander off to a new page, and back again.
+    await app.addPage();
+    final elsewhere = app.pageId!;
+    await app.selectPage(first);
+    expect(app.canUndo, isTrue);
+
+    await step(app.undo); // the page made while wandering
+    expect(app.nodes.any((n) => n.id == elsewhere), isFalse);
+    await step(app.undo); // and the group, made before any of it
+    expect(count(NodeKind.sectionGroup), groups);
+  });
+
+  test("a page's own edits stay with that page", () async {
+    if (!haveSqlite) return;
+    final first = app.pageId!;
+    await app.addPage();
+    final other = app.pageId!;
+    await app.selectPage(first);
+    app.addBlock(
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'kept'}));
+    await app.flushSave();
+
+    await app.selectPage(other);
+    // The edit on the first page is not on this one, so the next step back
+    // is making this page — not the first page's text poured into it.
+    await step(app.undo);
+    expect(app.nodes.any((n) => n.id == other), isFalse);
+    await app.selectPage(first);
+    expect(app.blocks.map((b) => b.content['text']), contains('kept'));
+  });
+
+  test('another notebook takes nothing with it', () async {
+    if (!haveSqlite) return;
+    app.addSectionGroup();
+    final nb2 = await repo.createNotebook('Other');
+    await app.selectNotebook(nb2.id);
+    expect(app.canUndo, isFalse,
+        reason: "the first notebook's group is not this one's to take back");
+  });
 }

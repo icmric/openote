@@ -9259,8 +9259,7 @@ class AppState extends ChangeNotifier
     }
     pageId = id;
     select(null);
-    _undo.clear();
-    _redo.clear();
+    _keepTreeStepsOnly();
     renderSizes.clear();
     // A block id from the page you just left names nothing on this one.
     lastEditedBlockId = null;
@@ -10973,6 +10972,36 @@ class AppState extends ChangeNotifier
   static String? _createdOf(String entry) {
     if (!entry.startsWith('{"$_kCreatedNode"')) return null;
     return (jsonDecode(entry) as Map<String, dynamic>)[_kCreatedNode] as String?;
+  }
+
+  /// Is [entry] a step on the tree — a node made or deleted — rather than a
+  /// snapshot of one page?
+  static bool _isTreeStep(String entry) =>
+      entry.startsWith('{"$_kCreatedNode"') ||
+      entry.startsWith('{"$_kRestoreNode"');
+
+  /// The notebook the undo and redo stacks belong to.
+  String? _undoNotebook;
+
+  /// What a page switch does to undo and redo.
+  ///
+  /// A page snapshot belongs to the page it was taken on, so it goes. A tree
+  /// step does not: it names a node, and the node is the same wherever the
+  /// person is standing. They were all cleared together, so a section made
+  /// from one page could not be taken back from the next — found in the
+  /// owner's 16 November trial, where making a section is exactly the moment
+  /// a page switch follows. Kept in their order, so the steps still come back
+  /// in the order they were done. A different NOTEBOOK clears everything:
+  /// its nodes are not this one's.
+  void _keepTreeStepsOnly() {
+    if (notebookId != _undoNotebook) {
+      _undo.clear();
+      _redo.clear();
+      _undoNotebook = notebookId;
+      return;
+    }
+    _undo.removeWhere((e) => !_isTreeStep(e));
+    _redo.removeWhere((e) => !_isTreeStep(e));
   }
 
   /// Run a tree step that changes the open page, then put the stacks back as
