@@ -442,7 +442,7 @@ class LDe extends L {
   }
 
   @override
-  String get importLookingAround => 'Ihr Notizbuch wird durchgesehen…';
+  String get importLookingAround => 'Dein Notizbuch wird durchgesehen…';
 
   @override
   String importPartialBroke(int count) {
@@ -461,7 +461,7 @@ class LDe extends L {
       count,
       locale: localeName,
       other:
-          '$detail Die $count bereits übertragenen Seiten sind da. Openote holt den Rest später selbst nach, oder Sie starten es jederzeit erneut.',
+          '$detail Die $count bereits übertragenen Seiten sind da. Openote holt den Rest später selbst nach, oder du startest es jederzeit erneut.',
     );
     return '$_temp0';
   }
@@ -478,9 +478,9 @@ class LDe extends L {
       count,
       locale: localeName,
       other:
-          'Angehalten — die $count bereits übertragenen Seiten bleiben. Sie können jederzeit fortfahren.',
+          'Angehalten — die $count bereits übertragenen Seiten bleiben. Du kannst jederzeit fortfahren.',
       one:
-          'Angehalten — die 1 bereits übertragene Seite bleibt. Sie können jederzeit fortfahren.',
+          'Angehalten — die 1 bereits übertragene Seite bleibt. Du kannst jederzeit fortfahren.',
     );
     return '$_temp0';
   }
@@ -1390,7 +1390,7 @@ class LDe extends L {
 
   @override
   String get onboardingFreshBody =>
-      'Ein leeres Notizbuch, bereit zum Schreiben. Notizen können Sie später jederzeit übernehmen.';
+      'Ein leeres Notizbuch, bereit zum Schreiben. Notizen kannst du später jederzeit übernehmen.';
 
   @override
   String get onboardingFreshTitle => 'Neues Notizbuch beginnen';
@@ -1487,10 +1487,10 @@ class LDe extends L {
 
   @override
   String get oneNoteCloudIntro =>
-      'Openote liest Ihre Notizbücher aus OneNote. Es kann sie nicht ändern.';
+      'Openote liest deine Notizbücher aus OneNote. Es kann sie nicht ändern.';
 
   @override
-  String get oneNoteCloudLoading => 'Ihre Notizbücher werden gesucht…';
+  String get oneNoteCloudLoading => 'Deine Notizbücher werden gesucht…';
 
   @override
   String get oneNoteCloudNoInk =>
@@ -1503,14 +1503,14 @@ class LDe extends L {
   String get oneNoteCloudSignIn => 'Bei Microsoft anmelden';
 
   @override
-  String get oneNoteCloudSigningIn => 'Warten auf Ihren Browser…';
+  String get oneNoteCloudSigningIn => 'Warten auf deinen Browser…';
 
   @override
   String get oneNoteCloudTitle => 'Ein Notizbuch aus OneNote übernehmen';
 
   @override
   String get oneNoteFileBody =>
-      'Ohne Anmeldung, und die genaueste Kopie: Tabellen behalten ihre exakte Breite. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
+      'Ohne Anmeldung, und die genaueste Kopie: Tabellen behalten ihre exakte Breite. Du brauchst OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
 
   @override
   String get oneNoteFileTitle => 'Eine exportierte Datei verwenden';
@@ -2006,7 +2006,7 @@ class LDe extends L {
 
   @override
   String get protectBetaBody =>
-      'Vorerst kann jeder, der Ihre Notizbuchdatei hat, die Seite trotzdem lesen, und ein vergessener Code lässt sich nicht wiederherstellen. Echte Verschlüsselung ist geplant.';
+      'Vorerst kann jeder, der deine Notizbuchdatei hat, die Seite trotzdem lesen, und ein vergessener Code lässt sich nicht wiederherstellen. Echte Verschlüsselung ist geplant.';
 
   @override
   String get protectPasscode => 'Code';
@@ -2021,7 +2021,7 @@ class LDe extends L {
   String get protectLock => 'Sperren';
 
   @override
-  String get protectEnterPasscode => 'Geben Sie einen Code ein.';
+  String get protectEnterPasscode => 'Gib einen Code ein.';
 
   @override
   String get protectMismatch => 'Die beiden Eingaben stimmen nicht überein.';
@@ -2070,23 +2070,23 @@ class LDe extends L {
   String get linkInsert => 'Einfügen';
 
   @override
-  String get linkNeedWords => 'Geben Sie dem Link einen Text zum Anzeigen.';
+  String get linkNeedWords => 'Gib dem Link einen Text zum Anzeigen.';
 
   @override
   String get linkBadAddress =>
-      'Das sieht nicht nach einer Adresse aus, die Openote öffnen kann. Versuchen Sie etwas wie https://example.com';
+      'Das sieht nicht nach einer Adresse aus, die Openote öffnen kann. Versuch etwas wie https://example.com';
 
   @override
   String get linkNoCaret =>
-      'Setzen Sie zuerst den Cursor dorthin, wo der Link hin soll.';
+      'Setz zuerst den Cursor dorthin, wo der Link hin soll.';
 
   @override
   String get linkOneLine =>
-      'Ein Link muss in einer Zeile stehen. Wählen Sie Wörter in einer einzigen Zeile aus.';
+      'Ein Link muss in einer Zeile stehen. Wähle Wörter in einer einzigen Zeile aus.';
 
   @override
   String get linkOnObject =>
-      'Ein Bild, eine Tabelle oder eine Karte kann keinen Link tragen. Setzen Sie ihn stattdessen auf Wörter.';
+      'Ein Bild, eine Tabelle oder eine Karte kann keinen Link tragen. Setz ihn stattdessen auf Wörter.';
 
   @override
   String get linkOnMaths =>
@@ -2094,18 +2094,18 @@ class LDe extends L {
 
   @override
   String get linkBrackets =>
-      'Der Text eines Links darf keine eckigen Klammern enthalten. Wählen Sie etwas ohne sie aus.';
+      'Der Text eines Links darf keine eckigen Klammern enthalten. Wähle etwas ohne sie aus.';
 
   @override
   String get linkNested =>
-      'Dieser Text ist bereits formatiert oder verlinkt. Wählen Sie einfache Wörter aus oder klicken Sie in den Link, um ihn zu bearbeiten.';
+      'Dieser Text ist bereits formatiert oder verlinkt. Wähle einfache Wörter aus oder klick in den Link, um ihn zu bearbeiten.';
 
   @override
   String get alertsTitle => 'Erinnerungen vor Lehrveranstaltungen';
 
   @override
   String get alertsIntro =>
-      'Openote kann sich melden, bevor etwas in Ihrem Stundenplan beginnt. Die Art eines Termins wird aus seinem Namen erkannt; wählen Sie also die Arten, bei denen Sie wirklich unterbrochen werden möchten.';
+      'Openote kann sich melden, bevor etwas in deinem Stundenplan beginnt. Die Art eines Termins wird aus seinem Namen erkannt; wähle also die Arten, bei denen du wirklich unterbrochen werden möchtest.';
 
   @override
   String get alertsPreset => '10 Minuten vor Lehrveranstaltungen erinnern';
@@ -2115,7 +2115,7 @@ class LDe extends L {
 
   @override
   String get alertsWhileRunning =>
-      'Erinnerungen erscheinen in Openote und erreichen Sie daher nur, solange es läuft. Was Sie verpasst haben, finden Sie beim nächsten Öffnen in diesem Bereich.';
+      'Erinnerungen erscheinen in Openote und erreichen dich daher nur, solange es läuft. Was du verpasst hast, findest du beim nächsten Öffnen in diesem Bereich.';
 
   @override
   String get alertsAtStart => 'Zu Beginn';
@@ -2157,64 +2157,64 @@ class LDe extends L {
 
   @override
   String get saveProblemNotAdded =>
-      'Openote konnte das Bild oder die Datei, die Sie gerade hinzugefügt haben, nicht speichern; es ist daher nicht in Ihrem Notizbuch.\n\nPrüfen Sie, ob der Datenträger voll ist und ob der Ordner des Notizbuchs schreibgeschützt ist, und fügen Sie es dann erneut ein oder ziehen Sie es erneut hinein.';
+      'Openote konnte das Bild oder die Datei, die du gerade hinzugefügt hast, nicht speichern; es ist daher nicht in deinem Notizbuch.\n\nPrüfe, ob der Datenträger voll ist und ob der Ordner des Notizbuchs schreibgeschützt ist, und füge es dann erneut ein oder zieh es erneut hinein.';
 
   @override
   String get saveProblemNotOnDriveShort => 'Noch nicht in Drive';
 
   @override
   String get saveProblemNotOnDrive =>
-      'Ihre Änderungen sind auf diesem Telefon gespeichert. Sie konnten gerade nicht an den Drive-Ordner gesendet werden (keine Verbindung oder der Ordner ist nicht erreichbar) und werden gesendet, sobald er erreichbar ist.';
+      'Deine Änderungen sind auf diesem Telefon gespeichert. Sie konnten gerade nicht an den Drive-Ordner gesendet werden (keine Verbindung oder der Ordner ist nicht erreichbar) und werden gesendet, sobald er erreichbar ist.';
 
   @override
   String get saveProblemNotRecordedShort => 'Gespeichert, aber nicht erfasst';
 
   @override
   String get saveProblemNotRecorded =>
-      'Openote hat Ihre Notizen auf diesem Computer gespeichert, konnte die Änderung aber nicht in den Verlauf dieses Notizbuchs aufnehmen.\n\nAus dem Verlauf lesen Ihre anderen Geräte, Ihre Sicherungen und Ihre geteilten Ordner. Sie können daher zurückfallen, bis das wieder funktioniert. Nichts, was Sie geschrieben haben, ist verloren.\n\nPrüfen Sie, ob der Datenträger voll ist, ob der Ordner des Notizbuchs schreibgeschützt ist und ob eine Cloud-App wie OneDrive oder Google Drive damit fertig ist. Openote versucht es bei jedem Speichern erneut.';
+      'Openote hat deine Notizen auf diesem Computer gespeichert, konnte die Änderung aber nicht in den Verlauf dieses Notizbuchs aufnehmen.\n\nAus dem Verlauf lesen deine anderen Geräte, deine Sicherungen und deine geteilten Ordner. Sie können daher zurückfallen, bis das wieder funktioniert. Nichts, was du geschrieben hast, ist verloren.\n\nPrüfe, ob der Datenträger voll ist, ob der Ordner des Notizbuchs schreibgeschützt ist und ob eine Cloud-App wie OneDrive oder Google Drive damit fertig ist. Openote versucht es bei jedem Speichern erneut.';
 
   @override
   String get saveProblemPageShort => 'Nicht gespeichert — noch im Speicher';
 
   @override
   String get saveProblemPage =>
-      'Openote konnte diese Seite nicht auf Ihrem Computer speichern.\n\nIhre Änderungen sind noch auf dem Bildschirm, und Openote versucht es erneut, wenn Sie das nächste Mal tippen oder das Fenster schließen. Beim ersten Schließen bleibt das Fenster offen, damit Sie das Problem beheben können; schließen Sie es erneut, beendet sich Openote ohne diese Änderungen.\n\nPrüfen Sie, ob der Datenträger voll ist und ob das Notizbuch in einem anderen Programm geöffnet ist.';
+      'Openote konnte diese Seite nicht auf deinem Computer speichern.\n\nDeine Änderungen sind noch auf dem Bildschirm, und Openote versucht es erneut, wenn du das nächste Mal tippst oder das Fenster schließt. Beim ersten Schließen bleibt das Fenster offen, damit du das Problem beheben kannst; schließt du es erneut, beendet sich Openote ohne diese Änderungen.\n\nPrüfe, ob der Datenträger voll ist und ob das Notizbuch in einem anderen Programm geöffnet ist.';
 
   @override
   String get saveProblemPicturesShort => 'Einige Bilder fehlen möglicherweise';
 
   @override
   String saveProblemPictures(int count) {
-    return 'Openote bewahrt von jedem Bild und jeder Zeichnung eine zweite Kopie im eigenen Ordner dieses Notizbuchs auf, damit Ihre anderen Geräte und Ihre Sicherungen sie ebenfalls anzeigen können.\n\nFür $count davon konnte Openote nirgends auf diesem Computer intakte Daten finden — weder in dieser zweiten Kopie noch in der Arbeitsdatei des Notizbuchs. Bis sie wieder auftauchen (von einem anderen Gerät, aus einer Sicherung oder indem Sie das Bild erneut hinzufügen), bleiben sie überall leer, wo sie verwendet werden, auf diesem Computer wie auf jedem anderen.\n\nPrüfen Sie, ob der Datenträger voll ist und ob der Ordner schreibgeschützt ist, und schließen und öffnen Sie das Notizbuch dann erneut. Openote versucht es bei jedem Öffnen erneut.';
+    return 'Openote bewahrt von jedem Bild und jeder Zeichnung eine zweite Kopie im eigenen Ordner dieses Notizbuchs auf, damit deine anderen Geräte und deine Sicherungen sie ebenfalls anzeigen können.\n\nFür $count davon konnte Openote nirgends auf diesem Computer intakte Daten finden — weder in dieser zweiten Kopie noch in der Arbeitsdatei des Notizbuchs. Bis sie wieder auftauchen (von einem anderen Gerät, aus einer Sicherung oder indem du das Bild erneut hinzufügst), bleiben sie überall leer, wo sie verwendet werden, auf diesem Computer wie auf jedem anderen.\n\nPrüfe, ob der Datenträger voll ist und ob der Ordner schreibgeschützt ist, und schließ das Notizbuch und öffne es dann erneut. Openote versucht es bei jedem Öffnen erneut.';
   }
 
   @override
-  String get saveProblemListLockedShort => 'Ihre Notizbuchliste ist gesperrt';
+  String get saveProblemListLockedShort => 'Deine Notizbuchliste ist gesperrt';
 
   @override
   String get saveProblemNewerShort => 'Schreibgeschützt — von neuerem Openote';
 
   @override
   String get saveProblemNewer =>
-      'Dieses Notizbuch enthält Änderungen, die mit einer neueren Version von Openote gemacht wurden, und diese Version kann sie nicht lesen.\n\nDeshalb zeigt Openote Ihnen dieses Notizbuch, ohne es zu verändern. Alles darin ist sicher, und nichts, was Sie hier tun, kann es beschädigen — aber was Sie jetzt eingeben, wird nicht behalten.\n\nWenn Sie Openote auf die neueste Version aktualisieren, können Sie es wieder bearbeiten.';
+      'Dieses Notizbuch enthält Änderungen, die mit einer neueren Version von Openote gemacht wurden, und diese Version kann sie nicht lesen.\n\nDeshalb zeigt Openote dir dieses Notizbuch, ohne es zu verändern. Alles darin ist sicher, und nichts, was du hier tust, kann es beschädigen — aber was du jetzt eingibst, wird nicht behalten.\n\nWenn du Openote auf die neueste Version aktualisierst, kannst du es wieder bearbeiten.';
 
   @override
   String get saveProblemListShort => 'Notizbuchliste nicht gespeichert';
 
   @override
   String get saveProblemList =>
-      'Openote konnte Ihre Notizbuchliste und Einstellungen nicht speichern. Beim ersten Schließen bleibt das Fenster offen. Prüfen Sie den Datenträger und versuchen Sie es erneut, oder schließen Sie das Fenster noch einmal, um trotzdem zu beenden.';
+      'Openote konnte deine Notizbuchliste und Einstellungen nicht speichern. Beim ersten Schließen bleibt das Fenster offen. Prüfe den Datenträger und versuch es erneut, oder schließ das Fenster noch einmal, um trotzdem zu beenden.';
 
   @override
   String get mcpTitle => 'KI-Zugriff';
 
   @override
   String get mcpIntro =>
-      'Lassen Sie einen KI-Assistenten – etwa Claude – Ihre Notizen lesen und durchsuchen, Sie abfragen und Karteikarten daraus erstellen. Das funktioniert nur, solange Openote geöffnet ist, nur auf diesem Computer, und alles, was er hinzufügt, ist eine normale Änderung: Strg+Z macht sie rückgängig.';
+      'Lass einen KI-Assistenten – etwa Claude – deine Notizen lesen und durchsuchen, dich abfragen und Karteikarten daraus erstellen. Das funktioniert nur, solange Openote geöffnet ist, nur auf diesem Computer, und alles, was er hinzufügt, ist eine normale Änderung: Strg+Z macht sie rückgängig.';
 
   @override
   String get mcpPasscodeNote =>
-      'Alles mit einem Code bleibt privat: Ein KI-Assistent kann es weder sehen noch ändern, auch nicht, während Sie es entsperrt haben. Ein Code sperrt Openote, nicht die Datei selbst. Ein KI-Werkzeug, das Dateien auf Ihrem Computer öffnen kann, könnte sie also trotzdem lesen.';
+      'Alles mit einem Code bleibt privat: Ein KI-Assistent kann es weder sehen noch ändern, auch nicht, während du es entsperrt hast. Ein Code sperrt Openote, nicht die Datei selbst. Ein KI-Werkzeug, das Dateien auf deinem Computer öffnen kann, könnte sie also trotzdem lesen.';
 
   @override
   String mcpCouldNotStart(String error) {
@@ -2262,7 +2262,7 @@ class LDe extends L {
 
   @override
   String get mcpRestartHint =>
-      'Ein KI-Assistent sucht beim Start nach Openote. War Ihrer schon geöffnet, starten Sie ihn neu.';
+      'Ein KI-Assistent sucht beim Start nach Openote. War deiner schon geöffnet, starte ihn neu.';
 
   @override
   String mcpClientIsSetUp(String name) {
@@ -2282,7 +2282,7 @@ class LDe extends L {
 
   @override
   String get mcpWebsiteNote =>
-      'Die ChatGPT-Website lässt sich nicht verbinden: Ihre Connectors laufen auf den Servern von OpenAI, die Ihren Computer nicht sehen können. Die Schaltfläche oben ist für die Desktop-App, die ihre Einstellungen von diesem Computer liest. Für die Gemini-App gilt dasselbe wie für die Website – für ihre CLI gibt es eine Schaltfläche.';
+      'Die ChatGPT-Website lässt sich nicht verbinden: Ihre Connectors laufen auf den Servern von OpenAI, die deinen Computer nicht sehen können. Die Schaltfläche oben ist für die Desktop-App, die ihre Einstellungen von diesem Computer liest. Für die Gemini-App gilt dasselbe wie für die Website – für ihre CLI gibt es eine Schaltfläche.';
 
   @override
   String get mcpCopyAddress => 'Adresse kopieren';
@@ -2295,7 +2295,7 @@ class LDe extends L {
 
   @override
   String get mcpOtherToolsBody =>
-      'Openote spricht MCP, den Standard, über den KI-Werkzeuge sich mit Apps verbinden. Jedes MCP-fähige Werkzeug kann das nutzen – der enthaltene Schlüssel ist ein Passwort, fügen Sie ihn also nur in Werkzeuge ein, denen Sie vertrauen.';
+      'Openote spricht MCP, den Standard, über den KI-Werkzeuge sich mit Apps verbinden. Jedes MCP-fähige Werkzeug kann das nutzen – der enthaltene Schlüssel ist ein Passwort, füge ihn also nur in Werkzeuge ein, denen du vertraust.';
 
   @override
   String mcpListening(String port) {
@@ -2310,14 +2310,14 @@ class LDe extends L {
 
   @override
   String get mcpCliIntro =>
-      'Oder führen Sie für Werkzeuge mit Befehlszeile einmalig aus:';
+      'Oder führ für Werkzeuge mit Befehlszeile einmalig aus:';
 
   @override
   String get mcpCopyCommand => 'Befehl kopieren';
 
   @override
   String get mcpCopied =>
-      'Kopiert. Der enthaltene Schlüssel ist ein Passwort – fügen Sie ihn nur in Ihre eigenen Werkzeuge ein.';
+      'Kopiert. Der enthaltene Schlüssel ist ein Passwort – füge ihn nur in deine eigenen Werkzeuge ein.';
 
   @override
   String get mcpChatGptUnreadable =>
@@ -2325,7 +2325,7 @@ class LDe extends L {
 
   @override
   String get mcpChatGptUnparsable =>
-      'Die Einstellungsdatei von ChatGPT enthält etwas, das Openote nicht versteht, daher wurde sie nicht angerührt. Kopieren Sie die Konfiguration unter „Erweitert“ und fügen Sie sie von Hand hinzu.';
+      'Die Einstellungsdatei von ChatGPT enthält etwas, das Openote nicht versteht, daher wurde sie nicht angerührt. Kopiere die Konfiguration unter „Erweitert“ und füge sie von Hand hinzu.';
 
   @override
   String mcpSaveFailed(String error) {
@@ -2334,7 +2334,7 @@ class LDe extends L {
 
   @override
   String get mcpChatGptSetUp =>
-      'Eingerichtet. Starten Sie die ChatGPT-Desktop-App neu, dann erscheint Openote unter ihren MCP-Servern. Die Website kann das nicht nutzen – nur eine App auf diesem Computer kann Openote sehen.';
+      'Eingerichtet. Starte die ChatGPT-Desktop-App neu, dann erscheint Openote unter ihren MCP-Servern. Die Website kann das nicht nutzen – nur eine App auf diesem Computer kann Openote sehen.';
 
   @override
   String get mcpChatGptSavedOnly =>
@@ -2347,7 +2347,7 @@ class LDe extends L {
 
   @override
   String mcpClientSetUp(String name) {
-    return 'Eingerichtet. Wenn $name schon geöffnet ist, starten Sie es neu – es sucht beim Start nach Openote. Fragen Sie es dann nach Ihren Notizen, etwa: „Frag mich ab, was ich diese Woche geschrieben habe.“';
+    return 'Eingerichtet. Wenn $name schon geöffnet ist, starte es neu – es sucht beim Start nach Openote. Frag es dann nach deinen Notizen, etwa: „Frag mich ab, was ich diese Woche geschrieben habe.“';
   }
 
   @override
