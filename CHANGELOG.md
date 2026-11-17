@@ -49,6 +49,9 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   an idea.
 - **The language setting says "System default"**, the same words as every
   other setting that follows your device.
+- **Hold Space and drag to move round the page**, with a pen, a mouse or a
+  finger, over a box or empty page, whatever tool is in hand — the way to pan
+  for a graphics tablet, which has no middle button or wheel. (#20)
 
 ### Fixed
 
@@ -72,6 +75,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Locking a page speaks your language**: the warning that a lock hides a
   page but does not encrypt it, and the rest of both passcode windows, in all
   seven languages.
+- **More of the app speaks your language**: the link window, timetable
+  alerts, what the status bar says when a save goes wrong, AI access, the
+  study panel and the exam date window, with each language's own plurals and
+  date order. The German now says *du* throughout, as most of it already did.
+- **A picture pasted into another notebook keeps its picture.** The copied box
+  named a picture only the first notebook held, so it was blank in the second
+  and on every device that synced it.
 - **A Markdown table wider than its box shows a scroll bar** you can drag,
   instead of quietly cutting off the columns past the edge.
 - **Review writing checks what the page shows.** It was checking text you

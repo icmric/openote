@@ -63,7 +63,7 @@ numbers stay findable.
 | [#41](https://github.com/icmric/openote/issues/41) | **→ v1.0.3 S5, done 17 Nov** (themed buttons drawn at 28 px; ribbon and custom controls not yet). Buttons are too small to hit | S–M | Measured: dialog buttons are *drawn* 20 px tall (compact density takes 8 off a 28 px minimum) with a 40 px clickable box. One theme change plus a look at every dialog. Which reading the reporter means is open |
 | [#42](https://github.com/icmric/openote/issues/42) | **→ v1.0.3 S5, done 17 Nov.** The Sync dialog is cramped | S | A 480 × 460 box with the 8 px scrollbar drawn over its controls. Wider, taller as a share of the window, a gutter for the scrollbar — in one shared place, since seven dialogs scroll |
 | [#43](https://github.com/icmric/openote/issues/43) | **→ v1.0.3 C8, done 17 Nov** (right-click the empty part of either list). A context menu to create things | S–M | Right-click on empty space does nothing today. One menu: section, group, page, notebook, open a notebook. The buttons stay — folding them into a menu adds a click. Same code as #18's *add below the last item* |
-| — (found on #39) | **→ v1.0.3, with S4.** Does a picture survive being pasted into another notebook? | S to check | Blobs are per notebook and a copied box carries the picture's hash, not its bytes, so it should not. Untested. If confirmed, carry the bytes or copy the blob across by the source notebook's id |
+| — (found on #39) | **→ v1.0.3, with S4. Confirmed and fixed 17 Nov.** Does a picture survive being pasted into another notebook? | S | It did not: the box named bytes only the first notebook held. Paste now copies each blob the boxes name (pictures, PDFs, ink, `sha256:` references in text) from the source notebook when this one lacks it. `paste_across_notebooks_test`, which fails without the change |
 | — (found on #41) | **→ v1.0.4.** *Comfortable / Compact* buttons, and comfortable by default for a pen or touch | S–M | The tablet people. Build it with [#15](https://github.com/icmric/openote/issues/15)'s interface scale, which is the same question about text. S5 fixes the default first |
 | — (found on #43) | **→ v1.0.4.** Ctrl+T for a new section | S | OneNote's chord, and Ctrl+N (a new page) is already bound. Belongs with the button-size setting |
 
@@ -350,14 +350,25 @@ warning about what protection does *not* cover is the one most worth
 translating.
 
 **17 November: the passcode dialogs are done** (lock and unlock, warning first, all
-seven languages, guarded by `l10n_test`). Left, by size: link (6 strings), event
-alerts (5), save problem (2), AI access (12, with plurals), study panel (~34),
-planner (~49). **Leave the Sync dialog** until its redesign
-([above](#the-sync-dialog-backups-and-restore)), or the work is thrown away.
+seven languages, guarded by `l10n_test`). **Then, the same day:** the link dialog,
+event alerts, save problems (the sentences themselves, which were built in
+`AppState`: a problem now carries a kind and `shortIn`/`messageIn` say it), AI
+access (plurals, and the connect results by kind), the study panel and the exam
+date dialog (`l10n/study_words.dart`: interval, countdown and short date per
+language, checked against `lib/study`'s English by `study_words_test`). The German
+was mixed *du* and *Sie*; it is *du* throughout now. Left: the planner (~49 strings,
+and `planner_format.dart`'s English weekdays and months), and **the Sync dialog,
+left until its redesign** ([above](#the-sync-dialog-backups-and-restore)), or the
+work is thrown away. A native reader for each language is still owed for all of it.
 
 ---
 
-### 1.15 There is no way to pan with a pen · **S**
+### 1.15 There is no way to pan with a pen · **S** — **Space-drag done 17 November**
+
+**Done:** hold Space and any drag pans — pen, mouse or finger, over a box or empty
+page, whatever tool is in hand — unless something is being typed (`space_pan_test`).
+An opaque layer over the page takes the press, so neither a box nor the pen sees it.
+What stays open is the large answer below: bindings somebody can change.
 
 Middle-drag pans, two fingers pan, the wheel scrolls, and a graphics tablet
 has none of those. A pen drag on empty page is a selection box, so somebody
