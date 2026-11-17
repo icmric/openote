@@ -28,6 +28,7 @@ import 'compacting_toolbar.dart';
 import 'memo.dart';
 import 'font_picker.dart';
 import 'icon_tap.dart';
+import 'phone_shell.dart' show isPhoneWidth;
 import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'settings_dialog.dart';
@@ -316,8 +317,14 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                 // part of the frame — and cost hit area at the screen edge,
                 // which is the one place a pointer can be thrown at infinitely
                 // fast (Fitts's law) and always land.
+                // On a phone the four tabs share the row equally (each is a
+                // thumb-sized target), and the buttons that used to follow them
+                // live in the top bar's menu instead.
                 for (var i = 0; i < _tabCount; i++)
-                  _tabButton(scheme, i, tabs[i]),
+                  if (isPhoneWidth(context))
+                    Expanded(child: _tabButton(scheme, i, tabs[i]))
+                  else
+                    _tabButton(scheme, i, tabs[i]),
                 // **A badge that is also the way back.**
                 //
                 // It was deliberately unpressable — "there is nothing here to
@@ -350,7 +357,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                         ? null
                         : () => setState(() => _tabbedAwayFrom = null),
                   ),
-                const Spacer(),
+                if (!isPhoneWidth(context)) const Spacer(),
                 // The trailing cluster COMPACTS rather than scrolling.
                 //
                 // Reported: "it doesnt handle resizing well (menus should
@@ -364,6 +371,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                 // whatever does not fit into one "More" menu instead —
                 // `alignment: end` keeps it flush against the window edge,
                 // the one thing the scrolling version got right.
+                if (!isPhoneWidth(context))
                 Expanded(
                   child: CompactingToolbar(
                     alignment: MainAxisAlignment.end,

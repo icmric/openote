@@ -27,7 +27,6 @@ build/
 # delete its line here FIRST — otherwise `flutter create` will generate the
 # folder and git will never mention it.
 ios/
-android/
 
 # `web/` came off this list in v1.0.2 for the browser demo, and the warning
 # above is why it is hand-written rather than generated: a throwaway
@@ -59,3 +58,7 @@ l10n-untranslated.txt
 # ever created directly in the tree rather than inside a `.onotebook`.
 assets/**/ops/
 assets/**/manifest.json
+
+# Android: the project is tracked; the Rust libraries it packages are built, not stored
+# (bash app/tool/build_android_libs.sh).
+android/app/src/main/jniLibs/

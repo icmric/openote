@@ -438,6 +438,41 @@ void main() {
     });
   }
 
+  // ── The phone layout: the page, and the drawer ─────────────────────────────
+  for (final drawer in [false, true]) {
+    testWidgets('phone ${drawer ? 'drawer' : 'page'}', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      app.systemLocale = () => const Locale('en', 'AU');
+      t.view.physicalSize = const Size(390, 844);
+      t.view.devicePixelRatio = 1;
+      t.view.padding = const FakeViewPadding(top: 36, bottom: 20);
+      t.view.viewPadding = const FakeViewPadding(top: 36, bottom: 20);
+      addTearDown(t.view.reset);
+      final key = GlobalKey();
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        debugShowCheckedModeBanner: false,
+        builder: (c, child) => RepaintBoundary(key: key, child: child),
+        home: AppShell(app: app),
+      ));
+      for (var i = 0; i < 2; i++) {
+        await t.pump(const Duration(milliseconds: 800));
+        await t.pumpAndSettle();
+      }
+      if (drawer) {
+        t.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+        await t.pumpAndSettle();
+      }
+      await expectLater(find.byKey(key),
+          matchesGoldenFile('goldens/phone_${drawer ? 'drawer' : 'page'}.png'));
+      app.cancelPendingSave();
+    });
+  }
+
   // ── The marker under a word the app corrected ──────────────────────────────
   for (final b in [Brightness.light, Brightness.dark]) {
     testWidgets('autocorrect marker ${b.name}', (t) async {

@@ -103,6 +103,15 @@ class OnoteText {
         // Try the next.
       }
     }
+    // Android: the library is packaged with the app and found by name, not by a
+    // path on disk, so there is no file to look for above.
+    if (Platform.isAndroid) {
+      try {
+        final fns = _Fns(DynamicLibrary.open(_libName));
+        fns._str('', (a) => fns.check(a, 0, 0));
+        return _libName;
+      } catch (_) {}
+    }
     return null;
   }
 

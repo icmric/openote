@@ -24,6 +24,7 @@ import 'context_menus.dart';
 import 'onboarding.dart';
 import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
+import 'phone_shell.dart';
 import 'review_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
@@ -1368,6 +1369,9 @@ class _AppShellState extends State<AppShell> {
   /// nothing the navigator displays has changed lets Flutter skip that subtree
   /// entirely (§7a.6 keystroke-to-paint budget).
   Widget? _navCache;
+
+  /// For the phone's drawer: the menu button opens it, choosing a page closes it.
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Object?>? _navKey;
 
   /// The navigator, built once and reused until something it shows changes.
@@ -1439,6 +1443,7 @@ class _AppShellState extends State<AppShell> {
       listenable: app,
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
+        if (isPhoneWidth(context)) return _phoneShell(context, page);
         return Scaffold(
           // A `Stack`, so a reminder floats OVER the page rather than pushing
           // it. An alert that reflowed the canvas would move the line you were
@@ -1539,6 +1544,65 @@ class _AppShellState extends State<AppShell> {
           ),
         );
       },
+    );
+  }
+}
+
+extension _PhoneShell on _AppShellState {
+  /// **The phone: the page gets the screen.** A slim top bar, the page, and the
+  /// tools at the bottom where the thumb is; the navigator is a drawer, and
+  /// every panel is a sheet or floats over the page. Everything sits inside the
+  /// safe area, so nothing is under the status bar, the notch or the gesture bar.
+  Widget _phoneShell(BuildContext context, TreeNode? page) {
+    final w = MediaQuery.sizeOf(context).width;
+    final reviewSheet =
+        app.openPanel == SidePanelKind.review && app.review.available;
+    final panel = _openPanel(page,
+        reviewMaxWidth: 0, reviewAsSheet: reviewSheet);
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: Drawer(
+        width: w * 0.88 < 336 ? w * 0.88 : 336,
+        child: PhoneNavigator(
+            app: app, onPicked: () => _scaffoldKey.currentState?.closeDrawer()),
+      ),
+      body: SafeArea(
+        child: Listener(
+          onPointerDown: (_) => _ring.value = null,
+          child: Stack(children: [
+            Column(children: [
+              PhoneTopBar(
+                  app: app,
+                  onMenu: () => _scaffoldKey.currentState?.openDrawer()),
+              if (app.findOpen) _FindBar(app: app),
+              UnfinishedImportBar(app: app),
+              Expanded(
+                child: Stack(children: [
+                  Positioned.fill(
+                    child: page == null
+                        ? _EmptyState(app: app)
+                        : app.isLocked(page.id)
+                            ? _LockedPage(app: app, page: page)
+                            : _canvasKeys(PageCanvas(
+                                key: ValueKey(app.pageId), state: app)),
+                  ),
+                  // Any other panel floats over the right edge of the page.
+                  if (panel != null && !reviewSheet)
+                    Positioned(
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        child: PanelEntryFocus(node: _panelEntry, child: panel)),
+                ]),
+              ),
+              if (reviewSheet) ReviewSheet(app: app),
+              _regionWrap(_Region.toolbar, CommandBar(app: app)),
+            ]),
+            AlertPopup(app: app, regionFocus: _alertRegion),
+            ImportProgressCard(app: app),
+          ]),
+        ),
+      ),
     );
   }
 }
