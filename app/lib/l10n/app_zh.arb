@@ -568,5 +568,22 @@
   "protectPolicyAlways": "每次打开时",
   "protectPolicyTenMinutes": "10 分钟内",
   "protectPolicyOneHour": "1 小时内",
-  "protectPolicySession": "直到关闭 Openote"
+  "protectPolicySession": "直到关闭 Openote",
+  "linkTitleNew": "链接",
+  "linkTitleEdit": "编辑链接",
+  "linkTextToShow": "显示的文字",
+  "linkNothingSelected": "没有选中任何可以变成链接的内容",
+  "linkAddress": "地址",
+  "linkOrPage": "或链接到某个页面",
+  "linkRemove": "移除链接",
+  "linkUpdate": "更新",
+  "linkInsert": "插入",
+  "linkNeedWords": "请为链接填写要显示的文字。",
+  "linkBadAddress": "这看起来不是 Openote 能打开的地址。可以试试 https://example.com 这样的地址",
+  "linkNoCaret": "请先把光标放到链接要放的位置。",
+  "linkOneLine": "链接必须在同一行内。请选中同一行里的文字。",
+  "linkOnObject": "图片、表格或卡片不能加链接。请把链接加在文字上。",
+  "linkOnMaths": "公式不能加链接——方括号属于公式本身。",
+  "linkBrackets": "链接文字不能包含方括号。请选择不含方括号的内容。",
+  "linkNested": "这段文字已经有格式或链接。请选择普通文字，或点进链接里编辑它。"
 }

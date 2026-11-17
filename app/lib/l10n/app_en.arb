@@ -2736,5 +2736,73 @@
   "protectPolicySession": "Until Openote is closed",
   "@protectPolicySession": {
     "description": "How long an unlock lasts: until the app is quit."
+  },
+  "linkTitleNew": "Link",
+  "@linkTitleNew": {
+    "description": "Title of the dialog that makes a link."
+  },
+  "linkTitleEdit": "Edit link",
+  "@linkTitleEdit": {
+    "description": "Title of the dialog when editing an existing link."
+  },
+  "linkTextToShow": "Text to show",
+  "@linkTextToShow": {
+    "description": "Label of the field for the words the link shows."
+  },
+  "linkNothingSelected": "There was nothing selected to turn into a link",
+  "@linkNothingSelected": {
+    "description": "Hint under the words field when nothing was selected before opening the dialog."
+  },
+  "linkAddress": "Address",
+  "@linkAddress": {
+    "description": "Label of the web address field."
+  },
+  "linkOrPage": "or link to a page",
+  "@linkOrPage": {
+    "description": "Divider above the list of pages the link can point to instead."
+  },
+  "linkRemove": "Remove link",
+  "@linkRemove": {
+    "description": "Button that removes the link and keeps its words."
+  },
+  "linkUpdate": "Update",
+  "@linkUpdate": {
+    "description": "Button that saves a changed link."
+  },
+  "linkInsert": "Insert",
+  "@linkInsert": {
+    "description": "Button that adds the new link."
+  },
+  "linkNeedWords": "Give the link some words to show.",
+  "@linkNeedWords": {
+    "description": "Error when the words field is empty."
+  },
+  "linkBadAddress": "That doesn't look like an address Openote can open. Try something like https://example.com",
+  "@linkBadAddress": {
+    "description": "Error when the address cannot be opened. Keep the example address as it is."
+  },
+  "linkNoCaret": "Put the cursor where the link should go first.",
+  "@linkNoCaret": {
+    "description": "Why a link could not be made: no cursor in the text."
+  },
+  "linkOneLine": "A link has to sit on one line. Select some words on a single line.",
+  "@linkOneLine": {
+    "description": "Why a link could not be made: the selection runs over more than one line."
+  },
+  "linkOnObject": "A picture, a table or a card can't carry a link. Put it on some words instead.",
+  "@linkOnObject": {
+    "description": "Why a link could not be made: the selection is a picture, table or flashcard."
+  },
+  "linkOnMaths": "An equation can't carry a link — the brackets belong to the maths.",
+  "@linkOnMaths": {
+    "description": "Why a link could not be made: the selection is an equation."
+  },
+  "linkBrackets": "A link's words can't contain square brackets. Select something without them.",
+  "@linkBrackets": {
+    "description": "Why a link could not be made: the selected words contain square brackets."
+  },
+  "linkNested": "That text is already formatted or linked. Select some plain words, or click inside the link to edit it.",
+  "@linkNested": {
+    "description": "Why a link could not be made: the words are already formatted or a link."
   }
 }

@@ -2022,4 +2022,62 @@ class LEn extends L {
 
   @override
   String get protectPolicySession => 'Until Openote is closed';
+
+  @override
+  String get linkTitleNew => 'Link';
+
+  @override
+  String get linkTitleEdit => 'Edit link';
+
+  @override
+  String get linkTextToShow => 'Text to show';
+
+  @override
+  String get linkNothingSelected =>
+      'There was nothing selected to turn into a link';
+
+  @override
+  String get linkAddress => 'Address';
+
+  @override
+  String get linkOrPage => 'or link to a page';
+
+  @override
+  String get linkRemove => 'Remove link';
+
+  @override
+  String get linkUpdate => 'Update';
+
+  @override
+  String get linkInsert => 'Insert';
+
+  @override
+  String get linkNeedWords => 'Give the link some words to show.';
+
+  @override
+  String get linkBadAddress =>
+      'That doesn\'t look like an address Openote can open. Try something like https://example.com';
+
+  @override
+  String get linkNoCaret => 'Put the cursor where the link should go first.';
+
+  @override
+  String get linkOneLine =>
+      'A link has to sit on one line. Select some words on a single line.';
+
+  @override
+  String get linkOnObject =>
+      'A picture, a table or a card can\'t carry a link. Put it on some words instead.';
+
+  @override
+  String get linkOnMaths =>
+      'An equation can\'t carry a link — the brackets belong to the maths.';
+
+  @override
+  String get linkBrackets =>
+      'A link\'s words can\'t contain square brackets. Select something without them.';
+
+  @override
+  String get linkNested =>
+      'That text is already formatted or linked. Select some plain words, or click inside the link to edit it.';
 }

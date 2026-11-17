@@ -2040,4 +2040,62 @@ class LFr extends L {
 
   @override
   String get protectPolicySession => 'Jusqu’à la fermeture d’Openote';
+
+  @override
+  String get linkTitleNew => 'Lien';
+
+  @override
+  String get linkTitleEdit => 'Modifier le lien';
+
+  @override
+  String get linkTextToShow => 'Texte affiché';
+
+  @override
+  String get linkNothingSelected =>
+      'Rien n’était sélectionné pour en faire un lien';
+
+  @override
+  String get linkAddress => 'Adresse';
+
+  @override
+  String get linkOrPage => 'ou lier à une page';
+
+  @override
+  String get linkRemove => 'Supprimer le lien';
+
+  @override
+  String get linkUpdate => 'Mettre à jour';
+
+  @override
+  String get linkInsert => 'Insérer';
+
+  @override
+  String get linkNeedWords => 'Donnez au lien un texte à afficher.';
+
+  @override
+  String get linkBadAddress =>
+      'Cela ne ressemble pas à une adresse qu’Openote peut ouvrir. Essayez par exemple https://example.com';
+
+  @override
+  String get linkNoCaret => 'Placez d’abord le curseur à l’endroit du lien.';
+
+  @override
+  String get linkOneLine =>
+      'Un lien doit tenir sur une seule ligne. Sélectionnez des mots sur une seule ligne.';
+
+  @override
+  String get linkOnObject =>
+      'Une image, un tableau ou une carte ne peut pas porter de lien. Mettez-le plutôt sur des mots.';
+
+  @override
+  String get linkOnMaths =>
+      'Une équation ne peut pas porter de lien : les crochets appartiennent aux maths.';
+
+  @override
+  String get linkBrackets =>
+      'Le texte d’un lien ne peut pas contenir de crochets. Sélectionnez autre chose.';
+
+  @override
+  String get linkNested =>
+      'Ce texte est déjà mis en forme ou lié. Sélectionnez des mots simples, ou cliquez dans le lien pour le modifier.';
 }

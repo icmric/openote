@@ -1943,4 +1943,56 @@ class LZh extends L {
 
   @override
   String get protectPolicySession => '直到关闭 Openote';
+
+  @override
+  String get linkTitleNew => '链接';
+
+  @override
+  String get linkTitleEdit => '编辑链接';
+
+  @override
+  String get linkTextToShow => '显示的文字';
+
+  @override
+  String get linkNothingSelected => '没有选中任何可以变成链接的内容';
+
+  @override
+  String get linkAddress => '地址';
+
+  @override
+  String get linkOrPage => '或链接到某个页面';
+
+  @override
+  String get linkRemove => '移除链接';
+
+  @override
+  String get linkUpdate => '更新';
+
+  @override
+  String get linkInsert => '插入';
+
+  @override
+  String get linkNeedWords => '请为链接填写要显示的文字。';
+
+  @override
+  String get linkBadAddress =>
+      '这看起来不是 Openote 能打开的地址。可以试试 https://example.com 这样的地址';
+
+  @override
+  String get linkNoCaret => '请先把光标放到链接要放的位置。';
+
+  @override
+  String get linkOneLine => '链接必须在同一行内。请选中同一行里的文字。';
+
+  @override
+  String get linkOnObject => '图片、表格或卡片不能加链接。请把链接加在文字上。';
+
+  @override
+  String get linkOnMaths => '公式不能加链接——方括号属于公式本身。';
+
+  @override
+  String get linkBrackets => '链接文字不能包含方括号。请选择不含方括号的内容。';
+
+  @override
+  String get linkNested => '这段文字已经有格式或链接。请选择普通文字，或点进链接里编辑它。';
 }

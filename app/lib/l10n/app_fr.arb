@@ -568,5 +568,22 @@
   "protectPolicyAlways": "À chaque ouverture",
   "protectPolicyTenMinutes": "Pendant 10 minutes",
   "protectPolicyOneHour": "Pendant 1 heure",
-  "protectPolicySession": "Jusqu’à la fermeture d’Openote"
+  "protectPolicySession": "Jusqu’à la fermeture d’Openote",
+  "linkTitleNew": "Lien",
+  "linkTitleEdit": "Modifier le lien",
+  "linkTextToShow": "Texte affiché",
+  "linkNothingSelected": "Rien n’était sélectionné pour en faire un lien",
+  "linkAddress": "Adresse",
+  "linkOrPage": "ou lier à une page",
+  "linkRemove": "Supprimer le lien",
+  "linkUpdate": "Mettre à jour",
+  "linkInsert": "Insérer",
+  "linkNeedWords": "Donnez au lien un texte à afficher.",
+  "linkBadAddress": "Cela ne ressemble pas à une adresse qu’Openote peut ouvrir. Essayez par exemple https://example.com",
+  "linkNoCaret": "Placez d’abord le curseur à l’endroit du lien.",
+  "linkOneLine": "Un lien doit tenir sur une seule ligne. Sélectionnez des mots sur une seule ligne.",
+  "linkOnObject": "Une image, un tableau ou une carte ne peut pas porter de lien. Mettez-le plutôt sur des mots.",
+  "linkOnMaths": "Une équation ne peut pas porter de lien : les crochets appartiennent aux maths.",
+  "linkBrackets": "Le texte d’un lien ne peut pas contenir de crochets. Sélectionnez autre chose.",
+  "linkNested": "Ce texte est déjà mis en forme ou lié. Sélectionnez des mots simples, ou cliquez dans le lien pour le modifier."
 }

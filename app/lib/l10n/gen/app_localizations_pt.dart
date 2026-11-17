@@ -2033,4 +2033,62 @@ class LPt extends L {
 
   @override
   String get protectPolicySession => 'Até o Openote ser fechado';
+
+  @override
+  String get linkTitleNew => 'Link';
+
+  @override
+  String get linkTitleEdit => 'Editar link';
+
+  @override
+  String get linkTextToShow => 'Texto exibido';
+
+  @override
+  String get linkNothingSelected =>
+      'Não havia nada selecionado para virar link';
+
+  @override
+  String get linkAddress => 'Endereço';
+
+  @override
+  String get linkOrPage => 'ou criar link para uma página';
+
+  @override
+  String get linkRemove => 'Remover link';
+
+  @override
+  String get linkUpdate => 'Atualizar';
+
+  @override
+  String get linkInsert => 'Inserir';
+
+  @override
+  String get linkNeedWords => 'Dê ao link um texto para exibir.';
+
+  @override
+  String get linkBadAddress =>
+      'Isso não parece um endereço que o Openote consiga abrir. Tente algo como https://example.com';
+
+  @override
+  String get linkNoCaret => 'Coloque primeiro o cursor onde o link deve ficar.';
+
+  @override
+  String get linkOneLine =>
+      'Um link precisa ficar em uma única linha. Selecione palavras de uma só linha.';
+
+  @override
+  String get linkOnObject =>
+      'Uma imagem, uma tabela ou um cartão não pode ter link. Coloque-o em algumas palavras.';
+
+  @override
+  String get linkOnMaths =>
+      'Uma equação não pode ter link — os colchetes fazem parte da matemática.';
+
+  @override
+  String get linkBrackets =>
+      'O texto de um link não pode ter colchetes. Selecione algo sem eles.';
+
+  @override
+  String get linkNested =>
+      'Esse texto já tem formatação ou link. Selecione palavras simples, ou clique dentro do link para editá-lo.';
 }

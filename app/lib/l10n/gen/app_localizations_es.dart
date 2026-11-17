@@ -2032,4 +2032,62 @@ class LEs extends L {
 
   @override
   String get protectPolicySession => 'Hasta cerrar Openote';
+
+  @override
+  String get linkTitleNew => 'Enlace';
+
+  @override
+  String get linkTitleEdit => 'Editar enlace';
+
+  @override
+  String get linkTextToShow => 'Texto que se muestra';
+
+  @override
+  String get linkNothingSelected =>
+      'No había nada seleccionado para convertir en enlace';
+
+  @override
+  String get linkAddress => 'Dirección';
+
+  @override
+  String get linkOrPage => 'o enlazar a una página';
+
+  @override
+  String get linkRemove => 'Quitar enlace';
+
+  @override
+  String get linkUpdate => 'Actualizar';
+
+  @override
+  String get linkInsert => 'Insertar';
+
+  @override
+  String get linkNeedWords => 'Escribe el texto que mostrará el enlace.';
+
+  @override
+  String get linkBadAddress =>
+      'Eso no parece una dirección que Openote pueda abrir. Prueba algo como https://example.com';
+
+  @override
+  String get linkNoCaret => 'Pon primero el cursor donde debe ir el enlace.';
+
+  @override
+  String get linkOneLine =>
+      'Un enlace tiene que estar en una sola línea. Selecciona palabras de una sola línea.';
+
+  @override
+  String get linkOnObject =>
+      'Una imagen, una tabla o una tarjeta no pueden llevar un enlace. Ponlo en unas palabras.';
+
+  @override
+  String get linkOnMaths =>
+      'Una ecuación no puede llevar un enlace: los corchetes son parte de las matemáticas.';
+
+  @override
+  String get linkBrackets =>
+      'El texto de un enlace no puede tener corchetes. Selecciona algo sin ellos.';
+
+  @override
+  String get linkNested =>
+      'Ese texto ya tiene formato o un enlace. Selecciona palabras sin formato, o haz clic dentro del enlace para editarlo.';
 }

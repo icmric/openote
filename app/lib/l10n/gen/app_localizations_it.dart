@@ -2038,4 +2038,62 @@ class LIt extends L {
 
   @override
   String get protectPolicySession => 'Finché Openote resta aperto';
+
+  @override
+  String get linkTitleNew => 'Link';
+
+  @override
+  String get linkTitleEdit => 'Modifica link';
+
+  @override
+  String get linkTextToShow => 'Testo da mostrare';
+
+  @override
+  String get linkNothingSelected =>
+      'Non c’era niente di selezionato da trasformare in link';
+
+  @override
+  String get linkAddress => 'Indirizzo';
+
+  @override
+  String get linkOrPage => 'oppure collega a una pagina';
+
+  @override
+  String get linkRemove => 'Rimuovi link';
+
+  @override
+  String get linkUpdate => 'Aggiorna';
+
+  @override
+  String get linkInsert => 'Inserisci';
+
+  @override
+  String get linkNeedWords => 'Dai al link un testo da mostrare.';
+
+  @override
+  String get linkBadAddress =>
+      'Non sembra un indirizzo che Openote possa aprire. Prova qualcosa come https://example.com';
+
+  @override
+  String get linkNoCaret => 'Metti prima il cursore dove deve andare il link.';
+
+  @override
+  String get linkOneLine =>
+      'Un link deve stare su una sola riga. Seleziona parole su una sola riga.';
+
+  @override
+  String get linkOnObject =>
+      'Un’immagine, una tabella o una scheda non può avere un link. Mettilo su delle parole.';
+
+  @override
+  String get linkOnMaths =>
+      'Un’equazione non può avere un link: le parentesi appartengono alla matematica.';
+
+  @override
+  String get linkBrackets =>
+      'Il testo di un link non può contenere parentesi quadre. Seleziona qualcosa senza.';
+
+  @override
+  String get linkNested =>
+      'Quel testo è già formattato o collegato. Seleziona parole semplici, oppure fai clic nel link per modificarlo.';
 }

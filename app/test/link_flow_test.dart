@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/gen/app_localizations.dart' show lookupL;
+
 import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
@@ -55,9 +57,10 @@ void main() {
   group('every refusal says something', () {
     // A shortcut that does nothing is reported as broken; a shortcut that
     // explains itself is a rule somebody can work with.
+    for (final loc in kOnoteLocales) {
     for (final why in LinkBlocked.values) {
-      test('${why.name} has words', () {
-        final said = linkRefusal(why);
+      test('${why.name} has words in ${loc.toLanguageTag()}', () {
+        final said = linkRefusal(lookupL(loc), why);
         expect(said, isNotEmpty);
         expect(said.trim(), said);
         // The words of the note, not of the format.
@@ -66,6 +69,7 @@ void main() {
               reason: 'nobody typing a link needs to hear "$jargon"');
         }
       });
+    }
     }
   });
 

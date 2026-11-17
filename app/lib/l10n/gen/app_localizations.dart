@@ -3394,6 +3394,108 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Until Openote is closed'**
   String get protectPolicySession;
+
+  /// Title of the dialog that makes a link.
+  ///
+  /// In en, this message translates to:
+  /// **'Link'**
+  String get linkTitleNew;
+
+  /// Title of the dialog when editing an existing link.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit link'**
+  String get linkTitleEdit;
+
+  /// Label of the field for the words the link shows.
+  ///
+  /// In en, this message translates to:
+  /// **'Text to show'**
+  String get linkTextToShow;
+
+  /// Hint under the words field when nothing was selected before opening the dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'There was nothing selected to turn into a link'**
+  String get linkNothingSelected;
+
+  /// Label of the web address field.
+  ///
+  /// In en, this message translates to:
+  /// **'Address'**
+  String get linkAddress;
+
+  /// Divider above the list of pages the link can point to instead.
+  ///
+  /// In en, this message translates to:
+  /// **'or link to a page'**
+  String get linkOrPage;
+
+  /// Button that removes the link and keeps its words.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove link'**
+  String get linkRemove;
+
+  /// Button that saves a changed link.
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get linkUpdate;
+
+  /// Button that adds the new link.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert'**
+  String get linkInsert;
+
+  /// Error when the words field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Give the link some words to show.'**
+  String get linkNeedWords;
+
+  /// Error when the address cannot be opened. Keep the example address as it is.
+  ///
+  /// In en, this message translates to:
+  /// **'That doesn\'t look like an address Openote can open. Try something like https://example.com'**
+  String get linkBadAddress;
+
+  /// Why a link could not be made: no cursor in the text.
+  ///
+  /// In en, this message translates to:
+  /// **'Put the cursor where the link should go first.'**
+  String get linkNoCaret;
+
+  /// Why a link could not be made: the selection runs over more than one line.
+  ///
+  /// In en, this message translates to:
+  /// **'A link has to sit on one line. Select some words on a single line.'**
+  String get linkOneLine;
+
+  /// Why a link could not be made: the selection is a picture, table or flashcard.
+  ///
+  /// In en, this message translates to:
+  /// **'A picture, a table or a card can\'t carry a link. Put it on some words instead.'**
+  String get linkOnObject;
+
+  /// Why a link could not be made: the selection is an equation.
+  ///
+  /// In en, this message translates to:
+  /// **'An equation can\'t carry a link — the brackets belong to the maths.'**
+  String get linkOnMaths;
+
+  /// Why a link could not be made: the selected words contain square brackets.
+  ///
+  /// In en, this message translates to:
+  /// **'A link\'s words can\'t contain square brackets. Select something without them.'**
+  String get linkBrackets;
+
+  /// Why a link could not be made: the words are already formatted or a link.
+  ///
+  /// In en, this message translates to:
+  /// **'That text is already formatted or linked. Select some plain words, or click inside the link to edit it.'**
+  String get linkNested;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

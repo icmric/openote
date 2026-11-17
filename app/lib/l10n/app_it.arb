@@ -568,5 +568,22 @@
   "protectPolicyAlways": "Ogni volta che si apre",
   "protectPolicyTenMinutes": "Per 10 minuti",
   "protectPolicyOneHour": "Per 1 ora",
-  "protectPolicySession": "Finché Openote resta aperto"
+  "protectPolicySession": "Finché Openote resta aperto",
+  "linkTitleNew": "Link",
+  "linkTitleEdit": "Modifica link",
+  "linkTextToShow": "Testo da mostrare",
+  "linkNothingSelected": "Non c’era niente di selezionato da trasformare in link",
+  "linkAddress": "Indirizzo",
+  "linkOrPage": "oppure collega a una pagina",
+  "linkRemove": "Rimuovi link",
+  "linkUpdate": "Aggiorna",
+  "linkInsert": "Inserisci",
+  "linkNeedWords": "Dai al link un testo da mostrare.",
+  "linkBadAddress": "Non sembra un indirizzo che Openote possa aprire. Prova qualcosa come https://example.com",
+  "linkNoCaret": "Metti prima il cursore dove deve andare il link.",
+  "linkOneLine": "Un link deve stare su una sola riga. Seleziona parole su una sola riga.",
+  "linkOnObject": "Un’immagine, una tabella o una scheda non può avere un link. Mettilo su delle parole.",
+  "linkOnMaths": "Un’equazione non può avere un link: le parentesi appartengono alla matematica.",
+  "linkBrackets": "Il testo di un link non può contenere parentesi quadre. Seleziona qualcosa senza.",
+  "linkNested": "Quel testo è già formattato o collegato. Seleziona parole semplici, oppure fai clic nel link per modificarlo."
 }

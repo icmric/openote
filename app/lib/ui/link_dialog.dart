@@ -18,6 +18,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../l10n/l10n.dart';
 import '../editor/live_markdown_controller.dart';
 import '../theme/tokens.dart';
 import 'toast.dart';
@@ -144,13 +145,12 @@ class _LinkDialogState extends State<_LinkDialog> {
   void _submit() {
     final words = _words.text.trim();
     if (words.isEmpty) {
-      setState(() => _error = 'Give the link some words to show.');
+      setState(() => _error = L.of(context).linkNeedWords);
       return;
     }
     final url = normaliseLinkTarget(_address.text);
     if (url == null) {
-      setState(() => _error = "That doesn't look like an address Openote can "
-          'open. Try something like https://example.com');
+      setState(() => _error = L.of(context).linkBadAddress);
       return;
     }
     Navigator.pop(context, LinkChoice.url(words, url));
@@ -165,8 +165,9 @@ class _LinkDialogState extends State<_LinkDialog> {
   @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
+    final l = L.of(context);
     return AlertDialog(
-      title: Text(_editing ? 'Edit link' : 'Link'),
+      title: Text(_editing ? l.linkTitleEdit : l.linkTitleNew),
       content: SizedBox(
         width: 420,
         child: DialogScrollBody(
@@ -180,11 +181,11 @@ class _LinkDialogState extends State<_LinkDialog> {
                 style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
                   isDense: true,
-                  labelText: 'Text to show',
+                  labelText: l.linkTextToShow,
                   // Said only when it is the thing standing in the way, so it
                   // reads as an instruction rather than as decoration.
                   helperText: _mustName
-                      ? 'There was nothing selected to turn into a link'
+                      ? l.linkNothingSelected
                       : null,
                 ),
                 onSubmitted: (_) => _submit(),
@@ -197,10 +198,10 @@ class _LinkDialogState extends State<_LinkDialog> {
                 autocorrect: false,
                 enableSuggestions: false,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  labelText: 'Address',
-                  hintText: 'https://example.com',
+                  labelText: l.linkAddress,
+                  hintText: _exampleAddress,
                 ),
                 onSubmitted: (_) => _submit(),
               ),
@@ -216,7 +217,7 @@ class _LinkDialogState extends State<_LinkDialog> {
                   Expanded(child: Divider(color: s.border)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Text('or link to a page',
+                    child: Text(l.linkOrPage,
                         style:
                             TextStyle(fontSize: 11, color: s.textSecondary)),
                   ),
@@ -253,15 +254,15 @@ class _LinkDialogState extends State<_LinkDialog> {
           TextButton(
             onPressed: () =>
                 Navigator.pop(context, const LinkChoice.remove()),
-            child: const Text('Remove link'),
+            child: Text(l.linkRemove),
           ),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l.commonCancel),
         ),
         FilledButton(
           onPressed: _submit,
-          child: Text(_editing ? 'Update' : 'Insert'),
+          child: Text(_editing ? l.linkUpdate : l.linkInsert),
         ),
       ],
     );
@@ -288,7 +289,8 @@ Future<bool> runLinkFlow(
   final site = linkSiteAt(ctl.text, ctl.selection);
   if (!site.ok) {
     ScaffoldMessenger.of(context)
-        .showToast(SnackBar(content: Text(linkRefusal(site.blocked!))));
+        .showToast(
+            SnackBar(content: Text(linkRefusal(L.of(context), site.blocked!))));
     return false;
   }
   final choice = await showLinkDialog(
@@ -318,19 +320,15 @@ Future<bool> runLinkFlow(
 /// link needs to hear "inline run" or "atom reference" — and each one names the
 /// thing they are pointing at, so the sentence is actionable rather than a
 /// refusal with no door out of it.
-String linkRefusal(LinkBlocked why) => switch (why) {
-      LinkBlocked.noCaret => 'Put the cursor where the link should go first.',
-      LinkBlocked.lines =>
-        'A link has to sit on one line. Select some words on a single line.',
-      LinkBlocked.object =>
-        "A picture, a table or a card can't carry a link. Put it on some "
-            'words instead.',
-      LinkBlocked.maths =>
-        "An equation can't carry a link — the brackets belong to the maths.",
-      LinkBlocked.bracket =>
-        "A link's words can't contain square brackets. Select something "
-            'without them.',
-      LinkBlocked.nested =>
-        "That text is already formatted or linked. Select some plain words, "
-            'or click inside the link to edit it.',
+/// The shape of an address, shown in the empty field. Not words, so not
+/// translated: it is the same in every language.
+const _exampleAddress = 'https://example.com';
+
+String linkRefusal(L l, LinkBlocked why) => switch (why) {
+      LinkBlocked.noCaret => l.linkNoCaret,
+      LinkBlocked.lines => l.linkOneLine,
+      LinkBlocked.object => l.linkOnObject,
+      LinkBlocked.maths => l.linkOnMaths,
+      LinkBlocked.bracket => l.linkBrackets,
+      LinkBlocked.nested => l.linkNested,
     };

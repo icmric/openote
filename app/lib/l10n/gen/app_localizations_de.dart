@@ -2040,4 +2040,63 @@ class LDe extends L {
 
   @override
   String get protectPolicySession => 'Bis Openote geschlossen wird';
+
+  @override
+  String get linkTitleNew => 'Link';
+
+  @override
+  String get linkTitleEdit => 'Link bearbeiten';
+
+  @override
+  String get linkTextToShow => 'Angezeigter Text';
+
+  @override
+  String get linkNothingSelected =>
+      'Es war nichts ausgewählt, das zu einem Link werden könnte';
+
+  @override
+  String get linkAddress => 'Adresse';
+
+  @override
+  String get linkOrPage => 'oder auf eine Seite verlinken';
+
+  @override
+  String get linkRemove => 'Link entfernen';
+
+  @override
+  String get linkUpdate => 'Aktualisieren';
+
+  @override
+  String get linkInsert => 'Einfügen';
+
+  @override
+  String get linkNeedWords => 'Geben Sie dem Link einen Text zum Anzeigen.';
+
+  @override
+  String get linkBadAddress =>
+      'Das sieht nicht nach einer Adresse aus, die Openote öffnen kann. Versuchen Sie etwas wie https://example.com';
+
+  @override
+  String get linkNoCaret =>
+      'Setzen Sie zuerst den Cursor dorthin, wo der Link hin soll.';
+
+  @override
+  String get linkOneLine =>
+      'Ein Link muss in einer Zeile stehen. Wählen Sie Wörter in einer einzigen Zeile aus.';
+
+  @override
+  String get linkOnObject =>
+      'Ein Bild, eine Tabelle oder eine Karte kann keinen Link tragen. Setzen Sie ihn stattdessen auf Wörter.';
+
+  @override
+  String get linkOnMaths =>
+      'Eine Gleichung kann keinen Link tragen – die Klammern gehören zur Mathematik.';
+
+  @override
+  String get linkBrackets =>
+      'Der Text eines Links darf keine eckigen Klammern enthalten. Wählen Sie etwas ohne sie aus.';
+
+  @override
+  String get linkNested =>
+      'Dieser Text ist bereits formatiert oder verlinkt. Wählen Sie einfache Wörter aus oder klicken Sie in den Link, um ihn zu bearbeiten.';
 }
