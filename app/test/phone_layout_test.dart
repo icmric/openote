@@ -1,6 +1,7 @@
 // On a phone the page gets the screen: notebook, section and page are chosen in
 // a drawer, nothing sits under the status bar or the gesture bar, and wider
 // windows are untouched.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
+import 'package:openote/ui/notebook_manager.dart';
 import 'package:openote/ui/phone_shell.dart';
 import 'package:openote/ui/sidebar.dart';
 
@@ -112,6 +114,25 @@ void main() {
     await t.pumpAndSettle();
     expect(find.byType(PhoneNavigator), findsNothing, reason: 'the drawer closed');
     expect(app.pageId, first.id, reason: 'on the page chosen');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the notebook list fits a phone: no buttons run off the side',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(360, 780));
+    unawaited(showNotebookManager(t.element(find.byType(PhoneTopBar)), app));
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await t.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(t.takeException(), isNull, reason: 'no overflow');
+    final dialog = t.getRect(find.byType(AlertDialog));
+    expect(dialog.left, greaterThanOrEqualTo(0));
+    expect(dialog.right, lessThanOrEqualTo(360));
+    for (final b in find.byType(TextButton).evaluate()) {
+      final r = t.getRect(find.byWidget(b.widget));
+      expect(r.right, lessThanOrEqualTo(dialog.right), reason: 'inside the dialog');
+    }
     app.cancelPendingSave();
   });
 

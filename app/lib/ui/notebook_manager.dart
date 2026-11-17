@@ -14,6 +14,7 @@ import 'join_folder.dart';
 import 'join_git_dialog.dart';
 import '../sync/saf_folder.dart' show safAvailable;
 import 'onboarding.dart';
+import 'phone_shell.dart' show isPhoneWidth;
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
 import 'onenote_cloud_dialog.dart';
@@ -151,9 +152,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
             style: TextStyle(
                 fontSize: 12, color: context.surfaces.textSecondary)),
       ]),
+      insetPadding: EdgeInsets.symmetric(
+          horizontal: isPhoneWidth(context) ? 12 : 40, vertical: 24),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
-        width: 520,
+        width: isPhoneWidth(context) ? double.maxFinite : 520,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 460),
           child: ListView(
@@ -186,7 +189,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
       // OverflowBar — a `Spacer` there throws ("applying parent data"), since
       // Spacer needs a Flex parent.
       actions: [
-        Row(children: [
+        _ActionsLayout(wrap: isPhoneWidth(context), children: [
           TextButton.icon(
             icon: const Icon(Icons.add, size: 18),
             label: Text(l.nbNew),
@@ -235,7 +238,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
               await showOnboarding(root, app);
             },
           ),
-          const Spacer(),
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(l.commonDone)),
@@ -438,6 +440,22 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final busy = _busyId == nb.id;
     final counts = app.notebookCounts(nb.id);
     final highlight = _highlightId == nb.id;
+    final narrow = isPhoneWidth(context);
+    List<Widget> acts() => [
+          if (!current)
+            _act(Icons.open_in_new, l.nbOpenThis, () async {
+              Navigator.pop(context);
+              await app.selectNotebook(nb.id);
+            }),
+          _act(Icons.edit_outlined, l.nbRename, () => _startRename(nb)),
+          _act(Icons.copy_all_outlined, l.nbDuplicate, () => _duplicate(nb)),
+          _act(Icons.delete_outline, l.nbMoveToBin,
+              () => setState(() {
+                    _confirmDeleteId = nb.id;
+                    _renamingId = null;
+                  }),
+              danger: true),
+        ];
 
     return InkWell(
       mouseCursor: WidgetStateMouseCursor.clickable,
@@ -516,24 +534,16 @@ class _NotebookManagerState extends State<_NotebookManager> {
                       height: 15,
                       child: CircularProgressIndicator(strokeWidth: 2)),
                 )
-              else if (!renaming && !confirming) ...[
-                if (!current)
-                  _act(Icons.open_in_new, l.nbOpenThis, () async {
-                    Navigator.pop(context);
-                    await app.selectNotebook(nb.id);
-                  }),
-                _act(Icons.edit_outlined, l.nbRename, () => _startRename(nb)),
-                _act(Icons.copy_all_outlined, l.nbDuplicate,
-                    () => _duplicate(nb)),
-                _act(Icons.delete_outline, l.nbMoveToBin,
-                    () => setState(() {
-                          _confirmDeleteId = nb.id;
-                          _renamingId = null;
-                        }),
-                    danger: true),
-              ],
+              else if (!renaming && !confirming && !narrow) ...acts(),
             ],
           ),
+          // On a phone the row has no room for four buttons beside the name, so
+          // they sit on their own line underneath instead of running off the side.
+          if (narrow && !busy && !renaming && !confirming)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Row(mainAxisSize: MainAxisSize.min, children: acts()),
+            ),
           // Inline confirm — no second dialog, and the list stays put so you can
           // change your mind or delete another one straight after.
           if (confirming && app.livesInSharedFolder(nb.id))
@@ -663,6 +673,33 @@ class _NotebookManagerState extends State<_NotebookManager> {
         tooltip: tip,
         onPressed: onTap,
       );
+}
+
+/// The manager's buttons: one row on a wide window with "Done" pushed to the
+/// right, and a wrapping block on a phone so none of them runs off the side.
+class _ActionsLayout extends StatelessWidget {
+  const _ActionsLayout({required this.wrap, required this.children});
+  final bool wrap;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    if (wrap) {
+      return SizedBox(
+        width: double.infinity,
+        child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 2,
+            runSpacing: 2,
+            children: children),
+      );
+    }
+    return Row(children: [
+      ...children.take(children.length - 1),
+      const Spacer(),
+      children.last,
+    ]);
+  }
 }
 
 String _daysLeft(int deletedAt, int retentionDays) {
