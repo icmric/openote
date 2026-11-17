@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import '../media/pdf_open.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
@@ -69,9 +70,8 @@ Future<void> showPdfViewerDialog(
             ),
             const Divider(height: 1),
             Expanded(
-              child: PdfViewer.data(
-                bytes,
-                sourceName: hash,
+              child: PdfViewer(
+                pdfBytesRef(bytes, sourceName: hash),
                 controller: controller,
                 initialPageNumber: initialPage + 1,
                 params: PdfViewerParams(

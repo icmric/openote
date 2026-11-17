@@ -31,6 +31,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import '../media/pdf_open.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 
@@ -107,7 +108,7 @@ Future<PdfImportResult> importPdfFile(
   // The source file, once, into the content-addressed store. Everything else
   // in this import is a reference to this hash.
   final bytes = await File(path).readAsBytes();
-  final doc = await PdfDocument.openData(bytes, sourceName: displayName);
+  final doc = await openPdfBytes(bytes, sourceName: displayName);
   try {
     final pdfHash = placement == PdfPlacement.pagePerSlide
         ? app.importBlob(nb, bytes, 'application/pdf')

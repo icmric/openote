@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../state/app_state.dart';
+import 'pdf_open.dart';
 
 /// Render scale for page images: the importer's historical choice, kept so an
 /// on-demand slide is pixel-for-pixel the slide the raster path produced.
@@ -126,7 +127,7 @@ abstract final class PdfPages {
   static Future<_Doc?> _load(String hash, Uint8List bytes) async {
     try {
       final entry = _Doc()
-        ..doc = await PdfDocument.openData(bytes, sourceName: hash);
+        ..doc = await openPdfBytes(bytes, sourceName: hash);
       _docs[hash] = entry;
       return entry;
     } catch (e) {
