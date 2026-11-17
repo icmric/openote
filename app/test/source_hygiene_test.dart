@@ -66,6 +66,13 @@ void main() {
     //
     // There is no runtime test for this. A debug suite cannot observe what a
     // release build does, so the check is on the source.
+    //
+    // The first six were picked by hand. The rest are every `debug…` getter
+    // in the pinned Flutter whose value is assigned only inside an assert —
+    // found by reading the SDK (backlog §1.7, 17 November), because a list
+    // remembered from one incident misses the next. In release each either
+    // throws or answers null. The sweep that produced it found nothing in
+    // lib/ reading any of them.
     const banned = [
       'debugNeedsLayout',
       'debugNeedsPaint',
@@ -73,6 +80,16 @@ void main() {
       'debugDoingThisPaint',
       'debugDoingThisResize',
       'debugDisposed',
+      'debugAnimation',
+      'debugController',
+      'debugGlobalRouteCount',
+      'debugHandleCount',
+      'debugLastPendingEventTimestamp',
+      'debugLayer',
+      'debugLayoutParent',
+      'debugName',
+      'debugNeedsCompositedLayerUpdate',
+      'debugParentDataType',
     ];
     final offenders = <String>[];
     for (final f in _libFiles()) {
@@ -82,8 +99,11 @@ void main() {
         final code = line.trimLeft();
         if (code.startsWith('//') || code.startsWith('///')) continue;
         for (final name in banned) {
-          if (!line.contains('.$name')) continue;
+          if (!RegExp('\\.$name\\b').hasMatch(line)) continue;
           if (line.contains('assert(')) continue;
+          // dart:isolate's `Isolate.debugName` is a plain field, set in every
+          // build; the banned one is `LogicalKeyboardKey.debugName`.
+          if (name == 'debugName' && line.contains('Isolate.')) continue;
           offenders.add('${f.path}:${i + 1}  $code');
         }
       }
