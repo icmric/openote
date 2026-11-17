@@ -1114,6 +1114,9 @@ class LPt extends L {
   String get nbImportGit => 'De um endereço git';
 
   @override
+  String get nbImportDriveFolder => 'Abrir de uma pasta do Drive';
+
+  @override
   String get nbImportInto => 'Importar para um caderno novo';
 
   @override

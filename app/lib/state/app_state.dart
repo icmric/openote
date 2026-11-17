@@ -78,7 +78,9 @@ import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/device_identity.dart';
 import '../sync/device_seq.dart';
+import '../sync/folder_bridge.dart';
 import '../sync/folder_watch.dart';
+import '../sync/saf_folder.dart';
 import '../sync/op.dart';
 import '../sync/op_log.dart';
 import '../sync/cloud_folders.dart';
@@ -290,8 +292,16 @@ class AppState extends ChangeNotifier
   // `app.nodes` — so any invariant on `nodes` was silently bypassed by import.
 
   /// Bytes of a blob in the current notebook, or null.
-  Uint8List? blob(String hash) =>
-      notebookId == null ? null : _repo.getBlob(notebookId!, hash);
+  Uint8List? blob(String hash) {
+    final nb = notebookId;
+    if (nb == null) return null;
+    final bytes = _repo.getBlob(nb, hash);
+    // A notebook read from a Drive folder holds its text and not its pictures:
+    // a picture the page needs is fetched now, in the background, and the view
+    // that is showing a placeholder is told when it arrives.
+    if (bytes == null) _bridgeFor(nb)?.want(hash, _bytesMayHaveArrived);
+    return bytes;
+  }
 
   /// **Bumped when bytes that were not readable a moment ago may be now.**
   ///
@@ -1005,6 +1015,146 @@ class AppState extends ChangeNotifier
     SecretStore.delete(_githubSecret);
     _repo.setSetting(_githubKey, null);
     notifyListeners();
+  }
+
+  // ── A notebook in a Drive folder (Android) ──────────────────────────────
+  //
+  // Read through Android's folder picker: the logs are copied into this
+  // device's own sync directory (so everything that reads them is unchanged)
+  // and the pictures come down on demand. See `sync/folder_bridge.dart` and
+  // `docs/planning/android.md`.
+
+  static String _folderKey(String nb) => 'folderSync:$nb';
+
+  final Map<String, FolderBridge> _folderBridges = {};
+  final Map<String, DateTime> _folderPulledAt = {};
+
+  /// How the last pull went, for the person waiting on the first one.
+  String? folderPullSummary;
+
+  /// **Viewing only, for now.** Nothing a phone changes in such a notebook is
+  /// sent back yet, so changes are refused rather than kept somewhere only this
+  /// phone would ever see them. Lifted when sending back is built and has been
+  /// tried on a copy.
+  static const SaveProblem _folderViewOnly = SaveProblem(
+    short: 'Viewing only',
+    message: 'This notebook is being read from a Drive folder. Changes made '
+        'on this phone are not sent back yet, so they are not kept.',
+  );
+
+  bool isFolderNotebook(String nb) => _repo.getSetting(_folderKey(nb)) is Map;
+
+  FolderBridge? _bridgeFor(String nb) {
+    final have = _folderBridges[nb];
+    if (have != null) return have;
+    final raw = _repo.getSetting(_folderKey(nb));
+    if (raw is! Map || !safAvailable) return null;
+    final tree = raw['tree'];
+    final dir = _repo.notebooks.where((n) => n.id == nb).firstOrNull?.logDir;
+    if (tree is! String || dir == null) return null;
+    return _folderBridges[nb] =
+        FolderBridge(folder: SafFolder(tree), logDirPath: dir);
+  }
+
+  /// Bring the folder's logs down, at most every twenty seconds. Never throws:
+  /// a provider that is slow or away must not stop the notebook opening.
+  Future<void> _pullFolder(String nb, {bool force = false}) async {
+    final bridge = _bridgeFor(nb);
+    if (bridge == null) return;
+    final last = _folderPulledAt[nb];
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < const Duration(seconds: 20)) {
+      return;
+    }
+    _folderPulledAt[nb] = DateTime.now();
+    try {
+      final r = await bridge.pull();
+      folderPullSummary = r.toString();
+      debugPrint('[openote/folder] pulled: $r');
+    } catch (e) {
+      debugPrint('[openote/folder] pull failed: $e');
+    }
+  }
+
+  /// Open a notebook that lives in a Drive folder the person has chosen.
+  ///
+  /// The same shape as [joinNotebookFromGit]: pull into this device's own log
+  /// directory, adopt it, select it, replay. Returns null on success, or a
+  /// message to show. Never throws. **Reads only: nothing is written to the
+  /// folder.**
+  Future<String?> joinNotebookFromFolder(String tree,
+      {void Function(String stage)? onProgress,
+      @visibleForTesting FolderApi? folderForTest}) async {
+    if (folderForTest == null && !safAvailable) {
+      return 'This is only on Android.';
+    }
+    final FolderApi folder = folderForTest ?? SafFolder(tree);
+    onProgress?.call('Looking at the folder…');
+    final List<SafEntry> root;
+    try {
+      root = await folder.list();
+    } catch (e) {
+      return 'Could not read that folder. Choose it again and allow access.';
+    }
+    if (!root.any((e) => e.dir && e.name == 'ops')) {
+      return 'That folder does not look like an Openote notebook: there is no '
+          'ops folder in it. Choose the folder whose name ends in .onotebook.';
+    }
+    var title = 'Notebook';
+    String? knownId;
+    final mf = root.where((e) => !e.dir && e.name == 'manifest.json').firstOrNull;
+    if (mf != null) {
+      try {
+        final j = jsonDecode(utf8.decode(await folder.read(mf.id)));
+        if (j is Map) {
+          final t = j['title'];
+          if (t is String && t.trim().isNotEmpty) title = t.trim();
+          final i = j['notebookId'];
+          if (i is String && i.isNotEmpty) knownId = i;
+        }
+      } catch (_) {
+        // The name is cosmetic; the logs are the notebook.
+      }
+    }
+    // Already here? Open that one rather than read a second copy.
+    if (knownId != null) {
+      for (final n in _repo.notebooks) {
+        final raw = _repo.getSetting(_folderKey(n.id));
+        if (raw is Map && raw['notebookId'] == knownId) {
+          await selectNotebook(n.id);
+          return null;
+        }
+      }
+    }
+
+    final into = _repo.freeLogDirPath(title);
+    final bridge = FolderBridge(folder: folder, logDirPath: into);
+    onProgress?.call('Reading the notes…');
+    try {
+      Directory(into).createSync(recursive: true);
+      final r = await bridge.pull();
+      folderPullSummary = r.toString();
+      debugPrint('[openote/folder] first pull: $r');
+    } catch (e) {
+      try {
+        final d = Directory(into);
+        if (d.existsSync()) d.deleteSync(recursive: true);
+      } catch (_) {}
+      return 'Could not read the notebook from that folder: $e';
+    }
+
+    onProgress?.call('Opening…');
+    final ref = await _repo.adoptLogDirectory(into, title: title);
+    _repo.setSetting(_folderKey(ref.id), {'tree': tree, 'notebookId': knownId});
+    _folderBridges[ref.id] = bridge;
+    _folderPulledAt[ref.id] = DateTime.now();
+    await selectNotebook(ref.id);
+    await syncPull(ref.id);
+    reloadNodes();
+    await _loadNotebook();
+    notifyListeners();
+    return null;
   }
 
   /// Join a notebook from a git URL — the other half of publishing one.
@@ -2252,6 +2402,9 @@ class AppState extends ChangeNotifier
     }
     _pulling = true;
     try {
+      // A notebook that lives in a Drive folder: bring the other devices' logs
+      // down first, so the replay below has them.
+      await _pullFolder(nb);
       var total = 0;
       // Loop rather than recurse: a device syncing a burst of logs can keep
       // setting the flag, and each round must see the ops that landed during
@@ -11747,6 +11900,7 @@ class AppState extends ChangeNotifier
     // it would describe a symptom of it as if it were a separate problem.
     final nb = notebookId;
     return (nb == null ? null : _logAhead[nb]) ??
+        (nb != null && isFolderNotebook(nb) ? _folderViewOnly : null) ??
         _pageSaveError ??
         _workspaceSaveError ??
         // A paste or drop whose bytes never landed anywhere. As costly as a
@@ -11783,7 +11937,8 @@ class AppState extends ChangeNotifier
   /// encrypted payload. Everything the user can already see stays on screen;
   /// what stops is writing, because every op this device would append is a
   /// diff against a replay that is missing whatever those operations did.
-  bool notebookIsReadOnly(String nb) => _logAhead.containsKey(nb);
+  bool notebookIsReadOnly(String nb) =>
+      _logAhead.containsKey(nb) || isFolderNotebook(nb);
 
   /// Put [nb] into the read-only state a log from a newer build produces,
   /// without needing one. For the tests that check what this build refuses to

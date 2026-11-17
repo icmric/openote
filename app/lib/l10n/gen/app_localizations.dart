@@ -1871,6 +1871,12 @@ abstract class L {
   /// **'From a git address'**
   String get nbImportGit;
 
+  /// Button in the notebook list, on Android only: opens a notebook that lives in a Google Drive folder the person chooses with the system folder picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Open from a Drive folder'**
+  String get nbImportDriveFolder;
+
   /// Heading over the list of things that can be imported.
   ///
   /// In en, this message translates to:

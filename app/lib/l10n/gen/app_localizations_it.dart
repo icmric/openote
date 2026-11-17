@@ -1118,6 +1118,9 @@ class LIt extends L {
   String get nbImportGit => 'Da un indirizzo git';
 
   @override
+  String get nbImportDriveFolder => 'Apri da una cartella di Drive';
+
+  @override
   String get nbImportInto => 'Importa in un nuovo quaderno';
 
   @override

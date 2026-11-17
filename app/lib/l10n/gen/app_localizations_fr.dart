@@ -1118,6 +1118,9 @@ class LFr extends L {
   String get nbImportGit => 'Depuis une adresse git';
 
   @override
+  String get nbImportDriveFolder => 'Ouvrir depuis un dossier Drive';
+
+  @override
   String get nbImportInto => 'Importer dans un nouveau carnet';
 
   @override

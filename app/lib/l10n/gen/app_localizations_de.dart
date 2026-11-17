@@ -1118,6 +1118,9 @@ class LDe extends L {
   String get nbImportGit => 'Von einer git-Adresse';
 
   @override
+  String get nbImportDriveFolder => 'Aus einem Drive-Ordner öffnen';
+
+  @override
   String get nbImportInto => 'In ein neues Notizbuch importieren';
 
   @override

@@ -1065,6 +1065,9 @@ class LZh extends L {
   String get nbImportGit => '从 git 地址导入';
 
   @override
+  String get nbImportDriveFolder => '从 Drive 文件夹打开';
+
+  @override
   String get nbImportInto => '导入到新的笔记本';
 
   @override

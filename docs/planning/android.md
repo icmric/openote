@@ -14,6 +14,18 @@ groundwork and the plan, so the next steps start from what is true.
 | Icon | The Openote icon is generated for Android, but as the square icon on white. **Open:** an adaptive icon, purple background with the ring as foreground |
 | Release build | `flutter build apk --release --target-platform android-arm64` works (about 104 MB), signed with the debug key, fine for sideloading to test |
 
+## Stage 1 of Drive sync: built (17 Nov), to be tried on a phone
+
+**"Open from a Drive folder"** is in the notebook list on Android. It picks a folder with the system picker, copies the other devices' logs and the manifest into this device's own sync directory (`sync/folder_bridge.dart`, `sync/saf_folder.dart`, `MainActivity.kt`), and opens the notebook through the same adopt-and-replay path a git join uses (`AppState.joinNotebookFromFolder`). The text and outline are there at once; **pictures are fetched on demand**, in the background, three at a time, and kept only if their bytes are their hash. A real notebook (the owner's Honours one) is 11 MB of logs in 7 files and 93 MB of pictures in 625, which is why the pictures wait.
+
+**Viewing only.** Nothing is written to the folder, and the phone refuses edits in such a notebook (`isFolderNotebook` makes `notebookIsReadOnly` true; the save status says "Viewing only"), because changes kept only on the phone would be stranded. Lifted when pushing is built and tried on a copy.
+
+**Test copy:** `Openote test copy/Honours (copy).onotebook` on the owner's personal Drive: logs, pictures and manifest copied from the real notebook, which was only read. It is away from the desktop's sync location on purpose.
+
+Tests: `test/folder_join_test.dart` reads a real published notebook through a fake folder: outline and text at once, no picture read to open it, a picture fetched on demand and told to the app, a damaged picture refused, a longer local log never replaced, the folder never written to, the same folder not opened twice.
+
+**Next:** try it on the phone and report the time it takes (it is shown after opening); then push (this device's own log and new pictures, whole-file replace, never touching anything else); then the Sync dialog's own "Choose a Drive folder" and automatic syncing; then delete the temporary folder test page.
+
 ## Open, before anyone but the owner uses it
 
 - **Application id** is still `com.example.openote`. Make it `org.openote.openote` (as Linux and macOS use) before any release: it cannot be changed after one, and it means moving `MainActivity`.

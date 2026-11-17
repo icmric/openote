@@ -1114,6 +1114,9 @@ class LEn extends L {
   String get nbImportGit => 'From a git address';
 
   @override
+  String get nbImportDriveFolder => 'Open from a Drive folder';
+
+  @override
   String get nbImportInto => 'Import into a new notebook';
 
   @override

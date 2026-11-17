@@ -315,6 +315,7 @@
   "nbImport": "导入",
   "nbImportBusy": "已经有一个导入在进行 — 一次只能导入一个。",
   "nbImportGit": "从 git 地址导入",
+  "nbImportDriveFolder": "从 Drive 文件夹打开",
   "nbImportInto": "导入到新的笔记本",
   "nbImportMarkdown": "Markdown 文件夹",
   "nbImportOne": "OneNote 分区 (.one)",

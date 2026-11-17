@@ -1116,6 +1116,9 @@ class LEs extends L {
   String get nbImportGit => 'Desde una dirección git';
 
   @override
+  String get nbImportDriveFolder => 'Abrir desde una carpeta de Drive';
+
+  @override
   String get nbImportInto => 'Importar a un cuaderno nuevo';
 
   @override

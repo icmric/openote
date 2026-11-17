@@ -1521,6 +1521,10 @@
     "description": "Message when a second import is started while one is running."
   },
   "nbImportGit": "From a git address",
+  "nbImportDriveFolder": "Open from a Drive folder",
+  "@nbImportDriveFolder": {
+    "description": "Button in the notebook list, on Android only: opens a notebook that lives in a Google Drive folder the person chooses with the system folder picker."
+  },
   "@nbImportGit": {
     "description": "Import choice: clone a notebook from a git repository."
   },

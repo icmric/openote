@@ -10,7 +10,9 @@ import '../l10n/l10n.dart';
 import '../core/capabilities.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'join_folder.dart';
 import 'join_git_dialog.dart';
+import '../sync/saf_folder.dart' show safAvailable;
 import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
@@ -315,6 +317,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
         // make.
         choice(Icons.cloud_download_outlined, l.nbImportGit,
             (m, c) => showJoinFromGitDialog(c, app, messenger: m)),
+        // Android: a notebook in a Google Drive folder, through the system's
+        // folder picker. No sign-in here.
+        if (safAvailable)
+          choice(Icons.folder_open_outlined, l.nbImportDriveFolder,
+              (m, c) => openFromDriveFolder(c, app, messenger: m)),
       ]),
     );
   }

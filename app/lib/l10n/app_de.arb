@@ -315,6 +315,7 @@
   "nbImport": "Importieren",
   "nbImportBusy": "Es läuft schon ein Import — immer nur einer.",
   "nbImportGit": "Von einer git-Adresse",
+  "nbImportDriveFolder": "Aus einem Drive-Ordner öffnen",
   "nbImportInto": "In ein neues Notizbuch importieren",
   "nbImportMarkdown": "Markdown-Ordner",
   "nbImportOne": "OneNote-Abschnitt (.one)",

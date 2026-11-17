@@ -834,11 +834,9 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                   tile(Icons.title, l.barHeading1, () => app.toggleLinePrefix('# ')),
                   _SheetTile(
                       text: 'H2',
-                      label: 'H2',
                       onTap: can ? () => app.toggleLinePrefix('## ') : null),
                   _SheetTile(
                       text: 'H3',
-                      label: 'H3',
                       onTap: can ? () => app.toggleLinePrefix('### ') : null),
                   tile(Icons.format_quote, l.barQuote,
                       () => app.toggleLinePrefix('> ')),
@@ -2646,7 +2644,7 @@ class _SheetTile extends StatelessWidget {
   const _SheetTile({
     this.icon,
     this.text,
-    required this.label,
+    this.label,
     required this.onTap,
     this.selected = false,
     this.swatch,
@@ -2655,7 +2653,9 @@ class _SheetTile extends StatelessWidget {
   final double? width;
   final IconData? icon;
   final String? text;
-  final String label;
+  /// The name under the glyph and for a screen reader; the glyph's own text
+  /// when there is none (H2, H3).
+  final String? label;
   final VoidCallback? onTap;
   final bool selected;
 
@@ -2672,8 +2672,9 @@ class _SheetTile extends StatelessWidget {
         : selected
             ? scheme.primary
             : s.textPrimary;
+    final name = label ?? text ?? '';
     return Semantics(
-      label: label,
+      label: name,
       button: true,
       enabled: enabled,
       selected: selected,
@@ -2709,7 +2710,7 @@ class _SheetTile extends StatelessWidget {
               // Shrinks a long word to fit rather than cutting it off.
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(label,
+                child: Text(name,
                     maxLines: 1, style: TextStyle(fontSize: 11, color: fg)),
               ),
             ),
