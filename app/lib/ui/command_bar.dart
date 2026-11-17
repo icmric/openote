@@ -720,6 +720,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
 
   // ── Phone: the short Write strip, and the two sheets ─────────────────────
 
+  /// **Put the keyboard away while a sheet is open.** The box being written in
+  /// keeps its caret and selection (it is only the keyboard that is hidden), so
+  /// bold, a heading or a colour still land where they should, and the sheet
+  /// has the room. Tapping the box brings the keyboard back.
+  void _hideKeyboard() {
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    });
+  }
+
   /// What is wanted at a glance while typing, and nothing else: bold, italic,
   /// underline, bullets, a checklist, a tag, and **Aa**, which opens everything
   /// the desktop row has. The desktop row is about twenty-five controls wide;
@@ -768,6 +779,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
 
   /// Everything the Write row has, in a sheet, in groups with big targets.
   void _showFormatSheet(BuildContext context) {
+    _hideKeyboard();
     final l = L.of(context);
     final s = context.surfaces;
     String plain(String label) => label.split('  (').first;
@@ -902,6 +914,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// Insert row and right-click menu use. What this build cannot do yet is shown
   /// greyed, not left out.
   void _showInsertSheet(BuildContext context) {
+    _hideKeyboard();
     final l = L.of(context);
     final s = context.surfaces;
     showModalBottomSheet<void>(
@@ -912,19 +925,31 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       builder: (sheet) => SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          child: Wrap(spacing: 8, runSpacing: 8, children: [
-            for (final item in kInsertRibbon)
-              _SheetTile(
-                icon: item.icon,
-                label: item.label(l),
-                onTap: item.available
-                    ? () {
-                        Navigator.of(sheet).pop();
-                        item.run(context, app, insertAnchor(app, item));
-                      }
-                    : null,
-              ),
-          ]),
+          // A grid, so the sheet is the full width of the screen with the
+          // tiles filling it (a Wrap shrank the sheet to its own width).
+          child: GridView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                mainAxisExtent: 72),
+            children: [
+              for (final item in kInsertRibbon)
+                _SheetTile(
+                  width: null,
+                  icon: item.icon,
+                  label: item.label(l),
+                  onTap: item.available
+                      ? () {
+                          Navigator.of(sheet).pop();
+                          item.run(context, app, insertAnchor(app, item));
+                        }
+                      : null,
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2625,7 +2650,9 @@ class _SheetTile extends StatelessWidget {
     required this.onTap,
     this.selected = false,
     this.swatch,
+    this.width = 80,
   });
+  final double? width;
   final IconData? icon;
   final String? text;
   final String label;
@@ -2656,7 +2683,7 @@ class _SheetTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          width: 80,
+          width: width,
           height: 72,
           decoration: BoxDecoration(
             color: selected ? scheme.primary.withValues(alpha: .12) : s.chrome,

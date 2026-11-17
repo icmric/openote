@@ -8,6 +8,7 @@
 /// desktop layout.
 library;
 
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
@@ -15,6 +16,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/section_palette.dart';
 import '../theme/tokens.dart';
+import 'folder_spike_page.dart';
 import 'icon_tap.dart';
 import 'notebook_manager.dart';
 import 'review_panel.dart';
@@ -96,9 +98,16 @@ class PhoneTopBar extends StatelessWidget {
                 app.togglePageOverview();
               case 'settings':
                 showSettingsDialog(context, app);
+              case 'spike':
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const FolderSpikePage()));
             }
           },
           itemBuilder: (_) => [
+            // A temporary test of syncing through a Drive folder (Android only).
+            if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
+              const PopupMenuItem(
+                  value: 'spike', height: 48, child: Text('Folder test (temporary)')),
             for (final (v, icon, label) in [
               ('find', Icons.search, l.barFindOnPage),
               ('study', Icons.school_outlined, l.barStudy),
