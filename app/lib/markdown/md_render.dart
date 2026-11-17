@@ -155,6 +155,64 @@ class MarkdownView extends StatefulWidget {
   State<MarkdownView> createState() => _MarkdownViewState();
 }
 
+/// A Markdown table wider than its box, with a scroll bar that says so.
+///
+/// v1.0.2 bug 13: *a wide Markdown table is cut off, not scrolled*. It did
+/// scroll — a bare horizontal scroll view — but a desktop mouse cannot drag a
+/// scroll view in Flutter, and nothing on screen said there was more, so the
+/// columns past the box's edge were simply not there for anyone using one.
+/// The bar shows only when the table is wider than the box, and can be
+/// dragged; Shift and the wheel, or a trackpad, move it too.
+class _WideTable extends StatefulWidget {
+  const _WideTable({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_WideTable> createState() => _WideTableState();
+}
+
+class _WideTableState extends State<_WideTable> {
+  final _scroll = ScrollController();
+
+  /// Whether the table is wider than its box. Only then does it get the bar
+  /// and the room under it, so a table that fits looks exactly as before.
+  bool _wide = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  bool _onMetrics(ScrollMetricsNotification n) {
+    final wide = n.metrics.maxScrollExtent > 0;
+    if (wide != _wide) setState(() => _wide = wide);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      NotificationListener<ScrollMetricsNotification>(
+        onNotification: _onMetrics,
+        child: Scrollbar(
+          controller: _scroll,
+          thumbVisibility: _wide,
+          // Draggable on every platform, not only where Material defaults it
+          // on: a pen on a tablet is a mouse to this bar.
+          interactive: true,
+          child: SingleChildScrollView(
+            controller: _scroll,
+            scrollDirection: Axis.horizontal,
+            // Room under the table for the bar, so it never covers the last
+            // row.
+            padding: EdgeInsets.only(bottom: _wide ? 12 : 0),
+            child: widget.child,
+          ),
+        ),
+      );
+}
+
 /// Stateful ONLY for the parse cache: a page canvas rebuilds every visible
 /// block on each app notify (drag frames, ink commits, typing elsewhere), and
 /// re-parsing every text block's Markdown per frame made busy imported pages
@@ -405,8 +463,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       // Horizontally scrollable: a wide pasted table must not force the whole
       // page to scroll sideways.
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: _WideTable(
         child: ConstrainedBox(
           constraints: const BoxConstraints(minWidth: 240),
           child: Table(
