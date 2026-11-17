@@ -2091,4 +2091,53 @@ class LPt extends L {
   @override
   String get linkNested =>
       'Esse texto já tem formatação ou link. Selecione palavras simples, ou clique dentro do link para editá-lo.';
+
+  @override
+  String get alertsTitle => 'Alertas antes das aulas';
+
+  @override
+  String get alertsIntro =>
+      'O Openote pode avisar antes de começar algo do seu horário. Ele deduz o tipo de cada evento pelo nome, então escolha os tipos pelos quais você quer mesmo ser interrompido.';
+
+  @override
+  String get alertsPreset => 'Avisar 10 minutos antes das aulas';
+
+  @override
+  String get alertsAllOff => 'Desativar todos';
+
+  @override
+  String get alertsWhileRunning =>
+      'Os alertas aparecem dentro do Openote, então só chegam a você enquanto ele está aberto. O que você perder fica esperando neste painel na próxima vez que abrir.';
+
+  @override
+  String get alertsAtStart => 'No início';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get eventKindLecture => 'Aula teórica';
+
+  @override
+  String get eventKindTutorial => 'Tutoria';
+
+  @override
+  String get eventKindLab => 'Laboratório / prática';
+
+  @override
+  String get eventKindWorkshop => 'Oficina';
+
+  @override
+  String get eventKindSeminar => 'Seminário';
+
+  @override
+  String get eventKindExam => 'Prova / teste';
+
+  @override
+  String get eventKindMeeting => 'Reunião';
+
+  @override
+  String get eventKindOther => 'Todo o resto';
 }

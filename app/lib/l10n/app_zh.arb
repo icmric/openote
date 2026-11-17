@@ -585,5 +585,20 @@
   "linkOnObject": "图片、表格或卡片不能加链接。请把链接加在文字上。",
   "linkOnMaths": "公式不能加链接——方括号属于公式本身。",
   "linkBrackets": "链接文字不能包含方括号。请选择不含方括号的内容。",
-  "linkNested": "这段文字已经有格式或链接。请选择普通文字，或点进链接里编辑它。"
+  "linkNested": "这段文字已经有格式或链接。请选择普通文字，或点进链接里编辑它。",
+  "alertsTitle": "上课前提醒",
+  "alertsIntro": "Openote 可以在课表中的事项开始前弹出提醒。它会根据名称判断每个日程的类型，所以请只选你真正想被打断的类型。",
+  "alertsPreset": "上课前 10 分钟提醒我",
+  "alertsAllOff": "全部关闭",
+  "alertsWhileRunning": "提醒只在 Openote 里显示，所以只有在它运行时才会提醒你。错过的提醒会在你下次打开时留在这个面板里。",
+  "alertsAtStart": "开始时",
+  "alertsMinutes": "{minutes} 分钟",
+  "eventKindLecture": "讲座课",
+  "eventKindTutorial": "辅导课",
+  "eventKindLab": "实验 / 实践",
+  "eventKindWorkshop": "研讨工作坊",
+  "eventKindSeminar": "研讨课",
+  "eventKindExam": "考试 / 测验",
+  "eventKindMeeting": "会议",
+  "eventKindOther": "其他所有"
 }

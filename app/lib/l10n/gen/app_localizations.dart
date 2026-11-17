@@ -3496,6 +3496,96 @@ abstract class L {
   /// In en, this message translates to:
   /// **'That text is already formatted or linked. Select some plain words, or click inside the link to edit it.'**
   String get linkNested;
+
+  /// Title of the dialog that sets reminders before timetable events.
+  ///
+  /// In en, this message translates to:
+  /// **'Alerts before classes'**
+  String get alertsTitle;
+
+  /// Explains that event types are guessed from event names.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote can pop up before something in your timetable starts. It works out what each event is from its name, so pick the kinds you actually want interrupting for.'**
+  String get alertsIntro;
+
+  /// Button that turns on a reminder 10 minutes before classes.
+  ///
+  /// In en, this message translates to:
+  /// **'Remind me 10 minutes before classes'**
+  String get alertsPreset;
+
+  /// Button that turns every reminder off.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn all off'**
+  String get alertsAllOff;
+
+  /// Says reminders only appear while the app is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Alerts appear inside Openote, so they only reach you while it is running. Anything you missed is waiting in this panel next time you open it.'**
+  String get alertsWhileRunning;
+
+  /// Reminder choice: when the event starts.
+  ///
+  /// In en, this message translates to:
+  /// **'At start'**
+  String get alertsAtStart;
+
+  /// Reminder choice: a number of minutes before the event, kept very short.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}m'**
+  String alertsMinutes(int minutes);
+
+  /// A kind of timetable event.
+  ///
+  /// In en, this message translates to:
+  /// **'Lecture'**
+  String get eventKindLecture;
+
+  /// A kind of timetable event.
+  ///
+  /// In en, this message translates to:
+  /// **'Tutorial'**
+  String get eventKindTutorial;
+
+  /// A kind of timetable event: a lab or practical class.
+  ///
+  /// In en, this message translates to:
+  /// **'Lab / practical'**
+  String get eventKindLab;
+
+  /// A kind of timetable event.
+  ///
+  /// In en, this message translates to:
+  /// **'Workshop'**
+  String get eventKindWorkshop;
+
+  /// A kind of timetable event.
+  ///
+  /// In en, this message translates to:
+  /// **'Seminar'**
+  String get eventKindSeminar;
+
+  /// A kind of timetable event: an exam or test.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam / test'**
+  String get eventKindExam;
+
+  /// A kind of timetable event.
+  ///
+  /// In en, this message translates to:
+  /// **'Meeting'**
+  String get eventKindMeeting;
+
+  /// Every timetable event that is none of the other kinds.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything else'**
+  String get eventKindOther;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

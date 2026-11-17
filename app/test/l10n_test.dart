@@ -46,6 +46,7 @@ const _converted = [
   'lib/ui/app_shell.dart',
   'lib/ui/protect_dialog.dart',
   'lib/ui/link_dialog.dart',
+  'lib/ui/event_alert_dialog.dart',
 ];
 
 void main() {

@@ -2080,4 +2080,53 @@ class LEn extends L {
   @override
   String get linkNested =>
       'That text is already formatted or linked. Select some plain words, or click inside the link to edit it.';
+
+  @override
+  String get alertsTitle => 'Alerts before classes';
+
+  @override
+  String get alertsIntro =>
+      'Openote can pop up before something in your timetable starts. It works out what each event is from its name, so pick the kinds you actually want interrupting for.';
+
+  @override
+  String get alertsPreset => 'Remind me 10 minutes before classes';
+
+  @override
+  String get alertsAllOff => 'Turn all off';
+
+  @override
+  String get alertsWhileRunning =>
+      'Alerts appear inside Openote, so they only reach you while it is running. Anything you missed is waiting in this panel next time you open it.';
+
+  @override
+  String get alertsAtStart => 'At start';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '${minutes}m';
+  }
+
+  @override
+  String get eventKindLecture => 'Lecture';
+
+  @override
+  String get eventKindTutorial => 'Tutorial';
+
+  @override
+  String get eventKindLab => 'Lab / practical';
+
+  @override
+  String get eventKindWorkshop => 'Workshop';
+
+  @override
+  String get eventKindSeminar => 'Seminar';
+
+  @override
+  String get eventKindExam => 'Exam / test';
+
+  @override
+  String get eventKindMeeting => 'Meeting';
+
+  @override
+  String get eventKindOther => 'Everything else';
 }

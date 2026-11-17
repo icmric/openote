@@ -585,5 +585,20 @@
   "linkOnObject": "Ein Bild, eine Tabelle oder eine Karte kann keinen Link tragen. Setzen Sie ihn stattdessen auf Wörter.",
   "linkOnMaths": "Eine Gleichung kann keinen Link tragen – die Klammern gehören zur Mathematik.",
   "linkBrackets": "Der Text eines Links darf keine eckigen Klammern enthalten. Wählen Sie etwas ohne sie aus.",
-  "linkNested": "Dieser Text ist bereits formatiert oder verlinkt. Wählen Sie einfache Wörter aus oder klicken Sie in den Link, um ihn zu bearbeiten."
+  "linkNested": "Dieser Text ist bereits formatiert oder verlinkt. Wählen Sie einfache Wörter aus oder klicken Sie in den Link, um ihn zu bearbeiten.",
+  "alertsTitle": "Erinnerungen vor Lehrveranstaltungen",
+  "alertsIntro": "Openote kann sich melden, bevor etwas in Ihrem Stundenplan beginnt. Die Art eines Termins wird aus seinem Namen erkannt; wählen Sie also die Arten, bei denen Sie wirklich unterbrochen werden möchten.",
+  "alertsPreset": "10 Minuten vor Lehrveranstaltungen erinnern",
+  "alertsAllOff": "Alle ausschalten",
+  "alertsWhileRunning": "Erinnerungen erscheinen in Openote und erreichen Sie daher nur, solange es läuft. Was Sie verpasst haben, finden Sie beim nächsten Öffnen in diesem Bereich.",
+  "alertsAtStart": "Zu Beginn",
+  "alertsMinutes": "{minutes} Min.",
+  "eventKindLecture": "Vorlesung",
+  "eventKindTutorial": "Tutorium",
+  "eventKindLab": "Labor / Praktikum",
+  "eventKindWorkshop": "Workshop",
+  "eventKindSeminar": "Seminar",
+  "eventKindExam": "Prüfung / Test",
+  "eventKindMeeting": "Besprechung",
+  "eventKindOther": "Alles andere"
 }

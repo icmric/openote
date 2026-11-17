@@ -2090,4 +2090,53 @@ class LEs extends L {
   @override
   String get linkNested =>
       'Ese texto ya tiene formato o un enlace. Selecciona palabras sin formato, o haz clic dentro del enlace para editarlo.';
+
+  @override
+  String get alertsTitle => 'Avisos antes de clase';
+
+  @override
+  String get alertsIntro =>
+      'Openote puede avisarte antes de que empiece algo de tu horario. Deduce qué es cada evento por su nombre, así que elige los tipos por los que de verdad quieres que te interrumpa.';
+
+  @override
+  String get alertsPreset => 'Avisarme 10 minutos antes de clase';
+
+  @override
+  String get alertsAllOff => 'Desactivar todos';
+
+  @override
+  String get alertsWhileRunning =>
+      'Los avisos aparecen dentro de Openote, así que solo te llegan mientras está abierto. Lo que te hayas perdido te espera en este panel la próxima vez que lo abras.';
+
+  @override
+  String get alertsAtStart => 'Al empezar';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get eventKindLecture => 'Clase teórica';
+
+  @override
+  String get eventKindTutorial => 'Tutoría';
+
+  @override
+  String get eventKindLab => 'Laboratorio / prácticas';
+
+  @override
+  String get eventKindWorkshop => 'Taller';
+
+  @override
+  String get eventKindSeminar => 'Seminario';
+
+  @override
+  String get eventKindExam => 'Examen / prueba';
+
+  @override
+  String get eventKindMeeting => 'Reunión';
+
+  @override
+  String get eventKindOther => 'Todo lo demás';
 }

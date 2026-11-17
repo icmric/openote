@@ -2098,4 +2098,53 @@ class LFr extends L {
   @override
   String get linkNested =>
       'Ce texte est déjà mis en forme ou lié. Sélectionnez des mots simples, ou cliquez dans le lien pour le modifier.';
+
+  @override
+  String get alertsTitle => 'Alertes avant les cours';
+
+  @override
+  String get alertsIntro =>
+      'Openote peut s’afficher avant que quelque chose de votre emploi du temps commence. Il devine le type de chaque événement d’après son nom : choisissez les types pour lesquels vous voulez vraiment être interrompu.';
+
+  @override
+  String get alertsPreset => 'Me prévenir 10 minutes avant les cours';
+
+  @override
+  String get alertsAllOff => 'Tout désactiver';
+
+  @override
+  String get alertsWhileRunning =>
+      'Les alertes s’affichent dans Openote, elles ne vous parviennent donc que lorsqu’il est ouvert. Ce que vous avez manqué vous attend dans ce panneau à la prochaine ouverture.';
+
+  @override
+  String get alertsAtStart => 'Au début';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get eventKindLecture => 'Cours magistral';
+
+  @override
+  String get eventKindTutorial => 'TD';
+
+  @override
+  String get eventKindLab => 'TP / laboratoire';
+
+  @override
+  String get eventKindWorkshop => 'Atelier';
+
+  @override
+  String get eventKindSeminar => 'Séminaire';
+
+  @override
+  String get eventKindExam => 'Examen / contrôle';
+
+  @override
+  String get eventKindMeeting => 'Réunion';
+
+  @override
+  String get eventKindOther => 'Tout le reste';
 }

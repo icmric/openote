@@ -1995,4 +1995,53 @@ class LZh extends L {
 
   @override
   String get linkNested => '这段文字已经有格式或链接。请选择普通文字，或点进链接里编辑它。';
+
+  @override
+  String get alertsTitle => '上课前提醒';
+
+  @override
+  String get alertsIntro =>
+      'Openote 可以在课表中的事项开始前弹出提醒。它会根据名称判断每个日程的类型，所以请只选你真正想被打断的类型。';
+
+  @override
+  String get alertsPreset => '上课前 10 分钟提醒我';
+
+  @override
+  String get alertsAllOff => '全部关闭';
+
+  @override
+  String get alertsWhileRunning =>
+      '提醒只在 Openote 里显示，所以只有在它运行时才会提醒你。错过的提醒会在你下次打开时留在这个面板里。';
+
+  @override
+  String get alertsAtStart => '开始时';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '$minutes 分钟';
+  }
+
+  @override
+  String get eventKindLecture => '讲座课';
+
+  @override
+  String get eventKindTutorial => '辅导课';
+
+  @override
+  String get eventKindLab => '实验 / 实践';
+
+  @override
+  String get eventKindWorkshop => '研讨工作坊';
+
+  @override
+  String get eventKindSeminar => '研讨课';
+
+  @override
+  String get eventKindExam => '考试 / 测验';
+
+  @override
+  String get eventKindMeeting => '会议';
+
+  @override
+  String get eventKindOther => '其他所有';
 }

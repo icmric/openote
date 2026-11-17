@@ -2096,4 +2096,53 @@ class LIt extends L {
   @override
   String get linkNested =>
       'Quel testo è già formattato o collegato. Seleziona parole semplici, oppure fai clic nel link per modificarlo.';
+
+  @override
+  String get alertsTitle => 'Avvisi prima delle lezioni';
+
+  @override
+  String get alertsIntro =>
+      'Openote può avvisarti prima che inizi qualcosa del tuo orario. Capisce il tipo di ogni evento dal nome, quindi scegli i tipi per cui vuoi davvero essere interrotto.';
+
+  @override
+  String get alertsPreset => 'Avvisami 10 minuti prima delle lezioni';
+
+  @override
+  String get alertsAllOff => 'Disattiva tutti';
+
+  @override
+  String get alertsWhileRunning =>
+      'Gli avvisi compaiono dentro Openote, quindi ti raggiungono solo mentre è aperto. Quello che ti sei perso ti aspetta in questo pannello la prossima volta che lo apri.';
+
+  @override
+  String get alertsAtStart => 'All’inizio';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get eventKindLecture => 'Lezione';
+
+  @override
+  String get eventKindTutorial => 'Esercitazione';
+
+  @override
+  String get eventKindLab => 'Laboratorio / pratica';
+
+  @override
+  String get eventKindWorkshop => 'Workshop';
+
+  @override
+  String get eventKindSeminar => 'Seminario';
+
+  @override
+  String get eventKindExam => 'Esame / verifica';
+
+  @override
+  String get eventKindMeeting => 'Riunione';
+
+  @override
+  String get eventKindOther => 'Tutto il resto';
 }

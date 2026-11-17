@@ -2099,4 +2099,53 @@ class LDe extends L {
   @override
   String get linkNested =>
       'Dieser Text ist bereits formatiert oder verlinkt. Wählen Sie einfache Wörter aus oder klicken Sie in den Link, um ihn zu bearbeiten.';
+
+  @override
+  String get alertsTitle => 'Erinnerungen vor Lehrveranstaltungen';
+
+  @override
+  String get alertsIntro =>
+      'Openote kann sich melden, bevor etwas in Ihrem Stundenplan beginnt. Die Art eines Termins wird aus seinem Namen erkannt; wählen Sie also die Arten, bei denen Sie wirklich unterbrochen werden möchten.';
+
+  @override
+  String get alertsPreset => '10 Minuten vor Lehrveranstaltungen erinnern';
+
+  @override
+  String get alertsAllOff => 'Alle ausschalten';
+
+  @override
+  String get alertsWhileRunning =>
+      'Erinnerungen erscheinen in Openote und erreichen Sie daher nur, solange es läuft. Was Sie verpasst haben, finden Sie beim nächsten Öffnen in diesem Bereich.';
+
+  @override
+  String get alertsAtStart => 'Zu Beginn';
+
+  @override
+  String alertsMinutes(int minutes) {
+    return '$minutes Min.';
+  }
+
+  @override
+  String get eventKindLecture => 'Vorlesung';
+
+  @override
+  String get eventKindTutorial => 'Tutorium';
+
+  @override
+  String get eventKindLab => 'Labor / Praktikum';
+
+  @override
+  String get eventKindWorkshop => 'Workshop';
+
+  @override
+  String get eventKindSeminar => 'Seminar';
+
+  @override
+  String get eventKindExam => 'Prüfung / Test';
+
+  @override
+  String get eventKindMeeting => 'Besprechung';
+
+  @override
+  String get eventKindOther => 'Alles andere';
 }

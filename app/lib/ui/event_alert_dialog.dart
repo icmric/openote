@@ -14,6 +14,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../planner/event_kinds.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -46,8 +47,9 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
   Widget build(BuildContext context) {
     final s = context.surfaces;
     final rules = app.planner.eventAlerts;
+    final l = L.of(context);
     return AlertDialog(
-      title: const Text('Alerts before classes', style: OnoteType.title),
+      title: Text(l.alertsTitle, style: OnoteType.title),
       content: SizedBox(
         width: 470,
         child: DialogScrollBody(
@@ -56,9 +58,7 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Openote can pop up before something in your timetable starts. '
-                'It works out what each event is from its name, so pick the '
-                'kinds you actually want interrupting for.',
+                l.alertsIntro,
                 style:
                     OnoteType.small.copyWith(color: s.textSecondary, height: 1.5),
               ),
@@ -66,7 +66,7 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
               Row(children: [
                 TextButton.icon(
                   icon: const Icon(Icons.bolt_outlined, size: OnoteIcon.sm),
-                  label: const Text('Remind me 10 minutes before classes'),
+                  label: Text(l.alertsPreset),
                   onPressed: () => setState(() =>
                       app.planner.eventAlerts = EventAlertRules.beforeClasses),
                 ),
@@ -75,7 +75,7 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
                   TextButton(
                     onPressed: () => setState(
                         () => app.planner.eventAlerts = EventAlertRules.none),
-                    child: const Text('Turn all off'),
+                    child: Text(l.alertsAllOff),
                   ),
               ]),
               const Divider(height: OnoteSpace.x7),
@@ -96,9 +96,7 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
                   borderRadius: OnoteRadius.mdAll,
                 ),
                 child: Text(
-                  'Alerts appear inside Openote, so they only reach you while '
-                  'it is running. Anything you missed is waiting in this panel '
-                  'next time you open it.',
+                  l.alertsWhileRunning,
                   style: OnoteType.small
                       .copyWith(color: s.textSecondary, height: 1.5),
                 ),
@@ -109,7 +107,7 @@ class _EventAlertDialogState extends State<_EventAlertDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Done')),
+            onPressed: () => Navigator.pop(context), child: Text(l.commonDone)),
       ],
     );
   }
@@ -129,13 +127,14 @@ class _KindRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
+    final l = L.of(context);
     final on = lead != null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: OnoteSpace.x1),
       child: Row(children: [
         SizedBox(
           width: 150,
-          child: Text(kind.label,
+          child: Text(eventKindLabel(l, kind),
               style: OnoteType.ui.copyWith(
                   color: on ? s.textPrimary : s.textSecondary)),
         ),
@@ -150,10 +149,12 @@ class _KindRow extends StatelessWidget {
                 textStyle: WidgetStatePropertyAll(OnoteType.caption),
               ),
               segments: [
-                const ButtonSegment(value: -1, label: Text('Off')),
+                ButtonSegment(value: -1, label: Text(l.commonOff)),
                 for (final m in eventAlertLeadChoices)
                   ButtonSegment(
-                      value: m, label: Text(m == 0 ? 'At start' : '${m}m')),
+                      value: m,
+                      label: Text(
+                          m == 0 ? l.alertsAtStart : l.alertsMinutes(m))),
               ],
               selected: {lead ?? -1},
               onSelectionChanged: (sel) {
@@ -167,3 +168,17 @@ class _KindRow extends StatelessWidget {
     );
   }
 }
+
+/// [kind]'s name in the person's language. [EventKind.label] stays the English
+/// name the code knows it by; the planner panel still shows that one until it
+/// is translated as a whole.
+String eventKindLabel(L l, EventKind kind) => switch (kind) {
+      EventKind.lecture => l.eventKindLecture,
+      EventKind.tutorial => l.eventKindTutorial,
+      EventKind.lab => l.eventKindLab,
+      EventKind.workshop => l.eventKindWorkshop,
+      EventKind.seminar => l.eventKindSeminar,
+      EventKind.exam => l.eventKindExam,
+      EventKind.meeting => l.eventKindMeeting,
+      EventKind.other => l.eventKindOther,
+    };

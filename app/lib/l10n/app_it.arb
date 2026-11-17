@@ -585,5 +585,20 @@
   "linkOnObject": "Un’immagine, una tabella o una scheda non può avere un link. Mettilo su delle parole.",
   "linkOnMaths": "Un’equazione non può avere un link: le parentesi appartengono alla matematica.",
   "linkBrackets": "Il testo di un link non può contenere parentesi quadre. Seleziona qualcosa senza.",
-  "linkNested": "Quel testo è già formattato o collegato. Seleziona parole semplici, oppure fai clic nel link per modificarlo."
+  "linkNested": "Quel testo è già formattato o collegato. Seleziona parole semplici, oppure fai clic nel link per modificarlo.",
+  "alertsTitle": "Avvisi prima delle lezioni",
+  "alertsIntro": "Openote può avvisarti prima che inizi qualcosa del tuo orario. Capisce il tipo di ogni evento dal nome, quindi scegli i tipi per cui vuoi davvero essere interrotto.",
+  "alertsPreset": "Avvisami 10 minuti prima delle lezioni",
+  "alertsAllOff": "Disattiva tutti",
+  "alertsWhileRunning": "Gli avvisi compaiono dentro Openote, quindi ti raggiungono solo mentre è aperto. Quello che ti sei perso ti aspetta in questo pannello la prossima volta che lo apri.",
+  "alertsAtStart": "All’inizio",
+  "alertsMinutes": "{minutes} min",
+  "eventKindLecture": "Lezione",
+  "eventKindTutorial": "Esercitazione",
+  "eventKindLab": "Laboratorio / pratica",
+  "eventKindWorkshop": "Workshop",
+  "eventKindSeminar": "Seminario",
+  "eventKindExam": "Esame / verifica",
+  "eventKindMeeting": "Riunione",
+  "eventKindOther": "Tutto il resto"
 }

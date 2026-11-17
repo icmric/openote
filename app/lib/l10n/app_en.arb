@@ -2804,5 +2804,70 @@
   "linkNested": "That text is already formatted or linked. Select some plain words, or click inside the link to edit it.",
   "@linkNested": {
     "description": "Why a link could not be made: the words are already formatted or a link."
+  },
+  "alertsTitle": "Alerts before classes",
+  "@alertsTitle": {
+    "description": "Title of the dialog that sets reminders before timetable events."
+  },
+  "alertsIntro": "Openote can pop up before something in your timetable starts. It works out what each event is from its name, so pick the kinds you actually want interrupting for.",
+  "@alertsIntro": {
+    "description": "Explains that event types are guessed from event names."
+  },
+  "alertsPreset": "Remind me 10 minutes before classes",
+  "@alertsPreset": {
+    "description": "Button that turns on a reminder 10 minutes before classes."
+  },
+  "alertsAllOff": "Turn all off",
+  "@alertsAllOff": {
+    "description": "Button that turns every reminder off."
+  },
+  "alertsWhileRunning": "Alerts appear inside Openote, so they only reach you while it is running. Anything you missed is waiting in this panel next time you open it.",
+  "@alertsWhileRunning": {
+    "description": "Says reminders only appear while the app is running."
+  },
+  "alertsAtStart": "At start",
+  "@alertsAtStart": {
+    "description": "Reminder choice: when the event starts."
+  },
+  "alertsMinutes": "{minutes}m",
+  "@alertsMinutes": {
+    "description": "Reminder choice: a number of minutes before the event, kept very short.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "eventKindLecture": "Lecture",
+  "@eventKindLecture": {
+    "description": "A kind of timetable event."
+  },
+  "eventKindTutorial": "Tutorial",
+  "@eventKindTutorial": {
+    "description": "A kind of timetable event."
+  },
+  "eventKindLab": "Lab / practical",
+  "@eventKindLab": {
+    "description": "A kind of timetable event: a lab or practical class."
+  },
+  "eventKindWorkshop": "Workshop",
+  "@eventKindWorkshop": {
+    "description": "A kind of timetable event."
+  },
+  "eventKindSeminar": "Seminar",
+  "@eventKindSeminar": {
+    "description": "A kind of timetable event."
+  },
+  "eventKindExam": "Exam / test",
+  "@eventKindExam": {
+    "description": "A kind of timetable event: an exam or test."
+  },
+  "eventKindMeeting": "Meeting",
+  "@eventKindMeeting": {
+    "description": "A kind of timetable event."
+  },
+  "eventKindOther": "Everything else",
+  "@eventKindOther": {
+    "description": "Every timetable event that is none of the other kinds."
   }
 }
