@@ -2100,4 +2100,146 @@ class LZh extends L {
   @override
   String get saveProblemList =>
       'Openote 无法保存你的笔记本列表和设置。第一次关闭窗口时，窗口会保持打开。请检查磁盘后重试，或再次关闭窗口直接退出。';
+
+  @override
+  String get mcpTitle => 'AI 访问';
+
+  @override
+  String get mcpIntro =>
+      '让 AI 助手（例如 Claude）阅读和搜索你的笔记、向你提问，并根据笔记制作抽认卡。它只在 Openote 打开时、只在这台电脑上工作，它添加的任何内容都是普通编辑：按 Ctrl+Z 即可撤销。';
+
+  @override
+  String get mcpPasscodeNote =>
+      '设了密码的内容保持私密：即使你已解锁，AI 助手也看不到、改不了。密码锁住的是 Openote，而不是文件本身，所以能打开你电脑上文件的 AI 工具仍可能读取它。';
+
+  @override
+  String mcpCouldNotStart(String error) {
+    return '无法启动：$error';
+  }
+
+  @override
+  String mcpReady(String lastUsed) {
+    return '已就绪。$lastUsed';
+  }
+
+  @override
+  String get mcpNeverUsed => '自 Openote 打开以来还没有 AI 助手使用过。';
+
+  @override
+  String get mcpUsedJustNow => '刚刚被 AI 助手使用过。';
+
+  @override
+  String mcpUsedMinutesAgo(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: '$minutes 分钟前被 AI 助手使用过。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mcpUsedHoursAgo(int hours) {
+    String _temp0 = intl.Intl.pluralLogic(
+      hours,
+      locale: localeName,
+      other: '$hours 小时前被 AI 助手使用过。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mcpUsedOverADay => '一天多以前被 AI 助手使用过。';
+
+  @override
+  String get mcpRestartHint => 'AI 助手会在启动时寻找 Openote。如果你的助手之前已经打开，请重启它。';
+
+  @override
+  String mcpClientIsSetUp(String name) {
+    return '$name — 已设置';
+  }
+
+  @override
+  String mcpSetUpClient(String name) {
+    return '设置 $name';
+  }
+
+  @override
+  String get mcpClaudeApp => 'Claude 应用';
+
+  @override
+  String get mcpChatGptApp => 'ChatGPT 应用';
+
+  @override
+  String get mcpWebsiteNote =>
+      'ChatGPT 网站无法连接：它的连接器运行在 OpenAI 的服务器上，看不到你的电脑。上面的按钮是给桌面应用用的，它从这台电脑读取设置。Gemini 应用和网站一样——它的 CLI 有按钮。';
+
+  @override
+  String get mcpCopyAddress => '复制地址';
+
+  @override
+  String get mcpCopyConfiguration => '复制配置';
+
+  @override
+  String get mcpOtherTools => '其他 AI 工具（高级）';
+
+  @override
+  String get mcpOtherToolsBody =>
+      'Openote 支持 MCP，这是 AI 工具连接应用的标准。任何支持 MCP 的工具都能使用——其中的密钥相当于密码，只粘贴到你信任的工具里。';
+
+  @override
+  String mcpListening(String port) {
+    return '正在监听端口 $port，仅限这台电脑。';
+  }
+
+  @override
+  String get mcpNotListening => '未在监听。';
+
+  @override
+  String get mcpCopyConfig => '复制配置';
+
+  @override
+  String get mcpCliIntro => '或者，对于命令行工具，运行一次：';
+
+  @override
+  String get mcpCopyCommand => '复制命令';
+
+  @override
+  String get mcpCopied => '已复制。其中的密钥相当于密码——只粘贴到你自己的工具里。';
+
+  @override
+  String get mcpChatGptUnreadable =>
+      '无法读取 ChatGPT 的设置文件，所以 Openote 没有动它。“高级”中的连接信息仍然可用。';
+
+  @override
+  String get mcpChatGptUnparsable =>
+      'ChatGPT 的设置文件里有 Openote 看不懂的内容，所以没有动它。请复制“高级”中的配置，手动添加。';
+
+  @override
+  String mcpSaveFailed(String error) {
+    return '无法保存连接：$error';
+  }
+
+  @override
+  String get mcpChatGptSetUp =>
+      '已设置。重启 ChatGPT 桌面应用后，Openote 会出现在它的 MCP 服务器中。网站无法使用——只有这台电脑上的应用才能看到 Openote。';
+
+  @override
+  String get mcpChatGptSavedOnly =>
+      '已保存。在这台电脑上安装 ChatGPT 桌面应用或 Codex CLI 后，Openote 就会出现。';
+
+  @override
+  String mcpClientUnreadable(String name) {
+    return '无法读取 $name 的设置文件，所以 Openote 没有动它。“高级”中的连接信息在任何支持 MCP 的工具里仍然可用。';
+  }
+
+  @override
+  String mcpClientSetUp(String name) {
+    return '已设置。如果 $name 已经打开，请重启它——它会在启动时寻找 Openote。然后问问它关于你笔记的问题，比如“就我这周写的内容考考我”。';
+  }
+
+  @override
+  String mcpClientNotInstalled(String name) {
+    return 'Openote 已就绪，但 $name 似乎还没有安装在这台电脑上。安装后连接就会自动生效。';
+  }
 }

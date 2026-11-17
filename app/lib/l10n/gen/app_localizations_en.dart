@@ -2185,4 +2185,151 @@ class LEn extends L {
   @override
   String get saveProblemList =>
       'Openote could not save your notebook list and settings. The window will stay open the first time you close it. Check the disk and try again, or close the window again to leave anyway.';
+
+  @override
+  String get mcpTitle => 'AI access';
+
+  @override
+  String get mcpIntro =>
+      'Let an AI helper — like Claude — read your notes, search them, quiz you, and make flashcards from them. It only works while Openote is open, only on this computer, and anything it adds is a normal edit: Ctrl+Z undoes it.';
+
+  @override
+  String get mcpPasscodeNote =>
+      'Anything with a passcode stays private: an AI helper can\'t see it or change it, even while you have it unlocked. A passcode locks Openote, not the file itself, so an AI tool that can open files on your computer could still read it.';
+
+  @override
+  String mcpCouldNotStart(String error) {
+    return 'Could not start: $error';
+  }
+
+  @override
+  String mcpReady(String lastUsed) {
+    return 'Ready. $lastUsed';
+  }
+
+  @override
+  String get mcpNeverUsed => 'No AI helper has used it since Openote opened.';
+
+  @override
+  String get mcpUsedJustNow => 'Last used by an AI helper just now.';
+
+  @override
+  String mcpUsedMinutesAgo(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Last used by an AI helper $minutes minutes ago.',
+      one: 'Last used by an AI helper 1 minute ago.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mcpUsedHoursAgo(int hours) {
+    String _temp0 = intl.Intl.pluralLogic(
+      hours,
+      locale: localeName,
+      other: 'Last used by an AI helper $hours hours ago.',
+      one: 'Last used by an AI helper 1 hour ago.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mcpUsedOverADay =>
+      'Last used by an AI helper more than a day ago.';
+
+  @override
+  String get mcpRestartHint =>
+      'An AI helper looks for Openote when it starts. If yours was already open, restart it.';
+
+  @override
+  String mcpClientIsSetUp(String name) {
+    return '$name — set up';
+  }
+
+  @override
+  String mcpSetUpClient(String name) {
+    return 'Set up $name';
+  }
+
+  @override
+  String get mcpClaudeApp => 'Claude app';
+
+  @override
+  String get mcpChatGptApp => 'ChatGPT app';
+
+  @override
+  String get mcpWebsiteNote =>
+      'The ChatGPT website can\'t be connected: its connectors run on OpenAI\'s servers, which can\'t see your computer. The button above is for the desktop app, which reads its settings from this computer. The Gemini app is the website case too — its CLI has a button.';
+
+  @override
+  String get mcpCopyAddress => 'Copy address';
+
+  @override
+  String get mcpCopyConfiguration => 'Copy configuration';
+
+  @override
+  String get mcpOtherTools => 'Other AI tools (advanced)';
+
+  @override
+  String get mcpOtherToolsBody =>
+      'Openote speaks MCP, the standard AI tools use to connect to apps. Any MCP-capable tool can use this — the key inside is a password, so paste it only into tools you trust.';
+
+  @override
+  String mcpListening(String port) {
+    return 'Listening on port $port, on this computer only.';
+  }
+
+  @override
+  String get mcpNotListening => 'Not listening.';
+
+  @override
+  String get mcpCopyConfig => 'Copy config';
+
+  @override
+  String get mcpCliIntro => 'Or, for tools with a command line, run once:';
+
+  @override
+  String get mcpCopyCommand => 'Copy command';
+
+  @override
+  String get mcpCopied =>
+      'Copied. The key inside is a password — paste it only into your own tools.';
+
+  @override
+  String get mcpChatGptUnreadable =>
+      'ChatGPT\'s settings file couldn\'t be read, so Openote left it alone. The connection details under Advanced still work.';
+
+  @override
+  String get mcpChatGptUnparsable =>
+      'ChatGPT\'s settings file has something in it Openote doesn\'t understand, so it was left alone. Copy the configuration under Advanced and add it by hand.';
+
+  @override
+  String mcpSaveFailed(String error) {
+    return 'Couldn\'t save the connection: $error';
+  }
+
+  @override
+  String get mcpChatGptSetUp =>
+      'Set up. Restart the ChatGPT desktop app and Openote will be there under its MCP servers. The website cannot use this — only an app on this computer can see Openote.';
+
+  @override
+  String get mcpChatGptSavedOnly =>
+      'Saved. Openote will appear once the ChatGPT desktop app or the Codex CLI is installed on this computer.';
+
+  @override
+  String mcpClientUnreadable(String name) {
+    return '$name\'s settings file couldn\'t be read, so Openote left it alone. The connection details under Advanced still work in any MCP-capable tool.';
+  }
+
+  @override
+  String mcpClientSetUp(String name) {
+    return 'Set up. If $name is already open, restart it — it looks for Openote when it starts. Then ask it about your notes: try \"quiz me on what I wrote this week\".';
+  }
+
+  @override
+  String mcpClientNotInstalled(String name) {
+    return 'Openote is ready, but $name doesn\'t look installed on this computer yet. Once it is, the connection will just work.';
+  }
 }

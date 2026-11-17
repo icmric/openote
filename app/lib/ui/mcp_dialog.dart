@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api/mcp_connect.dart';
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
@@ -27,19 +28,13 @@ Future<void> showMcpDialog(BuildContext context, AppState app) {
 /// a config file mentioned Openote. A request arriving is the only real
 /// evidence that something is on the other end, so this is what is shown.
 /// Coarse on purpose: a reader wants "is it working", not a timestamp.
-String mcpLastUsedLabel(DateTime? at, DateTime now) {
-  if (at == null) return 'No AI helper has used it since Openote opened.';
+String mcpLastUsedLabel(L l, DateTime? at, DateTime now) {
+  if (at == null) return l.mcpNeverUsed;
   final d = now.difference(at);
-  if (d.inMinutes < 1) return 'Last used by an AI helper just now.';
-  if (d.inMinutes < 60) {
-    final m = d.inMinutes;
-    return 'Last used by an AI helper $m minute${m == 1 ? '' : 's'} ago.';
-  }
-  if (d.inHours < 24) {
-    final h = d.inHours;
-    return 'Last used by an AI helper $h hour${h == 1 ? '' : 's'} ago.';
-  }
-  return 'Last used by an AI helper more than a day ago.';
+  if (d.inMinutes < 1) return l.mcpUsedJustNow;
+  if (d.inMinutes < 60) return l.mcpUsedMinutesAgo(d.inMinutes);
+  if (d.inHours < 24) return l.mcpUsedHoursAgo(d.inHours);
+  return l.mcpUsedOverADay;
 }
 
 class _McpDialog extends StatefulWidget {
@@ -137,12 +132,18 @@ class _McpDialogState extends State<_McpDialog> {
       ClaudeConnectResult Function({required int port, required String token})
           connector) {
     final icon = Icon(setUp ? Icons.check : Icons.add_link, size: 16);
-    final label = Text(setUp ? '$name — set up' : 'Set up $name');
+    final l = L.of(context);
+    final label =
+        Text(setUp ? l.mcpClientIsSetUp(name) : l.mcpSetUpClient(name));
     void press() => _connect(connector);
     return setUp
         ? FilledButton.icon(icon: icon, label: label, onPressed: press)
         : FilledButton.tonalIcon(icon: icon, label: label, onPressed: press);
   }
+
+  /// Product names, the same in every language.
+  static const _claudeCode = 'Claude Code';
+  static const _geminiCli = 'Gemini CLI';
 
   /// A notifier that never changes, for the moment before the server exists.
   static final _never = ValueNotifier<DateTime?>(null);
@@ -170,17 +171,17 @@ class _McpDialogState extends State<_McpDialog> {
                         : Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text('Ready. ${mcpLastUsedLabel(at, DateTime.now())}',
+                  child: Text(
+                      L.of(context).mcpReady(
+                          mcpLastUsedLabel(L.of(context), at, DateTime.now())),
                       style: const TextStyle(fontSize: 12, height: 1.4)),
                 ),
               ]),
               if (at == null)
-                const Padding(
-                  padding: EdgeInsets.only(top: 4, left: 15),
-                  child: Text(
-                      'An AI helper looks for Openote when it starts. If '
-                      'yours was already open, restart it.',
-                      style: TextStyle(
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 15),
+                  child: Text(L.of(context).mcpRestartHint,
+                      style: const TextStyle(
                           fontSize: 11,
                           height: 1.4,
                           color: OnoteColors.graphite400)),
@@ -210,41 +211,35 @@ class _McpDialogState extends State<_McpDialog> {
 
   void _copy(BuildContext context, String text) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showToast(const SnackBar(
-        content: Text('Copied. The key inside is a password — paste it only '
-            'into your own tools.')));
+    ScaffoldMessenger.of(context)
+        .showToast(SnackBar(content: Text(L.of(context).mcpCopied)));
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l = L.of(context);
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) => AlertDialog(
-        title: const Text('AI access'),
+        title: Text(l.mcpTitle),
         content: SizedBox(
           width: 480,
           child: ListView(
             shrinkWrap: true,
             children: [
-              const Text(
-                'Let an AI helper — like Claude — read your notes, search '
-                'them, quiz you, and make flashcards from them. It only '
-                'works while Openote is open, only on this computer, and '
-                'anything it adds is a normal edit: Ctrl+Z undoes it.',
-                style: TextStyle(fontSize: 12.5, height: 1.4),
+              Text(
+                l.mcpIntro,
+                style: const TextStyle(fontSize: 12.5, height: 1.4),
               ),
               const SizedBox(height: 6),
               // Both halves, because the second is what keeps the first
               // honest: a passcode locks Openote's doors, not the file
               // (state/page_protection.dart), and Claude Code — one of the
               // buttons below — can open files.
-              const Text(
-                'Anything with a passcode stays private: an AI helper can\'t '
-                'see it or change it, even while you have it unlocked. A '
-                'passcode locks Openote, not the file itself, so an AI tool '
-                'that can open files on your computer could still read it.',
-                style: TextStyle(fontSize: 12.5, height: 1.4),
+              Text(
+                l.mcpPasscodeNote,
+                style: const TextStyle(fontSize: 12.5, height: 1.4),
               ),
               const SizedBox(height: 10),
               SegmentedButton<bool>(
@@ -252,9 +247,9 @@ class _McpDialogState extends State<_McpDialog> {
                 style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11))),
-                segments: const [
-                  ButtonSegment(value: false, label: Text('Off')),
-                  ButtonSegment(value: true, label: Text('On')),
+                segments: [
+                  ButtonSegment(value: false, label: Text(l.commonOff)),
+                  ButtonSegment(value: true, label: Text(l.commonOn)),
                 ],
                 selected: {app.mcpEnabled},
                 onSelectionChanged: (s) => app.setMcpEnabled(s.first),
@@ -262,7 +257,7 @@ class _McpDialogState extends State<_McpDialog> {
               if (app.mcpError != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text('Could not start: ${app.mcpError}',
+                  child: Text(l.mcpCouldNotStart('${app.mcpError}'),
                       style: const TextStyle(
                           fontSize: 11, color: OnoteColors.danger)),
                 ),
@@ -276,20 +271,20 @@ class _McpDialogState extends State<_McpDialog> {
                 // are named as apps deliberately, because the websites cannot
                 // do this and the distinction is the whole point.
                 Wrap(spacing: 8, runSpacing: 8, children: [
-                  _clientButton('Claude app', _linked?.claudeApp ?? false,
+                  _clientButton(l.mcpClaudeApp, _linked?.claudeApp ?? false,
                       connectClaudeApp),
-                  _clientButton('ChatGPT app', _linked?.chatGpt ?? false,
+                  _clientButton(l.mcpChatGptApp, _linked?.chatGpt ?? false,
                       connectChatGpt),
-                  _clientButton('Claude Code', _linked?.claudeCode ?? false,
+                  _clientButton(_claudeCode, _linked?.claudeCode ?? false,
                       connectClaudeCode),
-                  _clientButton('Gemini CLI', _linked?.geminiCli ?? false,
+                  _clientButton(_geminiCli, _linked?.geminiCli ?? false,
                       connectGeminiCli),
                 ]),
                 if (_result != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      _result!.message,
+                      _result!.messageIn(l),
                       style: TextStyle(
                           fontSize: 12,
                           height: 1.4,
@@ -312,14 +307,8 @@ class _McpDialogState extends State<_McpDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                          "The ChatGPT website can't be connected: its "
-                          "connectors run on OpenAI's servers, which can't "
-                          'see your computer. The button above is for the '
-                          'desktop app, which reads its settings from this '
-                          'computer. The Gemini app is the website case too '
-                          '— its CLI has a button.',
-                          style: TextStyle(
+                      Text(l.mcpWebsiteNote,
+                          style: const TextStyle(
                               fontSize: 11,
                               height: 1.4,
                               color: OnoteColors.graphite400)),
@@ -327,15 +316,14 @@ class _McpDialogState extends State<_McpDialog> {
                       Wrap(spacing: 8, runSpacing: 4, children: [
                         OutlinedButton.icon(
                           icon: const Icon(Icons.link, size: 14),
-                          label: const Text('Copy address',
-                              style: TextStyle(fontSize: 11.5)),
-                          onPressed: () =>
-                              _copy(context, mcpUrl(app.mcpPort!)),
+                          label: Text(l.mcpCopyAddress,
+                              style: const TextStyle(fontSize: 11.5)),
+                          onPressed: () => _copy(context, mcpUrl(app.mcpPort!)),
                         ),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.data_object, size: 14),
-                          label: const Text('Copy configuration',
-                              style: TextStyle(fontSize: 11.5)),
+                          label: Text(l.mcpCopyConfiguration,
+                              style: const TextStyle(fontSize: 11.5)),
                           onPressed: () => _copy(context,
                               manualConfigJson(app.mcpPort!, app.mcpToken!)),
                         ),
@@ -347,17 +335,13 @@ class _McpDialogState extends State<_McpDialog> {
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,
                   shape: const Border(),
-                  title: const Text('Other AI tools (advanced)',
-                      style: TextStyle(fontSize: 12.5)),
+                  title: Text(l.mcpOtherTools,
+                      style: const TextStyle(fontSize: 12.5)),
                   children: [
-                    const Align(
+                    Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(
-                          'Openote speaks MCP, the standard AI tools use to '
-                          'connect to apps. Any MCP-capable tool can use '
-                          'this — the key inside is a password, so paste it '
-                          'only into tools you trust.',
-                          style: TextStyle(
+                      child: Text(l.mcpOtherToolsBody,
+                          style: const TextStyle(
                               fontSize: 11, color: OnoteColors.graphite400)),
                     ),
                     const SizedBox(height: 6),
@@ -367,9 +351,8 @@ class _McpDialogState extends State<_McpDialog> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                           app.mcpListening
-                              ? 'Listening on port ${app.mcpPort}, on this '
-                                  'computer only.'
-                              : 'Not listening.',
+                              ? l.mcpListening('${app.mcpPort}')
+                              : l.mcpNotListening,
                           style: const TextStyle(
                               fontSize: 11, color: OnoteColors.graphite400)),
                     ),
@@ -379,15 +362,14 @@ class _McpDialogState extends State<_McpDialog> {
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
                         icon: const Icon(Icons.copy, size: 14),
-                        label: const Text('Copy config'),
+                        label: Text(l.mcpCopyConfig),
                         onPressed: () => _copy(context, _config),
                       ),
                     ),
-                    const Align(
+                    Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(
-                          'Or, for tools with a command line, run once:',
-                          style: TextStyle(
+                      child: Text(l.mcpCliIntro,
+                          style: const TextStyle(
                               fontSize: 11, color: OnoteColors.graphite400)),
                     ),
                     const SizedBox(height: 4),
@@ -396,7 +378,7 @@ class _McpDialogState extends State<_McpDialog> {
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
                         icon: const Icon(Icons.copy, size: 14),
-                        label: const Text('Copy command'),
+                        label: Text(l.mcpCopyCommand),
                         onPressed: () => _copy(context, _cli),
                       ),
                     ),
@@ -409,7 +391,7 @@ class _McpDialogState extends State<_McpDialog> {
         actions: [
           TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close')),
+              child: Text(l.commonClose)),
         ],
       ),
     );

@@ -2197,4 +2197,153 @@ class LPt extends L {
   @override
   String get saveProblemList =>
       'O Openote não conseguiu salvar sua lista de cadernos e as configurações. A janela vai continuar aberta na primeira vez que você fechá-la. Verifique o disco e tente de novo, ou feche a janela outra vez para sair mesmo assim.';
+
+  @override
+  String get mcpTitle => 'Acesso de IA';
+
+  @override
+  String get mcpIntro =>
+      'Deixe um assistente de IA — como o Claude — ler suas notas, pesquisar nelas, fazer perguntas para você e criar flashcards a partir delas. Só funciona enquanto o Openote está aberto, só neste computador, e tudo o que ele adiciona é uma edição normal: Ctrl+Z desfaz.';
+
+  @override
+  String get mcpPasscodeNote =>
+      'Tudo o que tem senha continua privado: um assistente de IA não pode ver nem alterar, mesmo enquanto você está com ele desbloqueado. A senha bloqueia o Openote, não o arquivo em si, então uma ferramenta de IA que consegue abrir arquivos no seu computador ainda poderia lê-lo.';
+
+  @override
+  String mcpCouldNotStart(String error) {
+    return 'Não foi possível iniciar: $error';
+  }
+
+  @override
+  String mcpReady(String lastUsed) {
+    return 'Pronto. $lastUsed';
+  }
+
+  @override
+  String get mcpNeverUsed =>
+      'Nenhum assistente de IA usou desde que o Openote foi aberto.';
+
+  @override
+  String get mcpUsedJustNow => 'Usado por um assistente de IA agora mesmo.';
+
+  @override
+  String mcpUsedMinutesAgo(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Usado por um assistente de IA há $minutes minutos.',
+      one: 'Usado por um assistente de IA há 1 minuto.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mcpUsedHoursAgo(int hours) {
+    String _temp0 = intl.Intl.pluralLogic(
+      hours,
+      locale: localeName,
+      other: 'Usado por um assistente de IA há $hours horas.',
+      one: 'Usado por um assistente de IA há 1 hora.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mcpUsedOverADay =>
+      'Usado por um assistente de IA há mais de um dia.';
+
+  @override
+  String get mcpRestartHint =>
+      'Um assistente de IA procura o Openote quando inicia. Se o seu já estava aberto, reinicie-o.';
+
+  @override
+  String mcpClientIsSetUp(String name) {
+    return '$name — configurado';
+  }
+
+  @override
+  String mcpSetUpClient(String name) {
+    return 'Configurar $name';
+  }
+
+  @override
+  String get mcpClaudeApp => 'App do Claude';
+
+  @override
+  String get mcpChatGptApp => 'App do ChatGPT';
+
+  @override
+  String get mcpWebsiteNote =>
+      'O site do ChatGPT não pode ser conectado: os conectores dele rodam nos servidores da OpenAI, que não enxergam o seu computador. O botão acima é para o app de desktop, que lê as configurações deste computador. O app do Gemini é o mesmo caso do site — a CLI dele tem um botão.';
+
+  @override
+  String get mcpCopyAddress => 'Copiar endereço';
+
+  @override
+  String get mcpCopyConfiguration => 'Copiar configuração';
+
+  @override
+  String get mcpOtherTools => 'Outras ferramentas de IA (avançado)';
+
+  @override
+  String get mcpOtherToolsBody =>
+      'O Openote fala MCP, o padrão que as ferramentas de IA usam para se conectar a apps. Qualquer ferramenta compatível com MCP pode usar isto — a chave contida é uma senha, então cole-a só em ferramentas em que você confia.';
+
+  @override
+  String mcpListening(String port) {
+    return 'Escutando na porta $port, só neste computador.';
+  }
+
+  @override
+  String get mcpNotListening => 'Não está escutando.';
+
+  @override
+  String get mcpCopyConfig => 'Copiar config';
+
+  @override
+  String get mcpCliIntro =>
+      'Ou, para ferramentas de linha de comando, execute uma vez:';
+
+  @override
+  String get mcpCopyCommand => 'Copiar comando';
+
+  @override
+  String get mcpCopied =>
+      'Copiado. A chave contida é uma senha — cole-a só nas suas próprias ferramentas.';
+
+  @override
+  String get mcpChatGptUnreadable =>
+      'Não foi possível ler o arquivo de configurações do ChatGPT, então o Openote não mexeu nele. Os dados de conexão em Avançado continuam funcionando.';
+
+  @override
+  String get mcpChatGptUnparsable =>
+      'O arquivo de configurações do ChatGPT tem algo que o Openote não entende, então ele não foi alterado. Copie a configuração em Avançado e adicione-a manualmente.';
+
+  @override
+  String mcpSaveFailed(String error) {
+    return 'Não foi possível salvar a conexão: $error';
+  }
+
+  @override
+  String get mcpChatGptSetUp =>
+      'Configurado. Reinicie o app de desktop do ChatGPT e o Openote vai aparecer entre os servidores MCP dele. O site não pode usar isto — só um app neste computador consegue ver o Openote.';
+
+  @override
+  String get mcpChatGptSavedOnly =>
+      'Salvo. O Openote vai aparecer assim que o app de desktop do ChatGPT ou a CLI do Codex estiverem instalados neste computador.';
+
+  @override
+  String mcpClientUnreadable(String name) {
+    return 'Não foi possível ler o arquivo de configurações de $name, então o Openote não mexeu nele. Os dados de conexão em Avançado continuam funcionando em qualquer ferramenta compatível com MCP.';
+  }
+
+  @override
+  String mcpClientSetUp(String name) {
+    return 'Configurado. Se $name já estiver aberto, reinicie-o — ele procura o Openote quando inicia. Depois pergunte sobre suas notas: experimente \"faça perguntas sobre o que escrevi esta semana\".';
+  }
+
+  @override
+  String mcpClientNotInstalled(String name) {
+    return 'O Openote está pronto, mas $name ainda não parece estar instalado neste computador. Assim que estiver, a conexão vai funcionar sozinha.';
+  }
 }

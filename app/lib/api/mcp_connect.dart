@@ -25,6 +25,9 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Locale;
+
+import '../l10n/gen/app_localizations.dart' show L, lookupL;
 
 enum ClaudeConnect {
   /// Entry written and the tool looks installed.
@@ -38,9 +41,46 @@ enum ClaudeConnect {
 }
 
 class ClaudeConnectResult {
-  const ClaudeConnectResult(this.status, this.message);
+  const ClaudeConnectResult(this.status, this.say,
+      {this.name = '', this.error});
   final ClaudeConnect status;
-  final String message;
+
+  /// Which sentence to say about it; [messageIn] puts it into words.
+  final ConnectSay say;
+
+  /// The tool's name, for the sentences that name it.
+  final String name;
+
+  /// The error, for [ConnectSay.saveFailed].
+  final String? error;
+
+  /// What happened, in English — for logs and tests. A screen says
+  /// [messageIn] instead.
+  String get message => messageIn(lookupL(const Locale('en')));
+
+  /// What happened, in the language of [l].
+  String messageIn(L l) => switch (say) {
+        ConnectSay.chatGptUnreadable => l.mcpChatGptUnreadable,
+        ConnectSay.chatGptUnparsable => l.mcpChatGptUnparsable,
+        ConnectSay.saveFailed => l.mcpSaveFailed(error ?? ''),
+        ConnectSay.chatGptSetUp => l.mcpChatGptSetUp,
+        ConnectSay.chatGptSavedOnly => l.mcpChatGptSavedOnly,
+        ConnectSay.clientUnreadable => l.mcpClientUnreadable(name),
+        ConnectSay.clientSetUp => l.mcpClientSetUp(name),
+        ConnectSay.clientNotInstalled => l.mcpClientNotInstalled(name),
+      };
+}
+
+/// The sentences a connect can end with.
+enum ConnectSay {
+  chatGptUnreadable,
+  chatGptUnparsable,
+  saveFailed,
+  chatGptSetUp,
+  chatGptSavedOnly,
+  clientUnreadable,
+  clientSetUp,
+  clientNotInstalled,
 }
 
 /// The user's home directory, cross-platform.
@@ -92,9 +132,11 @@ List<String> _appSupportParts(String vendor, String file) =>
     [..._appSupportDir(vendor), file];
 
 final List<_JsonClient> _clients = [
-  _JsonClient('Claude Code', () => ['.claude.json'], () => ['.claude'],
-      _httpEntry),
-  _JsonClient('Gemini CLI', () => ['.gemini', 'settings.json'],
+  _JsonClient(
+      'Claude Code', () => ['.claude.json'], () => ['.claude'], _httpEntry),
+  _JsonClient(
+      'Gemini CLI',
+      () => ['.gemini', 'settings.json'],
       () => ['.gemini'],
       (port, token) => {
             'httpUrl': 'http://127.0.0.1:$port/mcp',
@@ -208,16 +250,11 @@ ClaudeConnectResult connectChatGpt(
       existing = cfg.readAsStringSync();
     } catch (_) {
       return const ClaudeConnectResult(
-          ClaudeConnect.failed,
-          "ChatGPT's settings file couldn't be read, so Openote left it "
-          'alone. The connection details under Advanced still work.');
+          ClaudeConnect.failed, ConnectSay.chatGptUnreadable);
     }
     if (!_looksLikeSimpleToml(existing)) {
       return const ClaudeConnectResult(
-          ClaudeConnect.failed,
-          "ChatGPT's settings file has something in it Openote doesn't "
-          'understand, so it was left alone. Copy the configuration under '
-          'Advanced and add it by hand.');
+          ClaudeConnect.failed, ConnectSay.chatGptUnparsable);
     }
     // Anything already in the file was put there by the tool itself.
     installed = true;
@@ -235,8 +272,8 @@ ClaudeConnectResult connectChatGpt(
     cfg.parent.createSync(recursive: true);
     cfg.writeAsStringSync(_codexConfig(existing, port, token));
   } catch (e) {
-    return ClaudeConnectResult(
-        ClaudeConnect.failed, "Couldn't save the connection: $e");
+    return ClaudeConnectResult(ClaudeConnect.failed, ConnectSay.saveFailed,
+        error: '$e');
   }
 
   return installed
@@ -245,13 +282,9 @@ ClaudeConnectResult connectChatGpt(
           // "Set up", not "Connected" — writing a file is all this did
           // (v1.0.2 #13). The dialog says when an AI helper last actually
           // reached Openote, which is the only evidence there can be.
-          'Set up. Restart the ChatGPT desktop app and Openote will be '
-          'there under its MCP servers. The website cannot use this — only '
-          'an app on this computer can see Openote.')
+          ConnectSay.chatGptSetUp)
       : const ClaudeConnectResult(
-          ClaudeConnect.wroteConfigOnly,
-          'Saved. Openote will appear once the ChatGPT desktop app or the '
-          'Codex CLI is installed on this computer.');
+          ClaudeConnect.wroteConfigOnly, ConnectSay.chatGptSavedOnly);
 }
 
 /// Keep ChatGPT's entry current when the port moves, as the JSON clients do.
@@ -289,10 +322,8 @@ ClaudeConnectResult _connect(_JsonClient client,
       root = Map<String, dynamic>.from(parsed);
     } catch (_) {
       return ClaudeConnectResult(
-          ClaudeConnect.failed,
-          "${client.name}'s settings file couldn't be read, so Openote "
-          'left it alone. The connection details under Advanced still '
-          'work in any MCP-capable tool.');
+          ClaudeConnect.failed, ConnectSay.clientUnreadable,
+          name: client.name);
     }
     // A config with anything beyond mcpServers was written by the tool
     // itself — that counts as installed even without its directory.
@@ -318,8 +349,8 @@ ClaudeConnectResult _connect(_JsonClient client,
     cfg.parent.createSync(recursive: true);
     cfg.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(root));
   } catch (e) {
-    return ClaudeConnectResult(
-        ClaudeConnect.failed, "Couldn't save the connection: $e");
+    return ClaudeConnectResult(ClaudeConnect.failed, ConnectSay.saveFailed,
+        error: '$e');
   }
 
   return installed
@@ -327,13 +358,11 @@ ClaudeConnectResult _connect(_JsonClient client,
           ClaudeConnect.connected,
           // An AI helper looks for its servers once, when it starts, and
           // never again — so one that was already open has not seen this.
-          'Set up. If ${client.name} is already open, restart it — it '
-          'looks for Openote when it starts. Then ask it about your notes: '
-          'try "quiz me on what I wrote this week".')
+          ConnectSay.clientSetUp,
+          name: client.name)
       : ClaudeConnectResult(
-          ClaudeConnect.wroteConfigOnly,
-          "Openote is ready, but ${client.name} doesn't look installed on "
-          'this computer yet. Once it is, the connection will just work.');
+          ClaudeConnect.wroteConfigOnly, ConnectSay.clientNotInstalled,
+          name: client.name);
 }
 
 ClaudeConnectResult connectClaudeCode(
@@ -396,8 +425,7 @@ bool _jsonHasOpenote(String path) {
 bool _tomlHasOpenote(String path) {
   try {
     final f = File(path);
-    return f.existsSync() &&
-        f.readAsStringSync().contains(_codexServerTable);
+    return f.existsSync() && f.readAsStringSync().contains(_codexServerTable);
   } catch (_) {
     return false;
   }
@@ -425,8 +453,7 @@ void refreshConnectedClients(
         ...Map<String, dynamic>.from(servers),
         'openote': fresh,
       };
-      cfg.writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert(root));
+      cfg.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(root));
     } catch (_) {
       // Best-effort by design: a failed refresh must never break app start.
     }

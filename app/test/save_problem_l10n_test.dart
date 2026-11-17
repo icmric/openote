@@ -35,7 +35,7 @@ void main() {
   });
 
   test('the English is what the logs and older tests read', () {
-    final p = SaveProblem.of(SaveProblemKind.picturesMissing, count: 2);
+    const p = SaveProblem.of(SaveProblemKind.picturesMissing, count: 2);
     expect(p.message, contains('For 2 of them'));
     expect('$p', p.message);
     expect(p.short, 'Some pictures may be missing');
@@ -49,7 +49,7 @@ void main() {
   });
 
   testWidgets('the dialog speaks the reader\'s language', (tester) async {
-    final p = SaveProblem.of(SaveProblemKind.pageNotSaved, details: 'errno 13');
+    const p = SaveProblem.of(SaveProblemKind.pageNotSaved, details: 'errno 13');
     final de = lookupL(const Locale('de'));
     await tester.pumpWidget(MaterialApp(
       locale: const Locale('de'),

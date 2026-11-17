@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/api/mcp_server.dart';
+import 'package:openote/l10n/gen/app_localizations.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -30,10 +31,11 @@ import 'support/sqlite.dart';
 void main() {
   group('the words for "when"', () {
     final now = DateTime(2026, 10, 14, 15, 0);
-    String at(Duration ago) => mcpLastUsedLabel(now.subtract(ago), now);
+    final en = lookupL(const Locale('en'));
+    String at(Duration ago) => mcpLastUsedLabel(en, now.subtract(ago), now);
 
     test('nothing yet says so, rather than implying a failure', () {
-      expect(mcpLastUsedLabel(null, now),
+      expect(mcpLastUsedLabel(en, null, now),
           'No AI helper has used it since Openote opened.');
     });
 
@@ -50,6 +52,19 @@ void main() {
           'Last used by an AI helper 5 hours ago.');
       expect(at(const Duration(days: 2)),
           'Last used by an AI helper more than a day ago.');
+    });
+
+    test('in the reader\'s language, with its own plurals', () {
+      final de = lookupL(const Locale('de'));
+      expect(
+          mcpLastUsedLabel(de, now.subtract(const Duration(minutes: 1)), now),
+          contains('1 Minute'));
+      expect(
+          mcpLastUsedLabel(de, now.subtract(const Duration(minutes: 7)), now),
+          contains('7 Minuten'));
+      final fr = lookupL(const Locale('fr'));
+      expect(mcpLastUsedLabel(fr, now.subtract(const Duration(hours: 3)), now),
+          contains('3 heures'));
     });
   });
 
@@ -169,8 +184,12 @@ void main() {
           reason: 'a config entry is "set up", never "connected"');
       // Which ones read "set up" depends on this machine's own configs, which
       // the dialog reads; the vocabulary does not.
-      for (final name in ['Claude app', 'ChatGPT app', 'Claude Code',
-          'Gemini CLI']) {
+      for (final name in [
+        'Claude app',
+        'ChatGPT app',
+        'Claude Code',
+        'Gemini CLI'
+      ]) {
         final either = find.text('Set up $name').evaluate().length +
             find.text('$name — set up').evaluate().length;
         expect(either, 1, reason: name);
@@ -181,8 +200,7 @@ void main() {
     testWidgets('ready, and honest that nothing has used it yet', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await openDialog(t);
-      expect(
-          find.text('Ready. No AI helper has used it since Openote opened.'),
+      expect(find.text('Ready. No AI helper has used it since Openote opened.'),
           findsOneWidget);
       // The thing that is otherwise unexplainable from inside the app: a
       // client looks for its servers once, at start-up, and never retries.

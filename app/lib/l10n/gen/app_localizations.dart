@@ -3682,6 +3682,210 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Openote could not save your notebook list and settings. The window will stay open the first time you close it. Check the disk and try again, or close the window again to leave anyway.'**
   String get saveProblemList;
+
+  /// Title of the dialog that lets AI helpers reach the notes.
+  ///
+  /// In en, this message translates to:
+  /// **'AI access'**
+  String get mcpTitle;
+
+  /// What turning on AI access does and its limits.
+  ///
+  /// In en, this message translates to:
+  /// **'Let an AI helper — like Claude — read your notes, search them, quiz you, and make flashcards from them. It only works while Openote is open, only on this computer, and anything it adds is a normal edit: Ctrl+Z undoes it.'**
+  String get mcpIntro;
+
+  /// What a passcode does and does not keep from AI tools.
+  ///
+  /// In en, this message translates to:
+  /// **'Anything with a passcode stays private: an AI helper can\'t see it or change it, even while you have it unlocked. A passcode locks Openote, not the file itself, so an AI tool that can open files on your computer could still read it.'**
+  String get mcpPasscodeNote;
+
+  /// The AI access server failed to start; error is a technical message.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not start: {error}'**
+  String mcpCouldNotStart(String error);
+
+  /// Status line: the AI access server is running; lastUsed is a sentence about when it was last used.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready. {lastUsed}'**
+  String mcpReady(String lastUsed);
+
+  /// Status: no AI helper has made a request yet.
+  ///
+  /// In en, this message translates to:
+  /// **'No AI helper has used it since Openote opened.'**
+  String get mcpNeverUsed;
+
+  /// Status: an AI helper made a request under a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Last used by an AI helper just now.'**
+  String get mcpUsedJustNow;
+
+  /// Status: when an AI helper last made a request, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, =1{Last used by an AI helper 1 minute ago.} other{Last used by an AI helper {minutes} minutes ago.}}'**
+  String mcpUsedMinutesAgo(int minutes);
+
+  /// Status: when an AI helper last made a request, in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours, plural, =1{Last used by an AI helper 1 hour ago.} other{Last used by an AI helper {hours} hours ago.}}'**
+  String mcpUsedHoursAgo(int hours);
+
+  /// Status: the last request was more than a day ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Last used by an AI helper more than a day ago.'**
+  String get mcpUsedOverADay;
+
+  /// AI helpers only look for the app when they start.
+  ///
+  /// In en, this message translates to:
+  /// **'An AI helper looks for Openote when it starts. If yours was already open, restart it.'**
+  String get mcpRestartHint;
+
+  /// Button for an AI tool that is already set up; name is the tool, such as Claude Code.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} — set up'**
+  String mcpClientIsSetUp(String name);
+
+  /// Button that sets up an AI tool; name is the tool, such as Claude Code.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up {name}'**
+  String mcpSetUpClient(String name);
+
+  /// The Claude desktop app, as named on a button.
+  ///
+  /// In en, this message translates to:
+  /// **'Claude app'**
+  String get mcpClaudeApp;
+
+  /// The ChatGPT desktop app, as named on a button.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT app'**
+  String get mcpChatGptApp;
+
+  /// Why the ChatGPT and Gemini websites cannot be connected.
+  ///
+  /// In en, this message translates to:
+  /// **'The ChatGPT website can\'t be connected: its connectors run on OpenAI\'s servers, which can\'t see your computer. The button above is for the desktop app, which reads its settings from this computer. The Gemini app is the website case too — its CLI has a button.'**
+  String get mcpWebsiteNote;
+
+  /// Button that copies the server address.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy address'**
+  String get mcpCopyAddress;
+
+  /// Button that copies the connection settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy configuration'**
+  String get mcpCopyConfiguration;
+
+  /// Folded section for connecting other AI tools by hand.
+  ///
+  /// In en, this message translates to:
+  /// **'Other AI tools (advanced)'**
+  String get mcpOtherTools;
+
+  /// Explains MCP and that the key is a password.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote speaks MCP, the standard AI tools use to connect to apps. Any MCP-capable tool can use this — the key inside is a password, so paste it only into tools you trust.'**
+  String get mcpOtherToolsBody;
+
+  /// The port the server listens on. port is a number shown as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Listening on port {port}, on this computer only.'**
+  String mcpListening(String port);
+
+  /// The server is not listening.
+  ///
+  /// In en, this message translates to:
+  /// **'Not listening.'**
+  String get mcpNotListening;
+
+  /// Button that copies the configuration snippet.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy config'**
+  String get mcpCopyConfig;
+
+  /// Introduces a command to run in a terminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Or, for tools with a command line, run once:'**
+  String get mcpCliIntro;
+
+  /// Button that copies the terminal command.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy command'**
+  String get mcpCopyCommand;
+
+  /// Toast after copying: the key is a password.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied. The key inside is a password — paste it only into your own tools.'**
+  String get mcpCopied;
+
+  /// Setting up ChatGPT failed because its settings file could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT\'s settings file couldn\'t be read, so Openote left it alone. The connection details under Advanced still work.'**
+  String get mcpChatGptUnreadable;
+
+  /// Setting up ChatGPT failed because its settings file was not understood.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT\'s settings file has something in it Openote doesn\'t understand, so it was left alone. Copy the configuration under Advanced and add it by hand.'**
+  String get mcpChatGptUnparsable;
+
+  /// Setting up an AI tool failed; error is a technical message.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the connection: {error}'**
+  String mcpSaveFailed(String error);
+
+  /// ChatGPT was set up; what to do next.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up. Restart the ChatGPT desktop app and Openote will be there under its MCP servers. The website cannot use this — only an app on this computer can see Openote.'**
+  String get mcpChatGptSetUp;
+
+  /// Settings saved, but ChatGPT is not installed yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved. Openote will appear once the ChatGPT desktop app or the Codex CLI is installed on this computer.'**
+  String get mcpChatGptSavedOnly;
+
+  /// Setting up an AI tool failed because its settings file could not be read; name is the tool.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}\'s settings file couldn\'t be read, so Openote left it alone. The connection details under Advanced still work in any MCP-capable tool.'**
+  String mcpClientUnreadable(String name);
+
+  /// An AI tool was set up; what to do next. name is the tool. The quoted example is something to ask it.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up. If {name} is already open, restart it — it looks for Openote when it starts. Then ask it about your notes: try \"quiz me on what I wrote this week\".'**
+  String mcpClientSetUp(String name);
+
+  /// Settings saved, but the AI tool is not installed yet; name is the tool.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote is ready, but {name} doesn\'t look installed on this computer yet. Once it is, the connection will just work.'**
+  String mcpClientNotInstalled(String name);
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {
