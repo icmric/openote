@@ -160,7 +160,9 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           child: switch (_tab) {
             2 => _drawRow(context),
             _tabPage => PageFace(app: app),
-            _ => _homeRow(context),
+            _ => isPhoneWidth(context)
+                ? _phoneHomeRow(context)
+                : _homeRow(context),
           },
         ),
       ),
@@ -683,12 +685,16 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
               Expanded(
                 child: InkWell(
                   mouseCursor: WidgetStateMouseCursor.clickable,
-                  onTap: () => setState(() {
-                    _tab = i;
-                    _tabbedAwayFrom = objectFaceOf(app) == ObjectFace.equation
-                        ? app.activeMath
-                        : null;
-                  }),
+                  onTap: i == 1
+                      // Insert is a sheet, not a row to scroll along.
+                      ? () => _showInsertSheet(context)
+                      : () => setState(() {
+                          _tab = i;
+                          _tabbedAwayFrom =
+                              objectFaceOf(app) == ObjectFace.equation
+                                  ? app.activeMath
+                                  : null;
+                        }),
                   child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -709,6 +715,218 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           ]),
         ),
       ]),
+    );
+  }
+
+  // ── Phone: the short Write strip, and the two sheets ─────────────────────
+
+  /// What is wanted at a glance while typing, and nothing else: bold, italic,
+  /// underline, bullets, a checklist, a tag, and **Aa**, which opens everything
+  /// the desktop row has. The desktop row is about twenty-five controls wide;
+  /// on a phone that is a scroll to reach most of them.
+  Widget _phoneHomeRow(BuildContext context) {
+    final l = L.of(context);
+    final canFormat = app.canFormatText;
+    final active = app.marksAtCaret();
+    Widget fmt(IconData icon, String tip, VoidCallback fn, [MdInline? mark]) =>
+        IconTap(
+          icon: icon,
+          label: tip,
+          size: 20,
+          width: 40,
+          height: 44,
+          selected: mark != null && active.contains(mark),
+          onPressed: canFormat ? fn : null,
+        );
+    return Row(children: [
+      fmt(Icons.format_bold, l.barBold, () => app.wrapSelection('**'),
+          MdInline.bold),
+      fmt(Icons.format_italic, l.barItalic, () => app.wrapSelection('*'),
+          MdInline.italic),
+      fmt(Icons.format_underlined, l.barUnderline,
+          () => app.wrapSelection('++'), MdInline.underline),
+      const _Div(),
+      fmt(Icons.format_list_bulleted, l.barBulletList,
+          () => app.toggleList(ListKind.bullet)),
+      fmt(Icons.check_box_outlined, l.barCheckbox,
+          () => app.toggleList(ListKind.checkbox)),
+      _TagButton(app: app),
+      const _Div(),
+      // Everything else: headings, the rest of the styles, lists, colours,
+      // font and size.
+      IconTap(
+        icon: Icons.text_format,
+        label: l.barTextFont,
+        size: 24,
+        width: 44,
+        height: 44,
+        color: Theme.of(context).colorScheme.primary,
+        onPressed: () => _showFormatSheet(context),
+      ),
+    ]);
+  }
+
+  /// Everything the Write row has, in a sheet, in groups with big targets.
+  void _showFormatSheet(BuildContext context) {
+    final l = L.of(context);
+    final s = context.surfaces;
+    String plain(String label) => label.split('  (').first;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: s.chrome2,
+      builder: (sheet) => SafeArea(
+        child: ListenableBuilder(
+          listenable: app,
+          builder: (_, __) {
+            final can = app.canFormatText;
+            final on = app.marksAtCaret();
+            Widget tile(IconData icon, String label, VoidCallback fn,
+                    {MdInline? mark, bool close = false}) =>
+                _SheetTile(
+                  icon: icon,
+                  label: plain(label),
+                  selected: mark != null && on.contains(mark),
+                  onTap: can
+                      ? () {
+                          fn();
+                          if (close) Navigator.of(sheet).pop();
+                        }
+                      : null,
+                );
+            Widget group(List<Widget> tiles) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Wrap(spacing: 8, runSpacing: 8, children: tiles),
+                );
+            final dark = Theme.of(context).brightness == Brightness.dark;
+            return SingleChildScrollView(
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                group([
+                  tile(Icons.format_bold, l.barBold, () => app.wrapSelection('**'),
+                      mark: MdInline.bold),
+                  tile(Icons.format_italic, l.barItalic,
+                      () => app.wrapSelection('*'), mark: MdInline.italic),
+                  tile(Icons.format_underlined, l.barUnderline,
+                      () => app.wrapSelection('++'), mark: MdInline.underline),
+                  tile(Icons.strikethrough_s, l.barStrikethrough,
+                      () => app.wrapSelection('~~'), mark: MdInline.strike),
+                  tile(Icons.code, l.barInlineCode, () => app.wrapSelection('`'),
+                      mark: MdInline.code),
+                ]),
+                Divider(height: 12, color: s.border),
+                group([
+                  tile(Icons.title, l.barHeading1, () => app.toggleLinePrefix('# ')),
+                  _SheetTile(
+                      text: 'H2',
+                      label: 'H2',
+                      onTap: can ? () => app.toggleLinePrefix('## ') : null),
+                  _SheetTile(
+                      text: 'H3',
+                      label: 'H3',
+                      onTap: can ? () => app.toggleLinePrefix('### ') : null),
+                  tile(Icons.format_quote, l.barQuote,
+                      () => app.toggleLinePrefix('> ')),
+                ]),
+                Divider(height: 12, color: s.border),
+                group([
+                  tile(Icons.format_list_bulleted, l.barBulletList,
+                      () => app.toggleList(ListKind.bullet)),
+                  tile(Icons.format_list_numbered, l.barNumberedList,
+                      () => app.toggleList(ListKind.numbered)),
+                  tile(Icons.check_box_outlined, l.barCheckbox,
+                      () => app.toggleList(ListKind.checkbox)),
+                ]),
+                Divider(height: 12, color: s.border),
+                group([
+                  _SheetTile(
+                    icon: Icons.format_color_text,
+                    label: plain(l.barTextColour),
+                    swatch: app.lastColor == 'auto'
+                        ? (dark ? OnoteColors.moon100 : OnoteColors.graphite700)
+                        : null,
+                    onTap: can
+                        ? () async {
+                            final hex = await showOnoteColorPicker(context, app,
+                                initial: app.lastColor, allowAuto: true);
+                            if (hex != null) app.applyTextColor(hex);
+                          }
+                        : null,
+                  ),
+                  _SheetTile(
+                    icon: Icons.border_color,
+                    label: plain(l.barHighlight),
+                    swatch: inlineHighlightColour(app.lastHighlight, dark),
+                    selected: app.selectionIsHighlighted,
+                    onTap: can
+                        ? () async {
+                            final hex = await showOnoteColorPicker(context, app,
+                                initial: app.lastHighlight, allowAuto: false);
+                            if (hex != null) app.applyHighlightColor(hex);
+                          }
+                        : null,
+                  ),
+                  _SheetTile(
+                    icon: Icons.font_download_outlined,
+                    label: plain(l.barTextFont),
+                    onTap: can
+                        ? () async {
+                            final f = await showFontPicker(context,
+                                current: app.activeEditor?.block
+                                    .content['font'] as String?);
+                            if (f != null) app.setActiveBlockFont(f);
+                          }
+                        : null,
+                  ),
+                ]),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                  child: Row(children: [
+                    _FontSizeField(app: app, enabled: can),
+                    const Spacer(),
+                    _MakeCardButton(app: app),
+                  ]),
+                ),
+              ]),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Everything you can add to the page, as a grid: the same list the desktop's
+  /// Insert row and right-click menu use. What this build cannot do yet is shown
+  /// greyed, not left out.
+  void _showInsertSheet(BuildContext context) {
+    final l = L.of(context);
+    final s = context.surfaces;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: s.chrome2,
+      builder: (sheet) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final item in kInsertRibbon)
+              _SheetTile(
+                icon: item.icon,
+                label: item.label(l),
+                onTap: item.available
+                    ? () {
+                        Navigator.of(sheet).pop();
+                        item.run(context, app, insertAnchor(app, item));
+                      }
+                    : null,
+              ),
+          ]),
+        ),
+      ),
     );
   }
 
@@ -2394,4 +2612,83 @@ Future<void> _showExactPenSize(BuildContext context, AppState app) {
       ],
     ),
   );
+}
+
+
+/// A big, labelled button for the phone's sheets: an icon (or a short word) over
+/// its name. Greyed, never hidden, when it cannot be used.
+class _SheetTile extends StatelessWidget {
+  const _SheetTile({
+    this.icon,
+    this.text,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+    this.swatch,
+  });
+  final IconData? icon;
+  final String? text;
+  final String label;
+  final VoidCallback? onTap;
+  final bool selected;
+
+  /// A bar of the colour this applies, under the icon.
+  final Color? swatch;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final s = context.surfaces;
+    final enabled = onTap != null;
+    final fg = !enabled
+        ? s.textDisabled
+        : selected
+            ? scheme.primary
+            : s.textPrimary;
+    return Semantics(
+      label: label,
+      button: true,
+      enabled: enabled,
+      selected: selected,
+      excludeSemantics: true,
+      child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          width: 80,
+          height: 72,
+          decoration: BoxDecoration(
+            color: selected ? scheme.primary.withValues(alpha: .12) : s.chrome,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: selected ? scheme.primary : s.border),
+          ),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (icon != null)
+              Icon(icon, size: 24, color: fg)
+            else
+              Text(text ?? '',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700, color: fg)),
+            if (swatch != null)
+              Container(
+                  width: 22,
+                  height: 3,
+                  margin: const EdgeInsets.only(top: 2),
+                  color: enabled ? swatch : s.textDisabled),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              // Shrinks a long word to fit rather than cutting it off.
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label,
+                    maxLines: 1, style: TextStyle(fontSize: 11, color: fg)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
 }

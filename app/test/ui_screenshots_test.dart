@@ -473,6 +473,42 @@ void main() {
     });
   }
 
+  for (final which in ['Insert', 'format']) {
+    testWidgets('phone sheet $which', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      app.systemLocale = () => const Locale('en', 'AU');
+      t.view.physicalSize = const Size(390, 844);
+      t.view.devicePixelRatio = 1;
+      t.view.padding = const FakeViewPadding(top: 36, bottom: 20);
+      t.view.viewPadding = const FakeViewPadding(top: 36, bottom: 20);
+      addTearDown(t.view.reset);
+      final key = GlobalKey();
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        debugShowCheckedModeBanner: false,
+        builder: (c, child) => RepaintBoundary(key: key, child: child),
+        home: AppShell(app: app),
+      ));
+      for (var i = 0; i < 2; i++) {
+        await t.pump(const Duration(milliseconds: 800));
+        await t.pumpAndSettle();
+      }
+      if (which == 'Insert') {
+        await t.tap(find.text('Insert'));
+      } else {
+        await t.tap(find.byIcon(Icons.text_format));
+      }
+      await t.pumpAndSettle();
+      await expectLater(find.byKey(key),
+          matchesGoldenFile('goldens/phone_sheet_$which.png'));
+      app.cancelPendingSave();
+    });
+  }
+
   // ── The marker under a word the app corrected ──────────────────────────────
   for (final b in [Brightness.light, Brightness.dark]) {
     testWidgets('autocorrect marker ${b.name}', (t) async {

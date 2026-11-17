@@ -122,4 +122,35 @@ void main() {
     expect(find.byType(PhoneTopBar), findsNothing);
     app.cancelPendingSave();
   });
+
+  testWidgets('Insert opens a sheet of everything you can add, not a row to scroll',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    await t.tap(find.text('Insert'));
+    await t.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text('Table'), findsOneWidget);
+    // The strip underneath did not turn into the Insert row.
+    await t.tapAt(const Offset(195, 120)); // the scrim closes it
+    await t.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the Write strip is short, and Aa holds the rest', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    // Not the twenty-five of the desktop row: strikethrough, code, colours and
+    // the font are behind Aa.
+    expect(find.byIcon(Icons.strikethrough_s), findsNothing);
+    expect(find.byIcon(Icons.format_color_text), findsNothing);
+    await t.tap(find.byIcon(Icons.text_format));
+    await t.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byIcon(Icons.strikethrough_s), findsOneWidget);
+    expect(find.byIcon(Icons.format_color_text), findsOneWidget);
+    expect(find.byIcon(Icons.font_download_outlined), findsOneWidget);
+    app.cancelPendingSave();
+  });
 }
