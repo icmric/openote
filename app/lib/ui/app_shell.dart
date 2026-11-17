@@ -1,3 +1,4 @@
+import 'opening_mark.dart';
 import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
 import 'dart:async';
@@ -1395,6 +1396,8 @@ class _AppShellState extends State<AppShell> {
       // RENDERS must appear here, or the change paints only after something
       // else happens to invalidate the memo — a stale-not-broken failure that
       // passes a quick smoke test and fails in real use.
+      // The "opening" mark replaces an empty outline while a notebook is read in.
+      app.openingNotebook,
       app.navCollapsed,
       app.navSectionsW,
       app.navPagesW,
@@ -1536,7 +1539,9 @@ class _AppShellState extends State<AppShell> {
                             // would leave the content sitting there.
                             child: _regionWrap(
                                 _Region.page,
-                                page == null
+                                app.pageLoading
+                                    ? const OpeningMark()
+                                    : page == null
                                     ? _EmptyState(app: app)
                                     : app.isLocked(page.id)
                                         ? _LockedPage(app: app, page: page)
@@ -1606,7 +1611,9 @@ extension _PhoneShell on _AppShellState {
               Expanded(
                 child: Stack(children: [
                   Positioned.fill(
-                    child: page == null
+                    child: app.pageLoading
+                        ? const OpeningMark()
+                        : page == null
                         ? _EmptyState(app: app)
                         : app.isLocked(page.id)
                             ? _LockedPage(app: app, page: page)
@@ -2278,6 +2285,9 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A notebook still being read in has no page yet: say so, rather than
+    // offering to create the first page of a notebook that has hundreds.
+    if (app.openingNotebook) return const OpeningMark();
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

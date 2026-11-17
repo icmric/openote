@@ -10,9 +10,8 @@ import '../l10n/l10n.dart';
 import '../core/capabilities.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
-import 'join_folder.dart';
+import 'open_notebook.dart';
 import 'join_git_dialog.dart';
-import '../sync/saf_folder.dart' show safAvailable;
 import 'onboarding.dart';
 import 'phone_shell.dart' show isPhoneWidth;
 import 'sync_dot.dart';
@@ -156,7 +155,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           horizontal: isPhoneWidth(context) ? 12 : 40, vertical: 24),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
-        width: isPhoneWidth(context) ? double.maxFinite : 520,
+        width: isPhoneWidth(context) ? double.maxFinite : 620,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 460),
           child: ListView(
@@ -207,6 +206,23 @@ class _NotebookManagerState extends State<_NotebookManager> {
               if (title == null || !mounted) return;
               await app.createNotebook(title);
               if (mounted) setState(() {});
+            },
+          ),
+          // **Open: a notebook that already exists in a folder** (in Google Drive,
+          // say). It used to be reachable only from the first-run screen, which
+          // nobody sees twice, so on a second device the way to open a notebook
+          // that was already in the cloud was a place that was gone. It is a
+          // button here, beside New, on every device.
+          TextButton.icon(
+            icon: const Icon(Icons.folder_open_outlined, size: 18),
+            label: Text(l.commonOpen),
+            onPressed: () async {
+              // Everything the flow needs is taken BEFORE this panel closes, for
+              // the reason spelled out on the import row below.
+              final messenger = ScaffoldMessenger.of(context);
+              final root = Navigator.of(context, rootNavigator: true).context;
+              Navigator.pop(context);
+              await openNotebookFromFolder(root, app, messenger: messenger);
             },
           ),
           // Import expands INLINE rather than opening a popup menu: a popup here
@@ -319,11 +335,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
         // make.
         choice(Icons.cloud_download_outlined, l.nbImportGit,
             (m, c) => showJoinFromGitDialog(c, app, messenger: m)),
-        // Android: a notebook in a Google Drive folder, through the system's
-        // folder picker. No sign-in here.
-        if (safAvailable)
-          choice(Icons.folder_open_outlined, l.nbImportDriveFolder,
-              (m, c) => openFromDriveFolder(c, app, messenger: m)),
       ]),
     );
   }
@@ -694,9 +705,15 @@ class _ActionsLayout extends StatelessWidget {
             children: children),
       );
     }
-    return Row(children: [
-      ...children.take(children.length - 1),
-      const Spacer(),
+    // The buttons take the room there is and wrap onto a second line when a
+    // narrow window or a larger font leaves too little; "Done" stays at the end.
+    return Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+      Expanded(
+        child: Wrap(
+            spacing: 2,
+            runSpacing: 2,
+            children: children.take(children.length - 1).toList()),
+      ),
       children.last,
     ]);
   }

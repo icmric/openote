@@ -1955,4 +1955,31 @@ class LPt extends L {
 
   @override
   String get pageSheetFit => 'Encaixar';
+
+  @override
+  String get navOpening => 'Abrindo este caderno…';
+
+  @override
+  String get openFolderTitle => 'Abrir um caderno de uma pasta';
+
+  @override
+  String get openFolderBody =>
+      'Escolha a pasta onde seus cadernos ficam, como uma do Google Drive, OneDrive ou Dropbox. O Openote procura cadernos dentro dela.';
+
+  @override
+  String get openFolderChoose => 'Escolher uma pasta…';
+
+  @override
+  String get openFolderNone =>
+      'Nenhum caderno foi encontrado ali. Escolha a pasta que contém seus cadernos, ou a pasta do próprio caderno (o nome termina em .onotebook).';
+
+  @override
+  String get openFolderLooking => 'Procurando cadernos…';
+
+  @override
+  String get openFolderAndroidHint =>
+      'Escolha a pasta onde estão seus cadernos. No Google Drive costuma ser a chamada “Openote”. Depois toque em “Usar esta pasta”.';
+
+  @override
+  String get openFolderFound => 'Cadernos encontrados';
 }

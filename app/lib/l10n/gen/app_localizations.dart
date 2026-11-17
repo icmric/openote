@@ -3256,6 +3256,54 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Fit'**
   String get pageSheetFit;
+
+  /// Shown with a progress mark in place of the section list while a notebook is still being read in, so an empty outline is not mistaken for an empty or broken notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening this notebook…'**
+  String get navOpening;
+
+  /// Title of the dialog for opening a notebook that already exists in a folder (for example one kept in Google Drive).
+  ///
+  /// In en, this message translates to:
+  /// **'Open a notebook from a folder'**
+  String get openFolderTitle;
+
+  /// Explains what to choose. Openote then looks inside the chosen folder for notebooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the folder your notebooks are kept in, such as one in Google Drive, OneDrive or Dropbox. Openote looks inside it for notebooks.'**
+  String get openFolderBody;
+
+  /// Button that opens the system's folder picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a folder…'**
+  String get openFolderChoose;
+
+  /// Shown when the chosen folder holds no notebook. '.onotebook' is the literal ending of a notebook folder's name; keep it as it is.
+  ///
+  /// In en, this message translates to:
+  /// **'No notebooks were found there. Choose the folder that holds your notebooks, or a notebook’s own folder (its name ends in .onotebook).'**
+  String get openFolderNone;
+
+  /// Progress line while folders are searched for notebooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for notebooks…'**
+  String get openFolderLooking;
+
+  /// Shown on a phone just before the system's folder picker opens. 'Use this folder' is the picker's own button label in Android; translate it to match Android in this language.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the folder your notebooks are in. In Google Drive that is usually the one called “Openote”. Then tap “Use this folder”.'**
+  String get openFolderAndroidHint;
+
+  /// Heading over the list of notebooks found in a folder.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebooks found'**
+  String get openFolderFound;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

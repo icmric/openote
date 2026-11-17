@@ -1962,4 +1962,31 @@ class LDe extends L {
 
   @override
   String get pageSheetFit => 'Einpassen';
+
+  @override
+  String get navOpening => 'Dieses Notizbuch wird geöffnet…';
+
+  @override
+  String get openFolderTitle => 'Notizbuch aus einem Ordner öffnen';
+
+  @override
+  String get openFolderBody =>
+      'Wähle den Ordner, in dem deine Notizbücher liegen, zum Beispiel einen in Google Drive, OneDrive oder Dropbox. Openote sucht darin nach Notizbüchern.';
+
+  @override
+  String get openFolderChoose => 'Ordner wählen…';
+
+  @override
+  String get openFolderNone =>
+      'Dort wurde kein Notizbuch gefunden. Wähle den Ordner, der deine Notizbücher enthält, oder den eigenen Ordner eines Notizbuchs (sein Name endet auf .onotebook).';
+
+  @override
+  String get openFolderLooking => 'Notizbücher werden gesucht…';
+
+  @override
+  String get openFolderAndroidHint =>
+      'Wähle den Ordner mit deinen Notizbüchern. In Google Drive ist das meist der Ordner „Openote“. Tippe dann auf „Diesen Ordner verwenden“.';
+
+  @override
+  String get openFolderFound => 'Gefundene Notizbücher';
 }

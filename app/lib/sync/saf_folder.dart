@@ -57,10 +57,15 @@ bool get safAvailable =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
 class SafFolder implements FolderApi {
-  SafFolder(this.tree);
+  SafFolder(this.tree, {this.root});
 
   /// The persisted tree URI the picker returned.
   final String tree;
+
+  /// The document id of the folder to treat as the top, when it is not the one
+  /// that was picked: a person picks the folder their notebooks are in and one
+  /// of them is chosen from it. Null means the picked folder itself.
+  final String? root;
 
   static const _ch = MethodChannel('org.openote/saf');
 
@@ -70,7 +75,7 @@ class SafFolder implements FolderApi {
   @override
   Future<List<SafEntry>> list({String? doc}) async {
     final r = await _ch.invokeMethod<List<Object?>>(
-        'list', {'tree': tree, 'doc': doc});
+        'list', {'tree': tree, 'doc': doc ?? root});
     return [
       for (final e in r ?? const <Object?>[])
         SafEntry.fromMap(e as Map<Object?, Object?>)
@@ -87,14 +92,14 @@ class SafFolder implements FolderApi {
   Future<String> write(
       {String? parent, required String name, required Uint8List bytes}) async {
     final r = await _ch.invokeMethod<String>(
-        'write', {'tree': tree, 'parent': parent, 'name': name, 'bytes': bytes});
+        'write', {'tree': tree, 'parent': parent ?? root, 'name': name, 'bytes': bytes});
     return r!;
   }
 
   @override
   Future<String> makeDir({String? parent, required String name}) async {
     final r = await _ch.invokeMethod<String>(
-        'mkdir', {'tree': tree, 'parent': parent, 'name': name});
+        'mkdir', {'tree': tree, 'parent': parent ?? root, 'name': name});
     return r!;
   }
 }

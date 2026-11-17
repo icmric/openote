@@ -1069,6 +1069,9 @@ class AppState extends ChangeNotifier
     if (nb == null || _disposed) return;
     final bridge = _bridgeFor(nb);
     if (bridge == null || notebookIsReadOnly(nb)) return;
+    // Nothing is sent from a notebook that has not been read in all the way: what
+    // this device would send is a diff against an old page.
+    if (_needsFirstFold(nb)) return;
     try {
       // What is in memory goes to the log first; then the log goes up.
       if (nb == notebookId) await flushSave();
@@ -1106,6 +1109,35 @@ class AppState extends ChangeNotifier
 
   bool isFolderNotebook(String nb) => _repo.getSetting(_folderKey(nb)) is Map;
 
+  /// **A Drive-folder notebook whose history has not yet been folded in all the
+  /// way.** Until it has, its pages in this device's container are only what the
+  /// first part of the fold got to, and a page opened then is an OLD page: the
+  /// open-time repairs (a table block becoming a table in its paragraph) run on
+  /// it and write the result with a newer clock than the real, later edits, which
+  /// then lose to it everywhere. So while this is true nothing is opened for
+  /// editing and nothing is sent: see [selectPage] and [pushFolderNow].
+  bool _needsFirstFold(String nb) {
+    final raw = _repo.getSetting(_folderKey(nb));
+    return raw is Map && raw['folded'] != true;
+  }
+
+  void _markFolded(String nb) {
+    final raw = _repo.getSetting(_folderKey(nb));
+    if (raw is Map && raw['folded'] != true) {
+      _repo.setSetting(_folderKey(nb), {...raw.cast<String, dynamic>(), 'folded': true});
+    }
+  }
+
+  /// A pull that actually ran. [syncPull] answers "0" at once, without folding
+  /// anything, when another pull (of any notebook) is running; for a first fold
+  /// that answer is a lie by omission, so wait for the lane and then pull.
+  Future<int> _syncPullComplete(String nb) async {
+    for (var i = 0; i < 1200 && _pulling && !_disposed; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return syncPull(nb);
+  }
+
   FolderBridge? _bridgeFor(String nb) {
     final have = _folderBridges[nb];
     if (have != null) return have;
@@ -1114,8 +1146,11 @@ class AppState extends ChangeNotifier
     final tree = raw['tree'];
     final dir = _repo.notebooks.where((n) => n.id == nb).firstOrNull?.logDir;
     if (tree is! String || dir == null) return null;
+    final root = raw['root'];
     return _folderBridges[nb] = FolderBridge(
-        folder: SafFolder(tree), logDirPath: dir, ownDevice: localDeviceId());
+        folder: SafFolder(tree, root: root is String ? root : null),
+        logDirPath: dir,
+        ownDevice: localDeviceId());
   }
 
   /// Bring the folder's logs down, at most every twenty seconds. Never throws:
@@ -1147,12 +1182,13 @@ class AppState extends ChangeNotifier
   /// message to show. Never throws. **Reads only: nothing is written to the
   /// folder.**
   Future<String?> joinNotebookFromFolder(String tree,
-      {void Function(String stage)? onProgress,
+      {String? rootDoc,
+      void Function(String stage)? onProgress,
       @visibleForTesting FolderApi? folderForTest}) async {
     if (folderForTest == null && !safAvailable) {
       return 'This is only on Android.';
     }
-    final FolderApi folder = folderForTest ?? SafFolder(tree);
+    final FolderApi folder = folderForTest ?? SafFolder(tree, root: rootDoc);
     onProgress?.call('Looking at the folder…');
     final List<SafEntry> root;
     try {
@@ -1197,7 +1233,7 @@ class AppState extends ChangeNotifier
     onProgress?.call('Reading the notes…');
     try {
       Directory(into).createSync(recursive: true);
-      final r = await bridge.pull();
+      final r = await bridge.pull(includeOwn: true);
       folderPullSummary = r.toString();
       debugPrint('[openote/folder] first pull: $r');
     } catch (e) {
@@ -1210,13 +1246,26 @@ class AppState extends ChangeNotifier
 
     onProgress?.call('Opening…');
     final ref = await _repo.adoptLogDirectory(into, title: title);
-    _repo.setSetting(_folderKey(ref.id), {'tree': tree, 'notebookId': knownId});
+    _repo.setSetting(
+        _folderKey(ref.id), {'tree': tree, 'root': rootDoc, 'notebookId': knownId});
     _folderBridges[ref.id] = bridge;
     _folderPulledAt[ref.id] = DateTime.now();
-    await selectNotebook(ref.id);
-    await syncPull(ref.id);
-    reloadNodes();
-    await _loadNotebook();
+    // **The whole history is folded in BEFORE the notebook is shown.** Selecting
+    // it first started the open-time fold in the background and let the page
+    // load while that was half done, so the page opened was an old one, was
+    // repaired, and was written back with a newer clock than the real edits (nine
+    // tables went back to where they were first imported). The person is looking
+    // at a progress dialog anyway; the work is the same, only the order is safe.
+    _startOpening(ref.id);
+    try {
+      await _syncPullComplete(ref.id);
+      _markFolded(ref.id);
+      await selectNotebook(ref.id);
+      reloadNodes();
+      await _loadNotebook();
+    } finally {
+      _doneOpening(ref.id);
+    }
     notifyListeners();
     return null;
   }
@@ -2446,14 +2495,77 @@ class AppState extends ChangeNotifier
   /// rather than thrown: this runs detached from any user action, and a
   /// notebook that cannot fold must still open.
   void _foldWhenWarm(String nb) {
+    _opening[nb] = (_opening[nb] ?? 0) + 1;
     unawaited(warmRecorder(nb).then<int>((r) async {
       // The user may have moved on to another notebook while this replayed.
       if (r == null || _disposed || notebookId != nb) return 0;
-      return syncPull(nb);
+      final n = await _syncPullComplete(nb);
+      // Folded all the way, with nothing failing: the notebook may be edited and
+      // sent (a Drive-folder one waits for exactly this; see [_needsFirstFold]).
+      _markFolded(nb);
+      return n;
     }).catchError((Object e) {
       debugPrint('[openote/sync] open-time fold failed: $e');
       return 0;
-    }));
+    }).whenComplete(() => _doneOpening(nb)));
+  }
+
+  /// Completed when [nb] has no opening in flight. See [_whenOpened].
+  final Map<String, Completer<void>> _openingDone = {};
+
+  /// Wait for [nb]'s opening to finish; at once when none is running.
+  Future<void> _whenOpened(String nb) {
+    if (!_opening.containsKey(nb)) return Future.value();
+    return (_openingDone[nb] ??= Completer<void>()).future;
+  }
+
+  /// Whether the open page is waiting for its notebook to be read in.
+  bool pageLoading = false;
+
+  /// Notebooks being brought up to date on opening: the replay of their history
+  /// and the folding in of what other devices wrote. How many openings are in
+  /// flight for each.
+  final Map<String, int> _opening = {};
+
+  /// Whether the notebook on screen is still being read in. Until it is done
+  /// the outline can be empty or short, and an empty outline must not look like
+  /// an empty notebook: the screens say "Opening" instead of "no sections" and
+  /// show a progress mark, so nobody mistakes a notebook that is on its way for
+  /// a broken one.
+  bool get openingNotebook {
+    final nb = notebookId;
+    return nb != null && _opening.containsKey(nb);
+  }
+
+  /// Say a notebook is being read in, for the work that is not
+  /// [_foldWhenWarm] (joining one from a folder). Pair with [_doneOpening].
+  /// A test says the open notebook is (or is no longer) being read in.
+  @visibleForTesting
+  void debugSetOpening(bool on) {
+    final nb = notebookId!;
+    if (on) {
+      _opening[nb] = 1;
+    } else {
+      _opening.remove(nb);
+      _openingDone.remove(nb)?.complete();
+    }
+    notifyListeners();
+  }
+
+  void _startOpening(String nb) {
+    _opening[nb] = (_opening[nb] ?? 0) + 1;
+    notifyListeners();
+  }
+
+  void _doneOpening(String nb) {
+    final left = (_opening[nb] ?? 1) - 1;
+    if (left <= 0) {
+      _opening.remove(nb);
+      _openingDone.remove(nb)?.complete();
+    } else {
+      _opening[nb] = left;
+    }
+    if (!_disposed) notifyListeners();
   }
 
   Future<int> syncPull(String nb) async {
@@ -9037,6 +9149,22 @@ class AppState extends ChangeNotifier
       blocks = [];
       pageProps = PageProps();
     } else {
+      // A Drive-folder notebook not yet read in all the way has only an old page
+      // to show: wait, with the page area saying so, rather than open it, repair
+      // it, and write the repair back over what is really there.
+      final nbNow = notebookId!;
+      if (_needsFirstFold(nbNow) && _opening.containsKey(nbNow)) {
+        blocks = [];
+        pageProps = PageProps();
+        pageLoading = true;
+        notifyListeners();
+        try {
+          await _whenOpened(nbNow);
+        } finally {
+          pageLoading = false;
+        }
+        if (pageId != id || notebookId != nbNow) return;
+      }
       final data = await engine.loadPage(notebookId!, id);
       blocks = data.blocks;
       pageProps = data.props;

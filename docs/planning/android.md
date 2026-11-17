@@ -31,6 +31,14 @@ groundwork and the plan, so the next steps start from what is true.
 
 The notebook shows as synced (`SyncStatus.driveFolder`, "Google Drive"), not "this computer only".
 
+**Found by the first real try (17 Nov evening), and fixed:**
+
+- **A page opened before its notebook was read in was an OLD page, and it was written back.** The join selected the notebook first and let the fold run in the background; the page loaded half-folded, its tables were still in the importer's shape, the open-time repair converted them and wrote them with a newer clock than the real, later edits, so nine tables went back to their import positions and overlapped their neighbours. (The tell, in the phone's own log: nine `block.set` ops with atoms re-keyed, `placement` back to `free` and the original x/y.) Now the whole history is folded in BEFORE the notebook is shown, a Drive-folder notebook records that it has been (`folded` in its `folderSync:` setting), and until it has, `selectPage` waits (the page area says "Opening this notebook…") and nothing is sent. A notebook joined by an earlier build has no mark and gets it at its next open.
+- **"No sections", then sections.** The same cause; an empty outline now shows a progress mark and "Opening this notebook…" in the drawer, the page area and the desktop navigator, and a thin bar while it is read in.
+- **The page followed the phone's "font size" setting**, which makes text in fixed-width boxes and tables wider than the room measured for it. The page draws its text unscaled (pinch is its zoom); the chrome still follows the setting.
+- **Opening an existing notebook was only possible from the first-run screen.** "Open" is now a button in the notebook list on every device: on a computer it lists notebooks already in Google Drive, OneDrive and the like (up to three folders down) and lets you choose a folder; on a phone it says what to choose, opens the folder picker, then finds the notebooks inside whatever was chosen and asks which. No `.onote` container is needed beside the folder.
+- **A notebook taken off the phone and opened again** gets its own earlier history back from the folder (a longer local log is still never replaced), instead of being stuck behind a refusal to push.
+
 **Not built:** putting a notebook that exists only on the phone into a Drive folder (that needs the manifest written, which is the one file the rule above forbids it to touch, so it wants its own design), and the desktop Sync dialog's chooser on Android (the phone has no status bar to reach it from).
 
 **Test copy:** `Openote test copy/Honours (copy).onotebook` on the owner's personal Drive: logs, pictures and manifest copied from the real notebook, which was only read. **Try writing on the copy first, never on the real notebook.**

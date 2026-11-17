@@ -316,4 +316,27 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget, reason: 'the reason, in words');
     app.cancelPendingSave();
   });
+
+  testWidgets('while a notebook is being read in it says so, and does not look broken',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(t, const Size(390, 844));
+    final bar = find.byType(PhoneTopBar);
+    expect(find.descendant(of: bar, matching: find.byIcon(Icons.check_circle_outline)),
+        findsOneWidget);
+    app.debugSetOpening(true);
+    await t.pump();
+    expect(find.descendant(of: bar, matching: find.byIcon(Icons.sync)),
+        findsOneWidget,
+        reason: 'arrows, not a tick that says all is done');
+    await t.tap(find.byIcon(Icons.menu));
+    // Not pumpAndSettle: a progress bar never settles, which is the point.
+    await t.pump(const Duration(milliseconds: 400));
+    expect(find.byType(LinearProgressIndicator), findsOneWidget,
+        reason: 'a bar in the drawer while it is read in');
+    app.debugSetOpening(false);
+    await t.pumpAndSettle();
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    app.cancelPendingSave();
+  });
 }

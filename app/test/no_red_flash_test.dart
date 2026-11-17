@@ -108,6 +108,13 @@ void main() {
 
     await type(t, c, ' ');
     await settle(t);
+    // The native check runs in a real isolate; on a busy machine (the whole
+    // suite at once) two seconds is not always enough, so wait for it rather
+    // than guess.
+    for (var i = 0; i < 80 && c.misspellings.isEmpty; i++) {
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await t.pump();
+    }
     expect(c.misspellings, hasLength(1),
         reason: 'finished, and still wrong: now it is marked');
     await done(t);

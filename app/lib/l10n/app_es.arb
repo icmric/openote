@@ -545,5 +545,13 @@
   "pageSheetPaper": "Papel",
   "pageSheetCanvas": "Lienzo",
   "pageSheetSnap": "Ajustar",
-  "pageSheetFit": "Encajar"
+  "pageSheetFit": "Encajar",
+  "navOpening": "Abriendo este cuaderno…",
+  "openFolderTitle": "Abrir un cuaderno desde una carpeta",
+  "openFolderBody": "Elige la carpeta donde guardas tus cuadernos, por ejemplo una de Google Drive, OneDrive o Dropbox. Openote busca cuadernos dentro de ella.",
+  "openFolderChoose": "Elegir una carpeta…",
+  "openFolderNone": "No se encontró ningún cuaderno ahí. Elige la carpeta que contiene tus cuadernos, o la carpeta propia de un cuaderno (su nombre termina en .onotebook).",
+  "openFolderLooking": "Buscando cuadernos…",
+  "openFolderAndroidHint": "Elige la carpeta donde están tus cuadernos. En Google Drive suele ser la que se llama «Openote». Luego toca «Usar esta carpeta».",
+  "openFolderFound": "Cuadernos encontrados"
 }

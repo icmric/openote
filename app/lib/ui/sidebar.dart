@@ -1,3 +1,4 @@
+import 'opening_mark.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -400,6 +401,7 @@ class _SidebarState extends State<Sidebar> {
     final l = L.of(context);
     final sections =
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
+    if (sections.isEmpty && app.openingNotebook) return const OpeningMark();
     if (sections.isEmpty) {
       return _EmptyHint(
         icon: Icons.folder_outlined,

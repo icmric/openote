@@ -545,5 +545,13 @@
   "pageSheetPaper": "Papier",
   "pageSheetCanvas": "Toile",
   "pageSheetSnap": "Aimanter",
-  "pageSheetFit": "Ajuster"
+  "pageSheetFit": "Ajuster",
+  "navOpening": "Ouverture de ce carnet…",
+  "openFolderTitle": "Ouvrir un carnet depuis un dossier",
+  "openFolderBody": "Choisissez le dossier où sont rangés vos carnets, par exemple un dossier Google Drive, OneDrive ou Dropbox. Openote y cherche les carnets.",
+  "openFolderChoose": "Choisir un dossier…",
+  "openFolderNone": "Aucun carnet trouvé ici. Choisissez le dossier qui contient vos carnets, ou le dossier propre d’un carnet (son nom se termine par .onotebook).",
+  "openFolderLooking": "Recherche de carnets…",
+  "openFolderAndroidHint": "Choisissez le dossier où se trouvent vos carnets. Dans Google Drive, c’est en général celui qui s’appelle « Openote ». Touchez ensuite « Utiliser ce dossier ».",
+  "openFolderFound": "Carnets trouvés"
 }

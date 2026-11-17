@@ -545,5 +545,13 @@
   "pageSheetPaper": "Papel",
   "pageSheetCanvas": "Tela",
   "pageSheetSnap": "Ajustar",
-  "pageSheetFit": "Encaixar"
+  "pageSheetFit": "Encaixar",
+  "navOpening": "Abrindo este caderno…",
+  "openFolderTitle": "Abrir um caderno de uma pasta",
+  "openFolderBody": "Escolha a pasta onde seus cadernos ficam, como uma do Google Drive, OneDrive ou Dropbox. O Openote procura cadernos dentro dela.",
+  "openFolderChoose": "Escolher uma pasta…",
+  "openFolderNone": "Nenhum caderno foi encontrado ali. Escolha a pasta que contém seus cadernos, ou a pasta do próprio caderno (o nome termina em .onotebook).",
+  "openFolderLooking": "Procurando cadernos…",
+  "openFolderAndroidHint": "Escolha a pasta onde estão seus cadernos. No Google Drive costuma ser a chamada “Openote”. Depois toque em “Usar esta pasta”.",
+  "openFolderFound": "Cadernos encontrados"
 }

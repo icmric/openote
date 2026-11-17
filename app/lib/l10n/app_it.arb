@@ -545,5 +545,13 @@
   "pageSheetPaper": "Carta",
   "pageSheetCanvas": "Tela",
   "pageSheetSnap": "Aggancia",
-  "pageSheetFit": "Adatta"
+  "pageSheetFit": "Adatta",
+  "navOpening": "Apertura del quaderno…",
+  "openFolderTitle": "Apri un quaderno da una cartella",
+  "openFolderBody": "Scegli la cartella in cui tieni i quaderni, per esempio una di Google Drive, OneDrive o Dropbox. Openote cerca i quaderni al suo interno.",
+  "openFolderChoose": "Scegli una cartella…",
+  "openFolderNone": "Nessun quaderno trovato lì. Scegli la cartella che contiene i tuoi quaderni, oppure la cartella del quaderno stesso (il nome termina con .onotebook).",
+  "openFolderLooking": "Ricerca dei quaderni…",
+  "openFolderAndroidHint": "Scegli la cartella dei tuoi quaderni. In Google Drive di solito è quella chiamata “Openote”. Poi tocca “Usa questa cartella”.",
+  "openFolderFound": "Quaderni trovati"
 }

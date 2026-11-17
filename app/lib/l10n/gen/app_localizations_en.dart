@@ -1944,4 +1944,31 @@ class LEn extends L {
 
   @override
   String get pageSheetFit => 'Fit';
+
+  @override
+  String get navOpening => 'Opening this notebook…';
+
+  @override
+  String get openFolderTitle => 'Open a notebook from a folder';
+
+  @override
+  String get openFolderBody =>
+      'Choose the folder your notebooks are kept in, such as one in Google Drive, OneDrive or Dropbox. Openote looks inside it for notebooks.';
+
+  @override
+  String get openFolderChoose => 'Choose a folder…';
+
+  @override
+  String get openFolderNone =>
+      'No notebooks were found there. Choose the folder that holds your notebooks, or a notebook’s own folder (its name ends in .onotebook).';
+
+  @override
+  String get openFolderLooking => 'Looking for notebooks…';
+
+  @override
+  String get openFolderAndroidHint =>
+      'Choose the folder your notebooks are in. In Google Drive that is usually the one called “Openote”. Then tap “Use this folder”.';
+
+  @override
+  String get openFolderFound => 'Notebooks found';
 }

@@ -10,6 +10,7 @@ library;
 
 export 'device_class.dart' show isPhoneWidth, isTablet, isTabletPortrait, kPhoneMaxWidth;
 
+import 'opening_mark.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
@@ -143,7 +144,9 @@ class _SaveMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final problem = app.saveError;
-    final saved = !app.hasUnsavedChanges;
+    // Arrows while a notebook is still being read in as well as while saving:
+    // a tick would say "all done" about something not finished.
+    final saved = !app.hasUnsavedChanges && !app.openingNotebook;
     final s = context.surfaces;
     final icon = problem != null
         ? Icons.error_outline
@@ -303,6 +306,9 @@ class _PhoneNavigatorState extends State<PhoneNavigator> {
                   ]),
                 ),
               ),
+              // A thin bar while the notebook is still being read in.
+              if (app.openingNotebook)
+                const LinearProgressIndicator(minHeight: 2),
               _searchBox(context),
               Expanded(
                 child: searching
@@ -614,6 +620,8 @@ class _PhoneNavigatorState extends State<PhoneNavigator> {
       ..._children(null, NodeKind.section),
       ..._children(null, NodeKind.sectionGroup),
     ]..sort((a, b) => a.position.compareTo(b.position));
+    // Not "no sections": on its way.
+    if (top.isEmpty && app.openingNotebook) return const OpeningMark();
 
     Widget sectionRow(TreeNode sec, {double indent = 0}) {
       final open = _open == sec.id;

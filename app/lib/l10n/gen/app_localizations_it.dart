@@ -1960,4 +1960,31 @@ class LIt extends L {
 
   @override
   String get pageSheetFit => 'Adatta';
+
+  @override
+  String get navOpening => 'Apertura del quaderno…';
+
+  @override
+  String get openFolderTitle => 'Apri un quaderno da una cartella';
+
+  @override
+  String get openFolderBody =>
+      'Scegli la cartella in cui tieni i quaderni, per esempio una di Google Drive, OneDrive o Dropbox. Openote cerca i quaderni al suo interno.';
+
+  @override
+  String get openFolderChoose => 'Scegli una cartella…';
+
+  @override
+  String get openFolderNone =>
+      'Nessun quaderno trovato lì. Scegli la cartella che contiene i tuoi quaderni, oppure la cartella del quaderno stesso (il nome termina con .onotebook).';
+
+  @override
+  String get openFolderLooking => 'Ricerca dei quaderni…';
+
+  @override
+  String get openFolderAndroidHint =>
+      'Scegli la cartella dei tuoi quaderni. In Google Drive di solito è quella chiamata “Openote”. Poi tocca “Usa questa cartella”.';
+
+  @override
+  String get openFolderFound => 'Quaderni trovati';
 }

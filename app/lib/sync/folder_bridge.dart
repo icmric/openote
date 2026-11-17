@@ -77,8 +77,10 @@ class FolderBridge {
   final FolderApi folder;
   final Directory logDir;
 
-  /// This device's own log is never taken from the folder: the local one is the
-  /// truth and nothing remote may replace it.
+  /// This device's own log, which [push] sends. Not pulled while the notebook is
+  /// open (a recorder is writing it); pulled when the notebook is first opened
+  /// here, where a local file at least as long as the folder's is never replaced,
+  /// so a notebook taken off the phone and opened again gets its history back.
   final String? ownDevice;
 
   OpLogStore get store => OpLogStore(logDir);
@@ -90,7 +92,7 @@ class FolderBridge {
 
   static bool _isDir(SafEntry e, String name) => e.dir && e.name == name;
 
-  Future<PullReport> pull() async {
+  Future<PullReport> pull({bool includeOwn = false}) async {
     final sw = Stopwatch()..start();
     final report = PullReport();
     final root = await folder.list();
@@ -105,8 +107,12 @@ class FolderBridge {
     if (ops != null) {
       for (final e in await folder.list(doc: ops.id)) {
         if (e.dir || !e.name.endsWith('.oplog')) continue;
+        // This device's own log is left alone once the notebook is open, because
+        // a recorder is writing to it; it is only brought back when the notebook
+        // is first opened here ([includeOwn]), where the length rule below keeps
+        // it from replacing anything longer.
         final device = e.name.substring(0, e.name.length - '.oplog'.length);
-        if (device == ownDevice) continue;
+        if (device == ownDevice && !includeOwn) continue;
         final local = File(p.join(logDir.path, 'ops', e.name));
         // Append-only: a longer file is the newer one, and a local file that is
         // already as long is already everything. Never swap a long one for a

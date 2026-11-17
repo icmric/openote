@@ -1866,4 +1866,31 @@ class LZh extends L {
 
   @override
   String get pageSheetFit => '适应';
+
+  @override
+  String get navOpening => '正在打开此笔记本…';
+
+  @override
+  String get openFolderTitle => '从文件夹打开笔记本';
+
+  @override
+  String get openFolderBody =>
+      '请选择存放笔记本的文件夹，例如 Google Drive、OneDrive 或 Dropbox 中的文件夹。Openote 会在其中查找笔记本。';
+
+  @override
+  String get openFolderChoose => '选择文件夹…';
+
+  @override
+  String get openFolderNone =>
+      '那里没有找到笔记本。请选择存放笔记本的文件夹，或笔记本自己的文件夹（名称以 .onotebook 结尾）。';
+
+  @override
+  String get openFolderLooking => '正在查找笔记本…';
+
+  @override
+  String get openFolderAndroidHint =>
+      '请选择存放笔记本的文件夹。在 Google Drive 中通常是名为“Openote”的那个。然后点按“使用此文件夹”。';
+
+  @override
+  String get openFolderFound => '找到的笔记本';
 }

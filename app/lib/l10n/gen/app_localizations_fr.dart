@@ -1962,4 +1962,31 @@ class LFr extends L {
 
   @override
   String get pageSheetFit => 'Ajuster';
+
+  @override
+  String get navOpening => 'Ouverture de ce carnet…';
+
+  @override
+  String get openFolderTitle => 'Ouvrir un carnet depuis un dossier';
+
+  @override
+  String get openFolderBody =>
+      'Choisissez le dossier où sont rangés vos carnets, par exemple un dossier Google Drive, OneDrive ou Dropbox. Openote y cherche les carnets.';
+
+  @override
+  String get openFolderChoose => 'Choisir un dossier…';
+
+  @override
+  String get openFolderNone =>
+      'Aucun carnet trouvé ici. Choisissez le dossier qui contient vos carnets, ou le dossier propre d’un carnet (son nom se termine par .onotebook).';
+
+  @override
+  String get openFolderLooking => 'Recherche de carnets…';
+
+  @override
+  String get openFolderAndroidHint =>
+      'Choisissez le dossier où se trouvent vos carnets. Dans Google Drive, c’est en général celui qui s’appelle « Openote ». Touchez ensuite « Utiliser ce dossier ».';
+
+  @override
+  String get openFolderFound => 'Carnets trouvés';
 }

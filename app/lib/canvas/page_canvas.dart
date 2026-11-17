@@ -1670,7 +1670,19 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Build ───────────────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      // **The page does not follow the phone's "font size" setting.** Its boxes
+      // sit at fixed places and its tables have fixed column widths, both
+      // measured with unscaled text; letting the system scale the TEXT drawn in
+      // them makes it wider and taller than the room measured for it, so it
+      // wraps, grows and lands on top of whatever is beside it. A phone with its
+      // font set to "Large" did exactly that to a table-heavy page that was
+      // fine on a desktop. The page has its own zoom (pinch), which scales the
+      // boxes and the text together; the chrome around it still follows the
+      // system setting.
+      MediaQuery.withNoTextScaling(child: Builder(builder: _buildCanvas));
+
+  Widget _buildCanvas(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     // Page size is content-driven (this bounds scrolling — constrained
     // horizontal at normal zoom). The backdrop is drawn the same colour as the

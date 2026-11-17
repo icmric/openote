@@ -20,6 +20,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/sync/folder_bridge.dart';
 import 'package:openote/sync/git_sync.dart';
+import 'package:openote/sync/notebook_scan.dart';
 import 'package:openote/sync/saf_folder.dart';
 
 import 'support/sqlite.dart';
@@ -435,5 +436,126 @@ void main() {
     final r = await bridge.push();
     expect(r.blobs, 0);
     expect(folder.writes.where((w) => w.contains(fakeHash)), isEmpty);
+  });
+
+  test('a notebook folder with no container file beside it opens on a computer, '
+      'and is found by looking in the folder above it', () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    // What a copy of just the logs, pictures and manifest looks like in a Drive
+    // folder: a .onotebook directory and NO .onote container beside it.
+    final drive = Directory('${root.path}/Drive/Openote test copy')
+      ..createSync(recursive: true);
+    final copy = Directory(p.join(drive.path, 'Honours (copy).onotebook'))
+      ..createSync();
+    for (final e in logDir.listSync(recursive: true).whereType<File>()) {
+      if (e.path.contains('${p.separator}.git${p.separator}')) continue;
+      final dest = File(p.join(copy.path, p.relative(e.path, from: logDir.path)));
+      dest.parent.createSync(recursive: true);
+      dest.writeAsBytesSync(e.readAsBytesSync());
+    }
+    expect(File('${copy.path.replaceAll('.onotebook', '')}.onote').existsSync(),
+        isFalse,
+        reason: 'no container beside it: the case that could not be opened');
+
+    // Found from the Drive folder, two levels down, without choosing it.
+    final found = await findNotebooksUnder(p.join(root.path, 'Drive'));
+    expect(found.map((n) => n.name), ['Honours (copy)']);
+
+    // And it opens.
+    final (repo, app) = await phone('desktop');
+    await app.openExistingNotebook(found.single.path);
+    expect(repo.notebooks.single.title, 'Honours');
+    expect(app.nodes.where((n) => n.kind == NodeKind.page).map((n) => n.title),
+        contains('Complexity'));
+  });
+
+  test('the whole history is in before the notebook is shown, and marked as such',
+      () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final (repo, app) = await phone();
+    await app.joinNotebookFromFolder('tree', folderForTest: DirFolder(logDir));
+    final nb = repo.notebooks.single.id;
+    final setting = repo.getSetting('folderSync:$nb') as Map;
+    expect(setting['folded'], isTrue,
+        reason: 'read in all the way: it may now be edited and sent');
+    // The open-time check that follows has nothing left to fold and ends at once.
+    for (var i = 0; i < 100 && app.openingNotebook; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(app.openingNotebook, isFalse);
+    expect(app.pageLoading, isFalse);
+    expect(app.blocks.map((b) => b.content['text']), contains('big O'),
+        reason: 'the page shown is the finished one');
+  });
+
+  test('a notebook not read in all the way shows no page, and sends nothing',
+      () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    final folder = DirFolder(logDir, allowWrites: true);
+    final (repo, app) = await phone();
+    await app.joinNotebookFromFolder('tree', folderForTest: folder);
+    final nb = repo.notebooks.single.id;
+    final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+
+    // As if the app had been closed in the middle of the first read.
+    repo.setSetting('folderSync:$nb', {'tree': 'tree', 'notebookId': null});
+    app.renameNode(page.id, 'Edited before it was all in');
+    await app.flushSave();
+    folder.writes.clear();
+    await app.pushFolderNow();
+    expect(folder.writes, isEmpty, reason: 'nothing is sent from half a notebook');
+
+    // And a page asked for while it is still being read in waits, saying so,
+    // instead of opening an old one.
+    app.debugSetOpening(true);
+    final loading = app.selectPage(page.id);
+    // It saves what is open before it moves; wait for it to reach the waiting
+    // rather than guess how long that takes on a busy machine.
+    for (var i = 0; i < 200 && !app.pageLoading; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(app.pageLoading, isTrue);
+    expect(app.blocks, isEmpty, reason: 'no old page on screen to repair');
+    app.debugSetOpening(false);
+    await loading;
+    expect(app.pageLoading, isFalse);
+    expect(app.blocks, isNotEmpty, reason: 'and then the page is there');
+  });
+
+  test('the phone own history comes back when a notebook is opened again, '
+      'and a longer local log is never replaced', () async {
+    if (skip()) return markTestSkipped('sqlite or git unavailable');
+    final (logDir, _, _) = await source();
+    File(p.join(logDir.path, 'ops', 'me.oplog'))
+        .writeAsStringSync('{"line":1}${'\n'}{"line":2}${'\n'}');
+    Directory localDir(String n) =>
+        Directory('${root.path}/$n')..createSync();
+
+    // No local copy of its own log: it is brought back.
+    final fresh = localDir('fresh');
+    final b1 = FolderBridge(
+        folder: DirFolder(logDir), logDirPath: fresh.path, ownDevice: 'me');
+    await b1.pull(includeOwn: true);
+    expect(File(p.join(fresh.path, 'ops', 'me.oplog')).existsSync(), isTrue);
+
+    // While the notebook is open it is not touched.
+    final open = localDir('open');
+    final b2 = FolderBridge(
+        folder: DirFolder(logDir), logDirPath: open.path, ownDevice: 'me');
+    await b2.pull();
+    expect(File(p.join(open.path, 'ops', 'me.oplog')).existsSync(), isFalse);
+
+    // A longer local log stays, even on the first pull.
+    final longer = localDir('longer');
+    Directory(p.join(longer.path, 'ops')).createSync(recursive: true);
+    final mine = File(p.join(longer.path, 'ops', 'me.oplog'))
+      ..writeAsStringSync('{"line":1}${'\n'}{"line":2}${'\n'}{"line":3}${'\n'}');
+    final b3 = FolderBridge(
+        folder: DirFolder(logDir), logDirPath: longer.path, ownDevice: 'me');
+    await b3.pull(includeOwn: true);
+    expect(mine.readAsStringSync(), contains('"line":3'));
   });
 }

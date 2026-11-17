@@ -1954,4 +1954,31 @@ class LEs extends L {
 
   @override
   String get pageSheetFit => 'Encajar';
+
+  @override
+  String get navOpening => 'Abriendo este cuaderno…';
+
+  @override
+  String get openFolderTitle => 'Abrir un cuaderno desde una carpeta';
+
+  @override
+  String get openFolderBody =>
+      'Elige la carpeta donde guardas tus cuadernos, por ejemplo una de Google Drive, OneDrive o Dropbox. Openote busca cuadernos dentro de ella.';
+
+  @override
+  String get openFolderChoose => 'Elegir una carpeta…';
+
+  @override
+  String get openFolderNone =>
+      'No se encontró ningún cuaderno ahí. Elige la carpeta que contiene tus cuadernos, o la carpeta propia de un cuaderno (su nombre termina en .onotebook).';
+
+  @override
+  String get openFolderLooking => 'Buscando cuadernos…';
+
+  @override
+  String get openFolderAndroidHint =>
+      'Elige la carpeta donde están tus cuadernos. En Google Drive suele ser la que se llama «Openote». Luego toca «Usar esta carpeta».';
+
+  @override
+  String get openFolderFound => 'Cuadernos encontrados';
 }
