@@ -434,7 +434,7 @@
   "settingsUiScaleHint": "Agrandit ou réduit toute la fenêtre.",
   "settingsUiScaleLimited": "Affichage à {size} : cette fenêtre est trop petite pour plus.",
   "settingsLanguage": "Langue",
-  "settingsLanguageAuto": "La même que mon ordinateur",
+  "settingsLanguageAuto": "Par défaut du système",
   "settingsLanguageContribute": "Comment ajouter ou corriger une langue",
   "settingsPenAndTouch": "Stylet et tactile",
   "settingsPenButton": "Le bouton latéral du stylet",

@@ -2585,10 +2585,10 @@ abstract class L {
   /// **'Language'**
   String get settingsLanguage;
 
-  /// The default language choice: follow whatever the operating system is set to. Chosen over the word 'Automatic', which does not say what it will do.
+  /// The default language choice: follow whatever the operating system is set to. The same words as every other setting that follows the device (theme, spelling language), and not 'my computer', since the app also runs on phones. Chosen over the word 'Automatic', which does not say what it will do.
   ///
   /// In en, this message translates to:
-  /// **'Same as my computer'**
+  /// **'System default'**
   String get settingsLanguageAuto;
 
   /// Link opening the contributing guide in a browser.

@@ -1499,7 +1499,7 @@ class LZh extends L {
   String get settingsLanguage => '语言';
 
   @override
-  String get settingsLanguageAuto => '与电脑一致';
+  String get settingsLanguageAuto => '系统默认';
 
   @override
   String get settingsLanguageContribute => '如何添加或修正一种语言';

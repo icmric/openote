@@ -1572,7 +1572,7 @@ class LPt extends L {
   String get settingsLanguage => 'Idioma';
 
   @override
-  String get settingsLanguageAuto => 'O mesmo do computador';
+  String get settingsLanguageAuto => 'Padrão do sistema';
 
   @override
   String get settingsLanguageContribute =>

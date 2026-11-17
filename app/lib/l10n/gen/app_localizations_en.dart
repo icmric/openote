@@ -1566,7 +1566,7 @@ class LEn extends L {
   String get settingsLanguage => 'Language';
 
   @override
-  String get settingsLanguageAuto => 'Same as my computer';
+  String get settingsLanguageAuto => 'System default';
 
   @override
   String get settingsLanguageContribute => 'How to add or fix a language';

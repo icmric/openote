@@ -434,7 +434,7 @@
   "settingsUiScaleHint": "Torna a janela inteira maior ou menor.",
   "settingsUiScaleLimited": "A mostrar a {size}: esta janela é demasiado pequena para mais.",
   "settingsLanguage": "Idioma",
-  "settingsLanguageAuto": "O mesmo do computador",
+  "settingsLanguageAuto": "Padrão do sistema",
   "settingsLanguageContribute": "Como adicionar ou corrigir um idioma",
   "settingsPenAndTouch": "Caneta e toque",
   "settingsPenButton": "O botão lateral da caneta",

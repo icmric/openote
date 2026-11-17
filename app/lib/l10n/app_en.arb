@@ -2131,9 +2131,9 @@
   "@settingsLanguage": {
     "description": "Row label in Settings for choosing the interface language."
   },
-  "settingsLanguageAuto": "Same as my computer",
+  "settingsLanguageAuto": "System default",
   "@settingsLanguageAuto": {
-    "description": "The default language choice: follow whatever the operating system is set to. Chosen over the word 'Automatic', which does not say what it will do."
+    "description": "The default language choice: follow whatever the operating system is set to. The same words as every other setting that follows the device (theme, spelling language), and not 'my computer', since the app also runs on phones. Chosen over the word 'Automatic', which does not say what it will do."
   },
   "settingsLanguageContribute": "How to add or fix a language",
   "@settingsLanguageContribute": {

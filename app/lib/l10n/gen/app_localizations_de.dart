@@ -1579,7 +1579,7 @@ class LDe extends L {
   String get settingsLanguage => 'Sprache';
 
   @override
-  String get settingsLanguageAuto => 'Wie mein Rechner';
+  String get settingsLanguageAuto => 'Systemstandard';
 
   @override
   String get settingsLanguageContribute =>

@@ -1577,7 +1577,7 @@ class LFr extends L {
   String get settingsLanguage => 'Langue';
 
   @override
-  String get settingsLanguageAuto => 'La même que mon ordinateur';
+  String get settingsLanguageAuto => 'Par défaut du système';
 
   @override
   String get settingsLanguageContribute =>

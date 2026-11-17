@@ -434,7 +434,7 @@
   "settingsUiScaleHint": "放大或缩小整个窗口。",
   "settingsUiScaleLimited": "当前显示为 {size}：此窗口太小，无法再放大。",
   "settingsLanguage": "语言",
-  "settingsLanguageAuto": "与电脑一致",
+  "settingsLanguageAuto": "系统默认",
   "settingsLanguageContribute": "如何添加或修正一种语言",
   "settingsPenAndTouch": "触控笔与触摸",
   "settingsPenButton": "触控笔侧键",

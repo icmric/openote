@@ -434,7 +434,7 @@
   "settingsUiScaleHint": "Macht das ganze Fenster größer oder kleiner.",
   "settingsUiScaleLimited": "Angezeigt mit {size}: Dieses Fenster ist für mehr zu klein.",
   "settingsLanguage": "Sprache",
-  "settingsLanguageAuto": "Wie mein Rechner",
+  "settingsLanguageAuto": "Systemstandard",
   "settingsLanguageContribute": "Wie man eine Sprache hinzufügt oder verbessert",
   "settingsPenAndTouch": "Stift und Touch",
   "settingsPenButton": "Die Seitentaste des Stifts",

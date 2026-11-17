@@ -434,7 +434,7 @@
   "settingsUiScaleHint": "Hace toda la ventana más grande o más pequeña.",
   "settingsUiScaleLimited": "Se muestra al {size}: esta ventana es demasiado pequeña para más.",
   "settingsLanguage": "Idioma",
-  "settingsLanguageAuto": "El mismo que mi ordenador",
+  "settingsLanguageAuto": "Predeterminado del sistema",
   "settingsLanguageContribute": "Cómo añadir o corregir un idioma",
   "settingsPenAndTouch": "Lápiz y táctil",
   "settingsPenButton": "El botón lateral del lápiz",

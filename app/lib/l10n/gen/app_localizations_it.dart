@@ -1577,7 +1577,7 @@ class LIt extends L {
   String get settingsLanguage => 'Lingua';
 
   @override
-  String get settingsLanguageAuto => 'Come il computer';
+  String get settingsLanguageAuto => 'Predefinito del sistema';
 
   @override
   String get settingsLanguageContribute =>

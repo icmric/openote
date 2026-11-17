@@ -1572,7 +1572,7 @@ class LEs extends L {
   String get settingsLanguage => 'Idioma';
 
   @override
-  String get settingsLanguageAuto => 'El mismo que mi ordenador';
+  String get settingsLanguageAuto => 'Predeterminado del sistema';
 
   @override
   String get settingsLanguageContribute => 'Cómo añadir o corregir un idioma';
