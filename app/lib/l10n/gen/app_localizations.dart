@@ -4972,6 +4972,54 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Next month'**
   String get planNextMonth;
+
+  /// How many alerts are waiting.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} waiting'**
+  String alertWaiting(String count);
+
+  /// Alerts waiting, and how many are hidden below.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} waiting · {hidden} more below'**
+  String alertWaitingMore(String count, String hidden);
+
+  /// Alerts that came due while the app was closed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} while you were away'**
+  String alertWhileAway(String count);
+
+  /// Button.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss all'**
+  String get alertDismissAll;
+
+  /// Tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get alertDismiss;
+
+  /// An event is starting now.
+  ///
+  /// In en, this message translates to:
+  /// **'starting now'**
+  String get alertStartingNow;
+
+  /// An event starts in some minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in 1 minute} other{in {count} minutes}}'**
+  String alertInMinutes(int count);
+
+  /// A reminder that fired late: when it was due.
+  ///
+  /// In en, this message translates to:
+  /// **'Was due at {time}'**
+  String alertWasDue(String time);
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

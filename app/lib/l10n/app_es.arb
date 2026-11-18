@@ -831,5 +831,13 @@
   "planUntil": "hasta las {time}",
   "planCouldNotOpenLink": "No se pudo abrir ese enlace: {url}",
   "planPrevMonth": "Mes anterior",
-  "planNextMonth": "Mes siguiente"
+  "planNextMonth": "Mes siguiente",
+  "alertWaiting": "{count} en espera",
+  "alertWaitingMore": "{count} en espera · {hidden} más abajo",
+  "alertWhileAway": "{count} mientras no estabas",
+  "alertDismissAll": "Descartar todo",
+  "alertDismiss": "Descartar",
+  "alertStartingNow": "empieza ahora",
+  "alertInMinutes": "{count, plural, =1{en 1 minuto} other{en {count} minutos}}",
+  "alertWasDue": "Era para las {time}"
 }

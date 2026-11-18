@@ -3110,4 +3110,44 @@ class LEs extends L {
 
   @override
   String get planNextMonth => 'Mes siguiente';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count en espera';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count en espera · $hidden más abajo';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '$count mientras no estabas';
+  }
+
+  @override
+  String get alertDismissAll => 'Descartar todo';
+
+  @override
+  String get alertDismiss => 'Descartar';
+
+  @override
+  String get alertStartingNow => 'empieza ahora';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'en $count minutos',
+      one: 'en 1 minuto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return 'Era para las $time';
+  }
 }

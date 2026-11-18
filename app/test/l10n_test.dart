@@ -53,6 +53,7 @@ const _converted = [
   'lib/ui/exam_date.dart',
   'lib/ui/planner_panel.dart',
   'lib/ui/month_grid.dart',
+  'lib/ui/alert_popup.dart',
 ];
 
 void main() {

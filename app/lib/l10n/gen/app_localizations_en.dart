@@ -3094,4 +3094,44 @@ class LEn extends L {
 
   @override
   String get planNextMonth => 'Next month';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count waiting';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count waiting · $hidden more below';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '$count while you were away';
+  }
+
+  @override
+  String get alertDismissAll => 'Dismiss all';
+
+  @override
+  String get alertDismiss => 'Dismiss';
+
+  @override
+  String get alertStartingNow => 'starting now';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'in $count minutes',
+      one: 'in 1 minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return 'Was due at $time';
+  }
 }

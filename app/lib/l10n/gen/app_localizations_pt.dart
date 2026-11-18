@@ -3111,4 +3111,44 @@ class LPt extends L {
 
   @override
   String get planNextMonth => 'Próximo mês';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count aguardando';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count aguardando · mais $hidden abaixo';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '$count enquanto você estava fora';
+  }
+
+  @override
+  String get alertDismissAll => 'Dispensar tudo';
+
+  @override
+  String get alertDismiss => 'Dispensar';
+
+  @override
+  String get alertStartingNow => 'começando agora';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'em $count minutos',
+      one: 'em 1 minuto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return 'Era para as $time';
+  }
 }

@@ -3120,4 +3120,44 @@ class LFr extends L {
 
   @override
   String get planNextMonth => 'Mois suivant';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count en attente';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count en attente · $hidden de plus en dessous';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '$count pendant votre absence';
+  }
+
+  @override
+  String get alertDismissAll => 'Tout fermer';
+
+  @override
+  String get alertDismiss => 'Fermer';
+
+  @override
+  String get alertStartingNow => 'commence maintenant';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'dans $count minutes',
+      one: 'dans 1 minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return 'Prévu à $time';
+  }
 }

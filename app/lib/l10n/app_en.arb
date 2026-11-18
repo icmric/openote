@@ -4165,5 +4165,65 @@
   "planNextMonth": "Next month",
   "@planNextMonth": {
     "description": "Tooltip."
+  },
+  "alertWaiting": "{count} waiting",
+  "@alertWaiting": {
+    "description": "How many alerts are waiting.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "alertWaitingMore": "{count} waiting · {hidden} more below",
+  "@alertWaitingMore": {
+    "description": "Alerts waiting, and how many are hidden below.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "hidden": {
+        "type": "String"
+      }
+    }
+  },
+  "alertWhileAway": "{count} while you were away",
+  "@alertWhileAway": {
+    "description": "Alerts that came due while the app was closed.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "alertDismissAll": "Dismiss all",
+  "@alertDismissAll": {
+    "description": "Button."
+  },
+  "alertDismiss": "Dismiss",
+  "@alertDismiss": {
+    "description": "Tooltip."
+  },
+  "alertStartingNow": "starting now",
+  "@alertStartingNow": {
+    "description": "An event is starting now."
+  },
+  "alertInMinutes": "{count, plural, =1{in 1 minute} other{in {count} minutes}}",
+  "@alertInMinutes": {
+    "description": "An event starts in some minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "alertWasDue": "Was due at {time}",
+  "@alertWasDue": {
+    "description": "A reminder that fired late: when it was due.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
   }
 }

@@ -2979,4 +2979,43 @@ class LZh extends L {
 
   @override
   String get planNextMonth => '下个月';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count 条待处理';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count 条待处理 · 下面还有 $hidden 条';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '你离开期间有 $count 条';
+  }
+
+  @override
+  String get alertDismissAll => '全部关闭';
+
+  @override
+  String get alertDismiss => '关闭';
+
+  @override
+  String get alertStartingNow => '正在开始';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 分钟后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return '原定于 $time';
+  }
 }

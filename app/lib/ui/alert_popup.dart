@@ -28,11 +28,13 @@ library;
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../l10n/l10n.dart';
+import '../l10n/planner_words.dart';
 import '../planner/alerts.dart';
 import '../planner/event_kinds.dart';
-import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'event_alert_dialog.dart' show eventKindLabel;
 import 'toast.dart';
 
 /// How many cards are shown before the rest collapse into a count.
@@ -138,10 +140,10 @@ class _StackHeader extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text(
           hidden > 0
-              ? '$total waiting · $hidden more below'
+              ? L.of(context).alertWaitingMore('$total', '$hidden')
               : wereMissed
-                  ? '$total while you were away'
-                  : '$total waiting',
+                  ? L.of(context).alertWhileAway('$total')
+                  : L.of(context).alertWaiting('$total'),
           style: OnoteType.small.copyWith(color: s.textSecondary),
         ),
         const SizedBox(width: OnoteSpace.x4),
@@ -152,7 +154,7 @@ class _StackHeader extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: OnoteSpace.x4),
             minimumSize: const Size(0, OnoteSize.buttonCompact),
           ),
-          child: const Text('Dismiss all'),
+          child: Text(L.of(context).alertDismissAll),
         ),
       ]),
     );
@@ -199,7 +201,7 @@ class _AlertCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: OnoteSpace.x1),
-                    Text(_when(alert, now),
+                    Text(_when(L.of(context), alert, now),
                         style:
                             OnoteType.small.copyWith(color: s.textSecondary)),
                     if (alert.subtitle case final sub?
@@ -220,7 +222,7 @@ class _AlertCard extends StatelessWidget {
               // the difference between swatting a popup and finishing a task.
               IconButton(
                 icon: const Icon(Icons.close, size: OnoteIcon.sm),
-                tooltip: 'Dismiss',
+                tooltip: L.of(context).alertDismiss,
                 visualDensity: VisualDensity.compact,
                 onPressed: () => app.planner.dismissAlert(alert.id),
               ),
@@ -233,7 +235,7 @@ class _AlertCard extends StatelessWidget {
                   child: FilledButton.icon(
                     icon: const Icon(Icons.videocam_outlined,
                         size: OnoteIcon.sm),
-                    label: Text('Join ${join.provider}'),
+                    label: Text(L.of(context).planJoin(join.provider)),
                     onPressed: () => _join(context, join),
                   ),
                 ),
@@ -245,7 +247,7 @@ class _AlertCard extends StatelessWidget {
                       app.selectPage(alert.pageId!);
                       app.planner.dismissAlert(alert.id);
                     },
-                    child: const Text('Go to the note'),
+                    child: Text(L.of(context).planGoToNote),
                   ),
                 ),
               const Spacer(),
@@ -256,7 +258,7 @@ class _AlertCard extends StatelessWidget {
               const SizedBox(width: OnoteSpace.x2),
               TextButton(
                 onPressed: () => app.planner.dismissAlert(alert.id),
-                child: const Text('Done'),
+                child: Text(L.of(context).commonDone),
               ),
             ]),
           ],
@@ -274,7 +276,7 @@ class _AlertCard extends StatelessWidget {
       // Never silently do nothing. A Join button that appears to work and
       // does not is worse than no Join button, because you find out at 9:02.
       ScaffoldMessenger.of(context).showToast(SnackBar(
-          content: Text("Couldn't open that link: ${join.url}")));
+          content: Text(L.of(context).planCouldNotOpenLink(join.url))));
     }
   }
 
@@ -296,25 +298,23 @@ class _AlertCard extends StatelessWidget {
   /// only number being read: "in 10 minutes" is the answer, "09:00" is a fact
   /// you have to subtract from. For a reminder it leads with the time it was
   /// set for, since a reminder that fired late needs to say when it was due.
-  static String _when(PlannerAlert a, DateTime now) {
+  static String _when(L l, PlannerAlert a, DateTime now) {
     if (a.source == AlertSource.event) {
       final mins = a.at.difference(now).inMinutes;
       final lead = mins <= 0
-          ? 'starting now'
-          : mins == 1
-              ? 'in 1 minute'
-              : mins < 60
-                  ? 'in $mins minutes'
-                  : 'at ${formatClock(a.at)}';
+          ? l.alertStartingNow
+          : mins < 60
+              ? l.alertInMinutes(mins)
+              : l.planAtTime(clockIn(l, a.at));
       final kind = a.kind == null || a.kind == EventKind.other
           ? ''
-          : '${a.kind!.label} · ';
-      return '$kind$lead · ${formatClock(a.at)}';
+          : '${eventKindLabel(l, a.kind!)} · ';
+      return '$kind$lead · ${clockIn(l, a.at)}';
     }
     if (now.difference(a.at).inMinutes >= 2) {
-      return 'Was due at ${formatClock(a.at)}';
+      return l.alertWasDue(clockIn(l, a.at));
     }
-    return formatClock(a.at);
+    return clockIn(l, a.at);
   }
 }
 
@@ -331,16 +331,16 @@ class _SnoozeMenu extends StatelessWidget {
   Widget build(BuildContext context) => MenuAnchor(
         builder: (context, controller, _) => TextButton.icon(
           icon: const Icon(Icons.snooze, size: OnoteIcon.sm),
-          label: const Text('Snooze'),
+          label: Text(L.of(context).planSnooze),
           onPressed: () =>
               controller.isOpen ? controller.close() : controller.open(),
         ),
         menuChildren: [
-          for (final (label, minutes) in const [
-            ('10 minutes', 10),
-            ('An hour', 60),
-            ('This evening (3 hours)', 180),
-            ('Tomorrow', 60 * 24),
+          for (final (label, minutes) in [
+            (L.of(context).planSnooze10, 10),
+            (L.of(context).planSnoozeHour, 60),
+            (L.of(context).planSnoozeEvening, 180),
+            (L.of(context).planSnoozeTomorrow, 60 * 24),
           ])
             MenuItemButton(
               onPressed: () => onSnooze(Duration(minutes: minutes)),

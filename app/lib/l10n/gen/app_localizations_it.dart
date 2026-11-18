@@ -3117,4 +3117,44 @@ class LIt extends L {
 
   @override
   String get planNextMonth => 'Mese successivo';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count in attesa';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count in attesa · altri $hidden sotto';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '$count mentre eri via';
+  }
+
+  @override
+  String get alertDismissAll => 'Chiudi tutto';
+
+  @override
+  String get alertDismiss => 'Chiudi';
+
+  @override
+  String get alertStartingNow => 'inizia ora';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'tra $count minuti',
+      one: 'tra 1 minuto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return 'Era previsto alle $time';
+  }
 }

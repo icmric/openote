@@ -831,5 +831,13 @@
   "planUntil": "到 {time}",
   "planCouldNotOpenLink": "无法打开该链接：{url}",
   "planPrevMonth": "上个月",
-  "planNextMonth": "下个月"
+  "planNextMonth": "下个月",
+  "alertWaiting": "{count} 条待处理",
+  "alertWaitingMore": "{count} 条待处理 · 下面还有 {hidden} 条",
+  "alertWhileAway": "你离开期间有 {count} 条",
+  "alertDismissAll": "全部关闭",
+  "alertDismiss": "关闭",
+  "alertStartingNow": "正在开始",
+  "alertInMinutes": "{count, plural, other{{count} 分钟后}}",
+  "alertWasDue": "原定于 {time}"
 }

@@ -3118,4 +3118,44 @@ class LDe extends L {
 
   @override
   String get planNextMonth => 'Nächster Monat';
+
+  @override
+  String alertWaiting(String count) {
+    return '$count warten';
+  }
+
+  @override
+  String alertWaitingMore(String count, String hidden) {
+    return '$count warten · $hidden weitere darunter';
+  }
+
+  @override
+  String alertWhileAway(String count) {
+    return '$count, während du weg warst';
+  }
+
+  @override
+  String get alertDismissAll => 'Alle schließen';
+
+  @override
+  String get alertDismiss => 'Schließen';
+
+  @override
+  String get alertStartingNow => 'beginnt jetzt';
+
+  @override
+  String alertInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'in $count Minuten',
+      one: 'in 1 Minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String alertWasDue(String time) {
+    return 'War fällig um $time';
+  }
 }
