@@ -356,9 +356,10 @@ event alerts, save problems (the sentences themselves, which were built in
 access (plurals, and the connect results by kind), the study panel and the exam
 date dialog (`l10n/study_words.dart`: interval, countdown and short date per
 language, checked against `lib/study`'s English by `study_words_test`). The German
-was mixed *du* and *Sie*; it is *du* throughout now. Left: the planner (~49 strings,
-and `planner_format.dart`'s English weekdays and months), and **the Sync dialog,
-left until its redesign** ([above](#the-sync-dialog-backups-and-restore)), or the
+was mixed *du* and *Sie*; it is *du* throughout now. **Then the planner** (panel,
+month grid, the Home pane's dates, the alert pop-up; `l10n/planner_words.dart`, with
+24-hour times outside English, checked by `planner_words_test`). Left: **the Sync
+dialog, left until its redesign** ([above](#the-sync-dialog-backups-and-restore)), or the
 work is thrown away. A native reader for each language is still owed for all of it.
 
 ---

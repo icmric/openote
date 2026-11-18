@@ -77,8 +77,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   seven languages.
 - **More of the app speaks your language**: the link window, timetable
   alerts, what the status bar says when a save goes wrong, AI access, the
-  study panel and the exam date window, with each language's own plurals and
-  date order. The German now says *du* throughout, as most of it already did.
+  study panel, the exam date window, the planner and the alerts that pop up
+  from it, with each language's own plurals, date order and 24-hour times. The German now says *du* throughout, as most of it already did.
 - **A picture pasted into another notebook keeps its picture.** The copied box
   named a picture only the first notebook held, so it was blank in the second
   and on every device that synced it.
