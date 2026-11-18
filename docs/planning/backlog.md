@@ -715,6 +715,21 @@ shipped.
 
 ---
 
+### 1.19 Work the suite's fixed sleeps down · **S**, a few at a time
+
+18 November: five different tests failed CI in four runs, all of them the test's
+fault, not the app's (two of the five did find a real defect alongside:
+`WritingReview.refresh()` returning before its answer, and
+`settleBackgroundWork()` not waiting for the open-time fold). The rules, the CI
+re-run that labels a failure FLAKY or FAILED TWICE, and the register are in
+[docs/writing-tests.md](../writing-tests.md).
+
+`test_hygiene_guard_test` lets the count of fixed sleeps per test file only go
+down: 36 across 21 files when it came in. Most are polling loops with a short
+deadline (`for (i < 200 && !cond) delay(10 ms)`), which are better as
+`eventually`/`pumpUntil`; a few are sleeps before a negative check. Take a file
+when you are in it anyway, and lower its number in `_known`.
+
 ## 2. Structural, blocked on a decision
 
 ### 2.1 The spreadsheet engine · **L**

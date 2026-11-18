@@ -59,6 +59,7 @@ implemented and the one whose shipped feature is a knowing compromise.
 | [PLANNING.md](../PLANNING.md) | Eric's asks, in his own words, in priority order |
 | [Releasing](RELEASING.md) | How a commit on `master` becomes a download, and the four steps that are manual on purpose |
 | [Pre-release checklist](pre-release-checklist.md) | The fixed manual pass before every release, covering only what a headless suite cannot see |
+| [Writing tests](writing-tests.md) | The rules that keep a red CI run meaning "the app is broken", what CI does when a test fails, and the register of flaky tests found |
 | [TESTING.md](../TESTING.md) | The rolling frontier: built, covered by tests, never touched by a human |
 | [Reviews](reviews/) | Three whole-tree audits. History rather than current assessment — the requirement scoreboard in the 2026-07 one is the part still worth reading |
 
