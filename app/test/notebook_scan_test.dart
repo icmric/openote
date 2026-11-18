@@ -19,6 +19,7 @@ import 'package:openote/ui/notebook_manager.dart';
 import 'package:openote/ui/open_notebook.dart';
 
 import 'support/sqlite.dart';
+import 'support/wait.dart';
 
 /// A directory served by document id, read-only (the finder must never write).
 class _Dir implements FolderApi {
@@ -87,12 +88,17 @@ void main() {
     });
 
     test('it gives up rather than walk a whole drive', () async {
+      // A notebook in every folder, so the answer does not depend on which
+      // folders the budget reaches: a directory lists in the filesystem's
+      // order, not by name, and that differs from one machine to the next.
+      // (This used to hide one notebook in `f29` and expect it missed, which
+      // failed on whichever runner happened to list `f29` early.)
       for (var i = 0; i < 30; i++) {
-        Directory(p.join(root.path, 'f$i')).createSync();
+        notebook('f$i/N$i.onotebook');
       }
-      notebook('f29/Late.onotebook');
       final r = await findNotebooksUnder(root.path, budget: 5);
-      expect(r, isEmpty, reason: 'the notebook was past the budget');
+      // Five listings: the root, then four of the thirty folders.
+      expect(r, hasLength(4), reason: 'it stopped at the budget');
     });
 
     test('a folder that is not there is nothing, not an error', () async {
@@ -173,11 +179,16 @@ void main() {
                     child: const Text('go')))),
       ));
       await t.tap(find.text('go'));
-      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await pumpUntil(
+          t, () => find.widgetWithText(TextButton, 'Open').evaluate().isNotEmpty,
+          what: 'the notebook list');
       await t.pumpAndSettle();
       // One tap, on a button that is there on every page, not only the first run.
       await t.tap(find.widgetWithText(TextButton, 'Open'));
-      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await pumpUntil(
+          t,
+          () => find.text('Open a notebook from a folder').evaluate().isNotEmpty,
+          what: 'the open-from-folder dialog');
       await t.pumpAndSettle();
       expect(find.text('Open a notebook from a folder'), findsOneWidget);
       expect(find.text('Choose a folder…'), findsOneWidget);

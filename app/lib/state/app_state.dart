@@ -2643,7 +2643,7 @@ class AppState extends ChangeNotifier
   /// notebook that cannot fold must still open.
   void _foldWhenWarm(String nb) {
     _opening[nb] = (_opening[nb] ?? 0) + 1;
-    unawaited(warmRecorder(nb).then<int>((r) async {
+    final Future<void> run = warmRecorder(nb).then<int>((r) async {
       // The user may have moved on to another notebook while this replayed.
       if (r == null || _disposed || notebookId != nb) return 0;
       final n = await _syncPullComplete(nb);
@@ -2654,8 +2654,16 @@ class AppState extends ChangeNotifier
     }).catchError((Object e) {
       debugPrint('[openote/sync] open-time fold failed: $e');
       return 0;
-    }).whenComplete(() => _doneOpening(nb)));
+    }).whenComplete(() => _doneOpening(nb));
+    // Kept so [settleBackgroundWork] waits for it: it ends by marking the
+    // notebook folded, which decides whether it may send, so a fold still
+    // running is not "quiet".
+    _foldRuns.add(run);
+    unawaited(run.whenComplete(() => _foldRuns.remove(run)));
   }
+
+  /// The open-time folds in flight; see [_foldWhenWarm].
+  final Set<Future<void>> _foldRuns = {};
 
   /// Completed when [nb] has no opening in flight. See [_whenOpened].
   final Map<String, Completer<void>> _openingDone = {};
@@ -2687,16 +2695,16 @@ class AppState extends ChangeNotifier
   /// Say a notebook is being read in, for the work that is not
   /// [_foldWhenWarm] (joining one from a folder). Pair with [_doneOpening].
   /// A test says the open notebook is (or is no longer) being read in.
+  /// Counted like a real opening, so an opening the app itself still has in
+  /// flight neither ends the test's early nor is ended by it.
   @visibleForTesting
   void debugSetOpening(bool on) {
     final nb = notebookId!;
     if (on) {
-      _opening[nb] = 1;
+      _startOpening(nb);
     } else {
-      _opening.remove(nb);
-      _openingDone.remove(nb)?.complete();
+      _doneOpening(nb);
     }
-    notifyListeners();
   }
 
   void _startOpening(String nb) {
@@ -3326,6 +3334,7 @@ class AppState extends ChangeNotifier
         ..._blobBackfills.values,
         ..._mirrorRuns.values,
         ..._autoPulls.values,
+        ..._foldRuns,
         if (_housekeepingRun != null) _housekeepingRun!,
       ];
       if (pending.isEmpty) return;

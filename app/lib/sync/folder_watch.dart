@@ -6,6 +6,9 @@
 library;
 
 import 'dart:async';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../store/fs.dart';
 
 /// Watches a notebook's op directory and calls back when a *foreign* log
@@ -110,6 +113,13 @@ class OpFolderWatcher {
       }
     } catch (_) {}
   }
+
+  /// Hand the watcher an event as the filesystem would. The debounce is a
+  /// rule about time, and real filesystem events arrive when the platform
+  /// gets round to them (FSEvents batches them; a loaded runner delays them),
+  /// so its test feeds events on a fake clock instead.
+  @visibleForTesting
+  void debugEvent(FileSystemEvent e) => _onEvent(e);
 
   void _onEvent(FileSystemEvent e) {
     // **Every path the event mentions, not just `path`.**

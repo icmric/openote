@@ -694,6 +694,32 @@ void main() {
     });
   });
 
+  // A review looks at the page by itself 50 ms after it is made. With a
+  // checker slower than that (the real one, first time, on a Windows runner)
+  // that look started while an awaited refresh was still checking, superseded
+  // it, and the refresh came back with nothing found: the real-checker test
+  // below went red on Windows, 18 November.
+  tw('an awaited refresh comes back with the findings, even when the review '
+      'starts its own look meanwhile', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await start(t, [box('a', 100, 'I will recieve it.')]);
+    Future<WritingResult> slow(String text,
+        {required EnglishDialect? dialect,
+        required bool spelling,
+        required bool grammar}) async {
+      // sleep-ok: a checker that is slow on purpose, not a wait for one.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      return scripted(text,
+          dialect: dialect, spelling: spelling, grammar: grammar);
+    }
+
+    final review = WritingReview(app, check: slow);
+    addTearDown(review.dispose);
+    await t.runAsync(review.refresh);
+    expect(review.itemsOf(ReviewCategory.spelling).map((i) => i.finding.word),
+        ['recieve']);
+  });
+
   // ── The real checker ──────────────────────────────────────────────────────
 
   tw('with the real checker: found, fixed, counted', (t) async {

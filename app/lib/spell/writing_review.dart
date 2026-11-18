@@ -239,8 +239,24 @@ class WritingReview extends ChangeNotifier {
     _generation++;
   }
 
-  /// Check every text box on the page now.
+  /// Check every text box on the page now. Completes when the findings are in:
+  /// if a later look starts meanwhile (an edit, or the look this object
+  /// schedules for itself when it is made), this one is dropped and the
+  /// returned future waits for that later one instead of completing with
+  /// nothing found. Whoever awaits this may read [items] afterwards.
   Future<void> refresh() async {
+    var look = _latestLook = _look();
+    await look;
+    while (!identical(look, _latestLook)) {
+      look = _latestLook!;
+      await look;
+    }
+  }
+
+  /// The look started last; see [refresh].
+  Future<void>? _latestLook;
+
+  Future<void> _look() async {
     if (_disposed || !available) return;
     final gen = ++_generation;
     final dialect = app.writingDialect;

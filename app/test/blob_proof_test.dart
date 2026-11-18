@@ -36,6 +36,7 @@ import 'package:openote/sync/op_log.dart';
 import 'package:openote/sync/sync_recorder.dart';
 
 import 'support/sqlite.dart';
+import 'support/wait.dart';
 
 void main() {
   var haveSqlite = false;
@@ -326,6 +327,12 @@ void main() {
       final bytes = picture(17, size: 128);
       final hash = sha256Hex(bytes);
       r.blob(hash, 'application/pdf', bytes.length, bytes);
+      // Opening the log started the notebook's own proof in the background,
+      // and it tidies too: let it finish before the strays are laid down, or
+      // it races this test for them (red on macOS, 17 November).
+      await app.settleBackgroundWork();
+      // A notebook from before the tidy existed has never had its full look.
+      repo.setSetting('blobCopiesTidied', <String>[]);
       final f = logOf(repo, nb).blobFile(hash);
       final copy = File('${f.path} (3).pdf')..writeAsBytesSync(bytes);
       // A file that only LOOKS like a copy: the right name, other bytes.
@@ -546,10 +553,10 @@ void main() {
       await app.proveBlobsPatiently(nb);
       expect(app.saveError, isNull, reason: 'quiet while it tries again');
 
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      expect(app.saveError, isNotNull,
-          reason: 'bytes that are really gone still have to be reported — '
-              'silence here is how 378 blobs went missing unnoticed');
+      // Bytes that are really gone still have to be reported: silence here
+      // is how 378 blobs went missing unnoticed.
+      await eventually(() => app.saveError != null,
+          what: 'the missing bytes to be reported after the retries');
     });
 
     test('the sentence is plain words, with the technical half folded away',

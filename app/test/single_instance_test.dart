@@ -19,6 +19,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/core/single_instance.dart';
+import 'support/wait.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -137,7 +138,7 @@ void main() {
 
     expect(answered, isTrue, reason: 'the sender may now exit');
     // The callback fires on the same poll tick that acknowledged.
-    await Future<void>.delayed(SingleInstance.pollInterval);
+    await eventually(() => opened.isNotEmpty, what: 'the hand-off to arrive');
     expect(opened, ['/tmp/Physics.onote']);
   });
 
@@ -164,7 +165,7 @@ void main() {
 
     expect(second, isNull,
         reason: 'null is main() being told to exit without painting a window');
-    await Future<void>.delayed(SingleInstance.pollInterval);
+    await eventually(() => opened.isNotEmpty, what: 'the hand-off to arrive');
     expect(opened, [r'C:\notes\Physics.onote']);
   });
 }

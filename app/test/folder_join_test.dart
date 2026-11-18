@@ -436,6 +436,10 @@ void main() {
     final folder = DirFolder(logDir, allowWrites: true);
     final (repo, app) = await phone();
     await app.joinNotebookFromFolder('tree', folderForTest: folder);
+    // Joining opens the notebook, and opening folds in the background and
+    // ends by marking it folded: let that finish, or it lands after the line
+    // below and undoes it (red on Windows, 17 November).
+    await app.settleBackgroundWork();
     final nb = repo.notebooks.single.id;
     final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
 

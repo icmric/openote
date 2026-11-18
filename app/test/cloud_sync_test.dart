@@ -22,6 +22,7 @@ import 'package:openote/sync/sync_recorder.dart';
 import 'package:openote/ui/sync_dialog.dart' show findExistingNotebooks;
 
 import 'support/sqlite.dart';
+import 'support/wait.dart';
 
 void main() {
   var haveSqlite = false;
@@ -203,38 +204,13 @@ void main() {
       expect(fired, 0, reason: 'own-device writes are ignored');
 
       File(p.join(ops.path, 'them.oplog')).writeAsStringSync('{"seq":1}\n');
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      expect(fired, greaterThan(0), reason: 'a foreign log triggers a pull');
+      await eventually(() => fired > 0, what: 'a foreign log to trigger a pull');
     });
 
-    test('a burst of writes settles into a single pull', () async {
-      final tmp = Directory.systemTemp.createTempSync('onote_watch_burst_');
-      addTearDown(() {
-        try {
-          tmp.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final ops = Directory(p.join(tmp.path, 'ops'))..createSync();
-
-      var fired = 0;
-      final w = OpFolderWatcher(
-        opsDir: ops,
-        ownDevice: 'me',
-        onForeignChange: () => fired++,
-        settle: const Duration(milliseconds: 120),
-      )..start();
-      addTearDown(w.stop);
-
-      // A cloud client writes in chunks and often renames a temp file over the
-      // target, so one remote edit produces many events.
-      final f = File(p.join(ops.path, 'them.oplog'));
-      for (var i = 0; i < 6; i++) {
-        f.writeAsStringSync('{"seq":$i}\n');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      expect(fired, 1, reason: 'debounced to one pull');
-    });
+    // "A burst of writes settles into a single pull" was here, on the real
+    // clock: six writes 20 ms apart against a 120 ms window, which a busy
+    // macOS runner stretched into two pulls. It is `folder_watch_test`'s
+    // fake-clock burst test now.
 
     test('overlapping pulls do not apply remote ops twice', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

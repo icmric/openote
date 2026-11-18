@@ -20,6 +20,7 @@ import 'package:openote/ui/phone_shell.dart';
 import 'package:openote/ui/sidebar.dart';
 
 import 'support/sqlite.dart';
+import 'support/wait.dart';
 
 void main() {
   var haveSqlite = false;
@@ -111,7 +112,7 @@ void main() {
     await t.tap(find
         .descendant(of: find.byType(PhoneNavigator), matching: find.text(first.title))
         .first);
-    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await pumpUntil(t, () => app.pageId == first.id, what: 'the page to open');
     await t.pumpAndSettle();
     expect(find.byType(PhoneNavigator), findsNothing, reason: 'the drawer closed');
     expect(app.pageId, first.id, reason: 'on the page chosen');
@@ -137,7 +138,8 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await shell(t, const Size(360, 780));
     unawaited(showNotebookManager(t.element(find.byType(PhoneTopBar)), app));
-    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await pumpUntil(t, () => find.byType(AlertDialog).evaluate().isNotEmpty,
+        what: 'the notebook list');
     await t.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(t.takeException(), isNull, reason: 'no overflow');

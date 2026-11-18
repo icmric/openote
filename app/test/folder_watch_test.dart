@@ -20,6 +20,8 @@ import 'package:openote/sync/folder_watch.dart';
 import 'package:openote/sync/op.dart';
 import 'package:openote/sync/op_log.dart';
 
+import 'support/wait.dart';
+
 void main() {
   late Directory ops;
   const own = 'device-mine';
@@ -48,7 +50,10 @@ void main() {
     return (w: w, fired: fired);
   }
 
-  /// Long enough for a debounce, a poll tick and a filesystem event to land.
+  /// Long enough for a debounce, a poll tick and a filesystem event to land,
+  /// on a machine that is not busy. Only for letting the watcher quieten
+  /// before a check, or before saying something did NOT happen; a check that
+  /// something DID happen waits for it with `eventually`.
   Future<void> settleAll() =>
       Future<void>.delayed(const Duration(milliseconds: 400));
 
@@ -60,8 +65,7 @@ void main() {
     fired.clear();
 
     File('${ops.path}/$other.oplog').writeAsStringSync('{"op":"x"}\n');
-    await settleAll();
-    expect(fired, isNotEmpty);
+    await eventually(() => fired.isNotEmpty, what: 'a pull');
   });
 
   test('A CLOUD CLIENT\'S TEMP-FILE RENAME IS NOTICED', () async {
@@ -78,11 +82,9 @@ void main() {
     final tmp = File('${ops.path}/$other.oplog~RF1a2b3c.TMP')
       ..writeAsStringSync('{"op":"x"}\n');
     tmp.renameSync('${ops.path}/$other.oplog');
-    await settleAll();
-
-    expect(fired, isNotEmpty,
-        reason: 'this is exactly how the sync folder receives a log, and it '
-            'produced nothing at all before');
+    // This is exactly how the sync folder receives a log, and it produced
+    // nothing at all before.
+    await eventually(() => fired.isNotEmpty, what: 'a pull after the rename');
   });
 
   test('a log that appears while nothing is watching is still noticed',
@@ -104,8 +106,8 @@ void main() {
     f.writeAsStringSync('{"op":"bbb"}\n');
     f.setLastModifiedSync(
         DateTime.now().add(const Duration(seconds: 5)));
-    await settleAll();
-    expect(fired, isNotEmpty, reason: 'a same-size replacement still counts');
+    await eventually(() => fired.isNotEmpty,
+        what: 'a pull for a same-size replacement');
   });
 
   test('our own writes do not trigger a pull', () async {
@@ -140,28 +142,34 @@ void main() {
         reason: 'existing logs are the baseline, not news');
   });
 
-  test('a burst of writes produces one pull, not one per write', () async {
-    final (w: w, fired: fired) = watcher();
-    w.start();
-    addTearDown(w.stop);
-    await settleAll();
-    fired.clear();
-
-    final f = File('${ops.path}/$other.oplog');
+  // On a fake clock: the debounce is a rule about time, and real filesystem
+  // events arrive when the platform delivers them (FSEvents batches them, a
+  // loaded runner delays them), so a real-time version of this test asserted
+  // the runner's weather. It was weakened twice (`<= 2`, then `< 8`) before
+  // being moved here. Noticing real writes is the tests above.
+  testWidgets('a burst of events produces one pull, once it has stopped',
+      (t) async {
+    var fired = 0;
+    final w = OpFolderWatcher(
+      opsDir: ops,
+      ownDevice: own,
+      settle: const Duration(milliseconds: 120),
+      onForeignChange: () => fired++,
+    ); // not started: the events are handed to it
+    // How OneDrive and Drive write: chunks into a temp file, then a rename.
+    final tmp = '${ops.path}/$other.oplog~RF1a2b.TMP';
     for (var i = 0; i < 8; i++) {
-      f.writeAsStringSync('{"op":"$i"}\n', mode: FileMode.append);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
+      w.debugEvent(FileSystemModifyEvent(tmp, false, true));
+      await t.pump(const Duration(milliseconds: 100));
     }
-    await settleAll();
-    // Strictly fewer than the eight writes — NOT a pinned coalescing factor.
-    // The old `<= 2` encoded an assumption about how the OS batches file
-    // events, and macOS FSEvents delivered the same burst as three groups on
-    // a slow runner: red CI, working code. The claim this test owns is only
-    // that the settle window coalesces AT ALL — one event per write is
-    // exactly what a regression to no-debounce produces, and any grouping
-    // below that proves the window exists.
-    expect(fired.length, lessThan(8),
-        reason: 'the settle window exists to coalesce a burst');
+    w.debugEvent(FileSystemMoveEvent(tmp, false, '${ops.path}/$other.oplog'));
+    expect(fired, 0, reason: 'still being written');
+    await t.pump(const Duration(milliseconds: 119));
+    expect(fired, 0, reason: 'the settle window runs from the LAST event');
+    await t.pump(const Duration(milliseconds: 1));
+    expect(fired, 1);
+    await t.pump(const Duration(seconds: 10));
+    expect(fired, 1, reason: 'one burst, one pull');
   });
 
   _incremental();
