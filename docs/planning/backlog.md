@@ -730,6 +730,42 @@ deadline (`for (i < 200 && !cond) delay(10 ms)`), which are better as
 `eventually`/`pumpUntil`; a few are sleeps before a negative check. Take a file
 when you are in it anyway, and lower its number in `_known`.
 
+### 1.20 Ask before running code · **S**
+
+The owner, 19 November: running code in a code block should first show a short,
+clear warning. Only when something would actually **run**, never when the
+language is chosen or the code is written.
+
+- **When:** every run, in any language. Today the run languages are SQL and
+  JavaScript; more may come, so the check belongs in the one place every run
+  goes through (`_run()` in `editor/code_block_view.dart`, which both the Run
+  button and Ctrl+Enter call), not per language.
+- **What it says:** that the code is not sandboxed, and to run only code you
+  understand and trust. Short. Two or three lines at most, and nothing a
+  student has to read twice.
+- **Buttons:** Run, and Don't run (the default, and what Esc does).
+- **Don't show this again:** a tick box. Ticked and Run pressed, no run in any
+  language asks again: one app-wide setting, not one per language or notebook.
+  Ticked and Don't run pressed, nothing is remembered.
+- **Translated** in all seven languages, like every dialog now.
+- **Tests:** the dialog appears on the button and on Ctrl+Enter; Don't run runs
+  nothing; the tick box silences every language; nothing is asked when choosing
+  a language.
+
+**Owner to decide, before the wording is fixed:**
+
+1. *"Not sandboxed" is not quite true today.* `code/code_runner.dart` runs
+   SQL in an empty in-memory database and JavaScript in a bare engine with no
+   file, network or fetch access, a five-second limit and an output cap. The
+   one hole it records is CPU: a run stuck inside a single engine call keeps a
+   core busy after the five seconds. A language added later (Python, say) may
+   well not be sandboxed at all. Choose one:
+   - say it plainly and future-proof: *"Code runs on your computer and is not
+     fully sandboxed. Only run code you understand and trust."*; or
+   - word it per language once one is truly unsandboxed, and say less until then.
+2. *How to get the warning back* after ticking the box. Suggested: a switch
+   under Settings (where the writing settings are), "Ask before running code".
+
 ## 2. Structural, blocked on a decision
 
 ### 2.1 The spreadsheet engine · **L**
