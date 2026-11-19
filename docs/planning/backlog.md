@@ -752,19 +752,42 @@ language is chosen or the code is written.
   nothing; the tick box silences every language; nothing is asked when choosing
   a language.
 
-**Owner to decide, before the wording is fixed:**
+**Decided, 19 November:**
 
-1. *"Not sandboxed" is not quite true today.* `code/code_runner.dart` runs
-   SQL in an empty in-memory database and JavaScript in a bare engine with no
-   file, network or fetch access, a five-second limit and an output cap. The
-   one hole it records is CPU: a run stuck inside a single engine call keeps a
-   core busy after the five seconds. A language added later (Python, say) may
-   well not be sandboxed at all. Choose one:
-   - say it plainly and future-proof: *"Code runs on your computer and is not
-     fully sandboxed. Only run code you understand and trust."*; or
-   - word it per language once one is truly unsandboxed, and say less until then.
-2. *How to get the warning back* after ticking the box. Suggested: a switch
-   under Settings (where the writing settings are), "Ask before running code".
+- *The warning stays even where the engine is sandboxed.* Any sandbox has
+  holes not yet found (§1.21 is one that was), so people should know the risk
+  whatever the language. Suggested wording: *"Code runs on your computer and is
+  not fully sandboxed. Only run code you understand and trust."*
+- *No Settings switch to bring it back.* Dismissed means gone, as in most apps.
+  It comes back once when a new language gains a Run button: the tick box
+  stores the warning's version (a constant bumped with each runnable language
+  added), and a dismissal of an older version asks again.
+
+### 1.21 A SQL box can write files anywhere on the computer · **S** — security
+
+Found 19 November, checking §1.20's wording. Each SQL run is its own empty
+in-memory database (a table made in one box is not seen by another, checked),
+and `load_extension` is refused. But two statements reach the disk:
+
+- `ATTACH DATABASE '<any path>' AS x` opens or **creates** any file the user
+  can write, and then reads and writes it as a database. That includes
+  Openote's own notebook files, which are SQLite, and any other app's SQLite
+  files.
+- `VACUUM INTO '<any path>'` writes a new file anywhere.
+
+Both were confirmed with real runs through `runCode`; each left a file behind.
+A page shared with a student can carry such a box, and one press of Run is all
+it takes.
+
+**Fix (tested in a probe, not yet in the code):** right after opening the run's
+database, `sqlite3_limit(db, SQLITE_LIMIT_ATTACHED, 0)`. The `sqlite3` package
+does not expose it, but the symbol is in the library it loads and `dart:ffi`
+reaches it. With it, both statements fail with "too many attached databases
+- max 0", no file is created, and ordinary SQL is unaffected. Add a
+`code_runner_test` case for each statement asserting the error and that no
+file appears. While there, consider a lower `SQLITE_LIMIT_LENGTH` so
+`zeroblob(1e9)` cannot claim a gigabyte, and check the browser build's runner
+separately.
 
 ## 2. Structural, blocked on a decision
 
